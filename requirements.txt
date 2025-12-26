@@ -3,4 +3,4 @@ google-genai
 pandas
 fpdf
 streamlit-option-menu
-streamlit-gsheets
+st-gsheets-connection
