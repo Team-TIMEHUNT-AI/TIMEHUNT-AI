@@ -142,21 +142,17 @@ def play_alarm_sound():
             """, unsafe_allow_html=True)
 
 # --- DATA PERSISTENCE FUNCTIONS (NEW) ---
-# --- NEW: CLOUD SYNC ENGINE (REPLACES JSON) ---
-
-# --- DEBUG VERSION OF SYNC_DATA ---
 def sync_data():
-    """Saves current Reminders & Timetable to Google Sheets (Reminders Tab)"""
+    """Saves current Reminders & Timetable to Google Sheets using WRITE mode"""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         uid = st.session_state.get('user_id')
         if not uid: return
 
-        # 1. READ EXISTING SHEET (To keep other users' data)
+        # 1. READ EXISTING SHEET
         try:
             df_cloud = conn.read(worksheet="Reminders", ttl=0)
-            # Filter out THIS user's old data
             if not df_cloud.empty and "UserID" in df_cloud.columns:
                 df_others = df_cloud[df_cloud["UserID"] != uid]
             else:
@@ -167,47 +163,42 @@ def sync_data():
         # 2. PREPARE NEW ROWS
         new_rows = []
         
-        # A. Alarms
+        # Alarms
         for rem in st.session_state.get('reminders', []):
             new_rows.append({
-                "UserID": uid,
-                "Task": rem['task'],
+                "UserID": str(uid),
+                "Task": str(rem['task']),
                 "Time": str(rem['time']), 
                 "Status": "Done" if rem.get('notified') else "Pending",
                 "Type": "Alarm"
             })
             
-        # B. Timetable Slots
+        # Timetable
         for slot in st.session_state.get('timetable_slots', []):
              new_rows.append({
-                "UserID": uid,
-                "Task": slot['Activity'],
-                "Time": slot['Time'],
+                "UserID": str(uid),
+                "Task": str(slot['Activity']),
+                "Time": str(slot['Time']),
                 "Status": "Done" if slot['Done'] else "Pending",
                 "Type": f"Schedule-{slot['Category']}"
             })
 
-        # --- DEBUG: SHOW DATA ON SCREEN ---
-        if new_rows:
-            st.warning(f"📡 SYNCING {len(new_rows)} ITEMS...")
-            st.table(new_rows) # This will show the exact data being sent
-        else:
-            st.error("⚠️ SYNCING EMPTY LIST")
-
-        # 3. MERGE & UPLOAD
+        # 3. MERGE & WRITE
         if new_rows:
             df_my_data = pd.DataFrame(new_rows)
-            # Force columns to match exactly
-            df_my_data = df_my_data[["UserID", "Task", "Time", "Status", "Type"]]
-            
             df_final = pd.concat([df_others, df_my_data], ignore_index=True)
         else:
             df_final = df_others
 
-        conn.update(worksheet="Reminders", data=df_final)
-
+        # Force String Type to prevent Google rejection
+        df_final = df_final.astype(str)
+        
+        # --- CRITICAL CHANGE: USE WRITE INSTEAD OF UPDATE ---
+        conn.write(worksheet="Reminders", data=df_final)
+        
     except Exception as e:
-        st.error(f"Cloud Sync Error: {e}")
+        print(f"Cloud Sync Error: {e}")
+
 
 
 def load_cloud_data():
@@ -1715,4 +1706,4 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+    main()
