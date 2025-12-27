@@ -1433,7 +1433,7 @@ def page_home():
     elif 17 <= current_hour < 22:
         greeting = "Good Evening"
     else:
-        greeting = "Night Owl Protocol Active 🦉" # Cool touch for late night
+        greeting = "Success doesn't come, until you cover it up"
 
     # Quotes
     quotes = ["Be Productive Today 🙌", "Hunt Down Your Goals 🏹", "Focus. Execute. Win. 🏆", "Discipline equals Freedom ⚔️"]
