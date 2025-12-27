@@ -1257,52 +1257,72 @@ def page_home():
         </div>
         """, unsafe_allow_html=True)
 
-# --- 11. PAGE: ABOUT (FIXED ALIGNMENT) ---
+# --- 11. PAGE: ABOUT (REDESIGNED "BEST IN CLASS") ---
 def page_about():
-    st.markdown("## 🛡️ TimeHunt AI: System Overview")
+    # 1. Main Title
+    st.markdown("# 🛡️ System Architecture")
+    st.markdown("### TimeHunt AI: Tactical Productivity Suite")
     
-    # --- FIXED CAPSTONE BADGE ---
-    # Added 'text-align: left' and specific margins to fix the layout
+    # 2. CAPSTONE DOSSIER (Replaces the Black Box)
+    # We use a native container with a border. It looks clean and works on all phones.
+    with st.container(border=True):
+        c_icon, c_info = st.columns([1, 5])
+        
+        with c_icon:
+            st.markdown("<div style='font-size: 45px; text-align: center; padding-top: 10px;'>🎓</div>", unsafe_allow_html=True)
+        
+        with c_info:
+            st.markdown("### CBSE Capstone Project")
+            st.markdown("**Class 12  |  Artificial Intelligence  |  2024-25**")
+            st.caption("Demonstrating advanced proficiency in Python, Generative AI (LLMs), Cloud Database Management, and Full-Stack State Logic.")
+
+    st.write("") # Spacer
+
+    # 3. FEATURES GRID (Clean & Colorful)
+    st.markdown("### ⚡ Operational Arsenal")
+    
+    row1_1, row1_2 = st.columns(2)
+    with row1_1:
+        with st.container(border=True):
+            st.markdown("#### 🤖 AI Strategist")
+            st.caption("Powered by **Google Gemini**. Generates adaptive study schedules and explains complex concepts.")
+    
+    with row1_2:
+        with st.container(border=True):
+            st.markdown("#### 🎵 Sonic Intel")
+            st.caption("Integrated **Audio Engine** with binaural beats and focus frequencies for deep work states.")
+
+    row2_1, row2_2 = st.columns(2)
+    with row2_1:
+        with st.container(border=True):
+            st.markdown("#### 🏆 Gamification")
+            st.caption("**XP System & Leaderboards** synced live with Google Sheets to compete with other hunters.")
+    
+    with row2_2:
+        with st.container(border=True):
+            st.markdown("#### ☁️ Cloud Sync")
+            st.caption("Persistent user data storage prevents data loss on refresh using **Session State & JSON**.")
+
+    st.divider()
+
+    # 4. TECH STACK (Professional Badges)
+    st.markdown("### 🏗️ Technical Stack")
+    
+    # Custom HTML for nice pills/badges
     st.markdown("""
-    <div style="
-        background: linear-gradient(90deg, #1A1A1A, #333); 
-        padding: 25px; 
-        border-radius: 12px; 
-        border-left: 6px solid #B5FF5F; 
-        color: white !important; 
-        text-align: left; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        margin-bottom: 25px;">
-        
-        <h3 style="margin: 0 0 10px 0 !important; color: #B5FF5F !important; font-size: 22px; font-weight: bold;">
-            🎓 CBSE Capstone Project
-        </h3>
-        
-        <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #E0E0E0 !important;">
-            <strong style="color: white;">Class:</strong> 12th &nbsp;|&nbsp; 
-            <strong style="color: white;">Subject:</strong> Artificial Intelligence &nbsp;|&nbsp; 
-            <strong style="color: white;">Session:</strong> 2024-25<br>
-            <span style="opacity: 0.8;">Demonstrating advanced Python integration, AI Logic, and State Management.</span>
-        </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+        <span style="background-color: #FF4B4B; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Streamlit</span>
+        <span style="background-color: #306998; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Python 3.9+</span>
+        <span style="background-color: #4285F4; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Google Gemini</span>
+        <span style="background-color: #0F9D58; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Google Sheets API</span>
+        <span style="background-color: #F4B400; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Pandas</span>
     </div>
     """, unsafe_allow_html=True)
-    
-    st.markdown("### 🛠️ Tactical Arsenal (Features)")
-    
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.success("🤖 **AI Strategist**\n\nPowered by Google Gemini. Adapts to 'Elite Mode' for high-pressure exams (JEE/Boards).")
-        st.info("🎵 **Sonic Intel**\n\nIntegrated Focus Audio with real-time CSS visualizers.")
-        st.warning("⏱️ **Smooth Timer**\n\nJavaScript-based Pomodoro engine that runs without page refreshes.")
-        
-    with c2:
-        st.error("🏆 **Gamification**\n\nXP System, Ranks, and Global Cloud Leaderboard.")
-        st.success("📊 **Data Intelligence**\n\nDownloadable PDF Mission Reports and dynamic progress tracking.")
-        st.info("☁️ **Cloud Sync**\n\nUses Google Sheets/JSON for persistent user data storage.")
 
-    st.markdown("---")
-    st.caption("Developed with ❤️ using Python & Streamlit")
+    st.write("")
+    st.write("")
+    st.caption("🔒 System Status: ONLINE | 🛡️ Developed with ❤️ by TIME HUNT AI TEAM")
+
 
 
     
