@@ -1273,7 +1273,7 @@ def page_about():
         
         with c_info:
             st.markdown("### CBSE Capstone Project")
-            st.markdown("**Class 12  |  Artificial Intelligence  |  2024-25**")
+            st.markdown("**Class 12  |  Artificial Intelligence  |  2025-26**")
             st.caption("Demonstrating advanced proficiency in Python, Generative AI (LLMs), Cloud Database Management, and Full-Stack State Logic.")
 
     st.write("") # Spacer
