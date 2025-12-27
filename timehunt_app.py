@@ -489,236 +489,176 @@ def check_reminders():
 
 # --- 6. PAGE: ONBOARDING (DESIGN OPTIMIZED) ---
 
+# --- 6. PAGE: SMART ONBOARDING (With Suggestions & PIN) ---
 def page_onboarding():
     
-    # 1. READ THE FILE (Strict Mode)
-    # We know background_small.jpg exists because st.image saw it.
+    # 1. Background Setup
     bg_base64 = None
     try:
         with open("background_small.jpg", "rb") as image_file:
             bg_base64 = base64.b64encode(image_file.read()).decode()
-    except FileNotFoundError:
-        st.error("⚠️ CRITICAL: 'background_small.jpg' not found. Run resize_image.py again.")
-        return
+    except: pass
 
-    # 2. THE NUCLEAR INJECTION (HTML Element instead of CSS Background)
-    # This places a fixed <div> behind everything. It cannot be overridden by Streamlit themes.
-    st.markdown(f"""
-    <style>
-        /* Hide standard Streamlit header/footer */
-        header {{visibility: hidden;}}
-        footer {{visibility: hidden;}}
-        
-        /* THE BACKGROUND LAYER */
-        .fixed-bg {{
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.9)), url("data:image/jpeg;base64,{bg_base64}");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            z-index: -1; /* Puts it BEHIND everything */
-        }}
-        
-        /* Make sure the main app is transparent so we can see the background */
-        .stApp {{
-            background: transparent !important;
-        }}
-    </style>
-    <div class="fixed-bg"></div>
-    """, unsafe_allow_html=True)
+    if bg_base64:
+        st.markdown(f"""
+        <style>
+            .fixed-bg {{
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.9)), url("data:image/jpeg;base64,{bg_base64}");
+                background-size: cover; z-index: -1;
+            }}
+            .stApp {{ background: transparent !important; }}
+        </style>
+        <div class="fixed-bg"></div>
+        """, unsafe_allow_html=True)
 
-    # --- 3. HELPER FOR AVATARS ---
-    def get_avatar_b64(filename):
-        if os.path.exists(filename):
-            with open(filename, "rb") as f:
-                return base64.b64encode(f.read()).decode()
-        return None
-
-    img_scholar = get_avatar_b64("Gemini_Generated_Image_djfbqkdjfbqkdjfb.png")
-    img_techie = get_avatar_b64("Gemini_Generated_Image_z8e73dz8e73dz8e7.png")
-    img_hunter = get_avatar_b64("Gemini_Generated_Image_18oruj18oruj18or.png")
-
-    # --- 4. YOUR CYBERPUNK UI (CSS for the cards) ---
+    # 2. CSS Styling
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap');
-        
-        /* GLASS PANEL */
-        .cyber-glass {
-            background: rgba(13, 17, 23, 0.85);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(0, 229, 255, 0.3);
-            box-shadow: 0 0 60px rgba(0,0,0,0.9);
-            border-radius: 20px;
-            padding: 40px;
-            margin-top: 40px;
-            text-align: center;
-            animation: fadeIn 1s ease-out;
-        }
-        @keyframes fadeIn { from {opacity:0; transform:translateY(30px);} to {opacity:1; transform:translateY(0);} }
-
-        /* TEXT */
-        .cyber-header {
-            font-family: 'Orbitron', sans-serif;
-            font-weight: 900;
-            font-size: 45px;
-            color: #fff;
-            text-shadow: 0 0 20px rgba(0, 229, 255, 0.6);
-            letter-spacing: 3px;
-        }
-        .cyber-sub {
-            font-family: 'Rajdhani', sans-serif;
-            color: #B5FF5F;
-            font-size: 18px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            margin-bottom: 30px;
-        }
-
-        /* INPUTS */
-        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
-            background-color: #050505 !important;
-            border: 1px solid #333 !important;
-            color: #00E5FF !important;
-            font-family: 'Rajdhani', monospace !important;
-            font-size: 18px !important;
-            border-radius: 8px !important;
-        }
-        
-        /* BUTTONS */
-        div.stButton > button {
-            background: linear-gradient(90deg, #00C6FF, #0072FF);
-            color: white;
-            font-family: 'Orbitron', sans-serif;
-            font-weight: bold;
-            border: none;
-            padding: 16px 32px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            transition: 0.3s;
-            width: 100%;
-            border-radius: 6px;
-        }
-        div.stButton > button:hover {
-            box-shadow: 0 0 25px rgba(0, 114, 255, 0.6);
-            transform: scale(1.02);
-            color: #0072FF;
-            background: #fff;
-        }
-        
-        /* AVATAR BOX */
-        .avatar-box {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 10px;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-        .avatar-box:hover {
-            border-color: #B5FF5F;
-            background: rgba(181, 255, 95, 0.1);
-            transform: translateY(-5px);
-        }
+        .cyber-glass { background: rgba(13, 17, 23, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(0, 229, 255, 0.3); border-radius: 20px; padding: 40px; text-align: center; animation: fadeIn 1s ease-out; }
+        .cyber-header { font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 45px; color: #fff; text-shadow: 0 0 20px rgba(0, 229, 255, 0.6); }
+        .stTextInput input { background-color: #050505 !important; border: 1px solid #333 !important; color: #00E5FF !important; text-align: center; font-weight: bold; letter-spacing: 2px; }
+        div.stButton > button { background: linear-gradient(90deg, #00C6FF, #0072FF); color: white; border: none; padding: 12px 24px; font-weight: bold; width: 100%; border-radius: 6px; margin-top: 10px; }
+        .suggestion-btn { border: 1px dashed #B5FF5F; color: #B5FF5F; padding: 5px; margin: 5px; font-size: 12px; cursor: pointer; }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- 5. UI LOGIC ---
-    step = st.session_state['onboarding_step']
-    c1, c2, c3 = st.columns([1, 6, 1])
+    # 3. Logic Flow
+    step = st.session_state.get('onboarding_step', 1)
+    col_x, col_center, col_y = st.columns([1, 6, 1])
     
-    with c2:
+    with col_center:
+        # --- STEP 1: AUTHENTICATION ---
         if step == 1:
             st.markdown('<div class="cyber-glass">', unsafe_allow_html=True)
             st.markdown('<div class="cyber-header">TIMEHUNT</div>', unsafe_allow_html=True)
-            st.markdown('<div class="cyber-sub">SECURE LOGIN TERMINAL</div>', unsafe_allow_html=True)
+            st.markdown('<p style="color:#B5FF5F;">SECURE IDENTITY PROTOCOL</p>', unsafe_allow_html=True)
             
-            name = st.text_input("ENTER CODENAME", placeholder="TYPE IDENTITY...", label_visibility="collapsed")
+            # Smart Input: Uses clicked suggestion if available
+            default_val = st.session_state.get('suggested_name_choice', "")
+            name_input = st.text_input("CODENAME", value=default_val, placeholder="ENTER IDENTITY...", key="login_name").strip()
+            pin_input = st.text_input("ACCESS PIN (4-DIGIT)", placeholder="####", type="password", key="login_pin", max_chars=4)
             
             st.write("")
-            if st.button("AUTHENTICATE ▶"):
-                if name:
-                    st.session_state['user_name'] = name
-                    st.session_state['onboarding_step'] = 2
-                    st.rerun()
+            
+            if st.button("🚀 CONNECT / VERIFY"):
+                if name_input and len(pin_input) >= 1:
+                    with st.spinner("Verifying Identity..."):
+                        try:
+                            from streamlit_gsheets import GSheetsConnection
+                            conn = st.connection("gsheets", type=GSheetsConnection)
+                            df = conn.read(worksheet="Sheet1", ttl=0)
+                            
+                            if not df.empty and 'Name' in df.columns:
+                                df['PIN'] = df['PIN'].astype(str)
+                                existing = df[df['Name'] == name_input]
+                                
+                                if not existing.empty:
+                                    # USER EXISTS -> CHECK PIN
+                                    stored_pin = str(existing.iloc[0]['PIN']).strip()
+                                    if pin_input == stored_pin:
+                                        # Login Success
+                                        row = existing.iloc[0]
+                                        st.session_state['user_name'] = row['Name']
+                                        st.session_state['user_id'] = row['UserID']
+                                        st.session_state['user_xp'] = int(row['XP'])
+                                        st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
+                                        st.session_state['onboarding_complete'] = True
+                                        st.toast(f"Welcome back, {name_input}!", icon="🔓")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        # Name Taken / Wrong PIN
+                                        st.error(f"⛔ Identity '{name_input}' is taken. Incorrect PIN.")
+                                        st.markdown("**Available Suggestions:**")
+                                        
+                                        # Generate Suggestions
+                                        s1, s2, s3 = f"{name_input}_{random.randint(10,99)}", f"Agent_{name_input}", f"{name_input}X"
+                                        c_s1, c_s2, c_s3 = st.columns(3)
+                                        if c_s1.button(s1): 
+                                            st.session_state['suggested_name_choice'] = s1
+                                            st.rerun()
+                                        if c_s2.button(s2): 
+                                            st.session_state['suggested_name_choice'] = s2
+                                            st.rerun()
+                                        if c_s3.button(s3): 
+                                            st.session_state['suggested_name_choice'] = s3
+                                            st.rerun()
+                                else:
+                                    # NEW USER
+                                    st.session_state['user_name'] = name_input
+                                    st.session_state['temp_pin'] = pin_input
+                                    st.session_state['onboarding_step'] = 2
+                                    st.success("Identity Available.")
+                                    time.sleep(1)
+                                    st.rerun()
+                            else:
+                                # First User
+                                st.session_state['user_name'] = name_input
+                                st.session_state['temp_pin'] = pin_input
+                                st.session_state['onboarding_step'] = 2
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Network Error: {e}")
+                else:
+                    st.warning("Enter Codename & PIN.")
             st.markdown('</div>', unsafe_allow_html=True)
 
+        # --- STEP 2: AVATAR ---
         elif step == 2:
-            st.markdown('<div class="cyber-glass">', unsafe_allow_html=True)
-            st.markdown('<div class="cyber-header">AVATAR</div>', unsafe_allow_html=True)
-            st.markdown('<div class="cyber-sub">SELECT OPERATOR CLASS</div>', unsafe_allow_html=True)
-            
-            c_a, c_b, c_c = st.columns(3)
-            
-            def render_avatar(col, b64, name, role, key, filename):
-                with col:
-                    if b64:
-                        st.markdown(f"""
-                        <div class="avatar-box">
-                            <img src="data:image/png;base64,{b64}" style="width:100%; border-radius:10px; margin-bottom:10px;">
-                            <div style="color:#fff; font-family:'Rajdhani'; font-weight:bold;">{name}</div>
-                            <div style="color:#aaa; font-size:12px;">{role}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"**{name}**")
-                    
-                    if st.button(f"SELECT {name}", key=key):
-                        st.session_state['user_avatar'] = filename
-                        st.session_state['onboarding_step'] = 3
-                        st.rerun()
-
-            render_avatar(c_a, img_scholar, "SCHOLAR", "INTEL", "b1", "Gemini_Generated_Image_djfbqkdjfbqkdjfb.png")
-            render_avatar(c_b, img_techie, "TECHIE", "CYBER", "b2", "Gemini_Generated_Image_z8e73dz8e73dz8e7.png")
-            render_avatar(c_c, img_hunter, "HUNTER", "OPS", "b3", "Gemini_Generated_Image_18oruj18oruj18or.png")
+            st.markdown('<div class="cyber-glass"><div class="cyber-header">AVATAR</div>', unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            # Avatar Buttons
+            if c1.button("SCHOLAR"): 
+                st.session_state['user_avatar'] = "Gemini_Generated_Image_djfbqkdjfbqkdjfb.png"
+                st.session_state['onboarding_step'] = 3
+                st.rerun()
+            if c2.button("TECHIE"): 
+                st.session_state['user_avatar'] = "Gemini_Generated_Image_z8e73dz8e73dz8e7.png"
+                st.session_state['onboarding_step'] = 3
+                st.rerun()
+            if c3.button("HUNTER"): 
+                st.session_state['user_avatar'] = "Gemini_Generated_Image_18oruj18oruj18or.png"
+                st.session_state['onboarding_step'] = 3
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
+        # --- STEP 3: MISSION & SAVE ---
         elif step == 3:
-            st.markdown('<div class="cyber-glass">', unsafe_allow_html=True)
-            st.markdown('<div class="cyber-header">MISSION</div>', unsafe_allow_html=True)
+            st.markdown('<div class="cyber-glass"><div class="cyber-header">MISSION</div>', unsafe_allow_html=True)
+            role = st.selectbox("Role", ["Student", "Entrepreneur", "Professional"])
+            goal = st.selectbox("Goal", ["Ace Exams", "Build Business", "Health"])
             
-            c_f1, c_f2 = st.columns(2)
-            with c_f1:
-                st.markdown("<div style='color:#B5FF5F; font-family:Rajdhani'>CLASS</div>", unsafe_allow_html=True)
-                role = st.selectbox("Role", ["Student", "Entrepreneur", "Professional"], label_visibility="collapsed")
-                
-                st.markdown("<div style='color:#B5FF5F; margin-top:15px; font-family:Rajdhani'>OBJECTIVE</div>", unsafe_allow_html=True)
-                goal = st.selectbox("Goal", ["Ace Exams", "Build Business", "Career Growth", "Health"], label_visibility="collapsed")
-
-            with c_f2:
-                st.markdown("<div style='color:#FF5F5F; font-family:Rajdhani'>THREAT</div>", unsafe_allow_html=True)
-                struggle = st.selectbox("Obstacle", ["Procrastination", "Distraction", "Burnout", "Motivation"], label_visibility="collapsed")
-                
-                st.markdown("<div style='color:#00E5FF; margin-top:15px; font-family:Rajdhani'>HOURS</div>", unsafe_allow_html=True)
-                hours = st.slider("Hours", 1, 16, 6, label_visibility="collapsed")
-
-            st.write("")
-            if st.button("UPLOAD DATA ▶"):
+            if st.button("CONFIRM & UPLOAD"):
                  st.session_state['user_type'] = role
                  st.session_state['user_goal'] = goal
-                 st.session_state['struggle_type'] = struggle
-                 st.session_state['study_hours'] = hours
-                 st.session_state['onboarding_step'] = 4
-                 save_data()
-                 st.rerun()
+                 
+                 # Upload Logic
+                 try:
+                     from streamlit_gsheets import GSheetsConnection
+                     conn = st.connection("gsheets", type=GSheetsConnection)
+                     df = conn.read(worksheet="Sheet1", ttl=0)
+                     
+                     new_user = pd.DataFrame([{
+                         "UserID": st.session_state['user_id'],
+                         "Name": st.session_state['user_name'],
+                         "XP": 0, "League": "Bronze",
+                         "Avatar": st.session_state.get('user_avatar', "👤"),
+                         "LastActive": datetime.date.today().strftime("%Y-%m-%d"),
+                         "PIN": st.session_state.get('temp_pin', "0000")
+                     }])
+                     
+                     updated_df = new_user if df.empty else pd.concat([df, new_user], ignore_index=True)
+                     conn.update(worksheet="Sheet1", data=updated_df)
+                     
+                     st.session_state['onboarding_complete'] = True
+                     st.toast("Profile Created!")
+                     time.sleep(1)
+                     st.rerun()
+                 except Exception as e:
+                     st.error(f"Upload Failed: {e}")
             st.markdown('</div>', unsafe_allow_html=True)
 
-        elif step == 4:
-            st.balloons()
-            st.markdown('<div class="cyber-glass">', unsafe_allow_html=True)
-            st.markdown('<div class="cyber-header" style="color:#B5FF5F">ONLINE</div>', unsafe_allow_html=True)
-            st.markdown('<div class="cyber-sub">SYSTEM READY</div>', unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div style="background:#000; border:1px dashed #333; padding:20px; border-radius:10px; display:inline-block; text-align:left; font-family:'Courier New'; margin-bottom:20px;">
-                <span style="color:#888">> AGENT:</span> <span style="color:#fff">{st.session_state['user_name']}</span><br>
-                <span style="color:#888">> TARGET:</span> <span style="color:#00E5FF">{st.session_state['user_goal']}</span>
-            </div>
-            """, unsafe_allow_html=True)
             
             if st.button("🚀 LAUNCH COMMAND CENTER"):
                st.session_state['onboarding_complete'] = True
