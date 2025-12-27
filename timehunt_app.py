@@ -373,6 +373,7 @@ def initialize_session_state():
     
     # 1. Define Defaults (What to use if NO saved data exists)
     today_str = datetime.date.today().strftime("%Y-%m-%d")
+    
     defaults = {
         'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
         'active_alarm': None,
@@ -1069,107 +1070,97 @@ def page_timer():
 # --- NEW: CALENDAR PAGE ---
 # --- NEW: TACTICAL GRID CALENDAR ---
 def page_calendar():
+    # 1. Imports & Setup
+    import calendar 
     st.markdown('<div class="big-title">📅 Tactical Grid</div>', unsafe_allow_html=True)
 
-    # 1. Initialize Session State for Calendar View
     if 'cal_year' not in st.session_state: st.session_state['cal_year'] = datetime.date.today().year
     if 'cal_month' not in st.session_state: st.session_state['cal_month'] = datetime.date.today().month
     if 'sel_date' not in st.session_state: st.session_state['sel_date'] = datetime.date.today().strftime("%Y-%m-%d")
 
-    # 2. Month Navigation
-    c_prev, c_month, c_next = st.columns([1, 5, 1], vertical_alignment="center")
-    
+    # 2. Navigation
+    c_prev, c_month, c_next = st.columns([1, 4, 1], vertical_alignment="center")
     with c_prev:
-        if st.button("◀", use_container_width=True):
+        if st.button("◀", key="prev_m"):
             st.session_state['cal_month'] -= 1
             if st.session_state['cal_month'] < 1:
                 st.session_state['cal_month'] = 12
                 st.session_state['cal_year'] -= 1
             st.rerun()
-
     with c_next:
-        if st.button("▶", use_container_width=True):
+        if st.button("▶", key="next_m"):
             st.session_state['cal_month'] += 1
             if st.session_state['cal_month'] > 12:
                 st.session_state['cal_month'] = 1
                 st.session_state['cal_year'] += 1
             st.rerun()
-
     with c_month:
         month_name = calendar.month_name[st.session_state['cal_month']]
-        st.markdown(f"<h2 style='text-align: center; margin:0;'>{month_name} {st.session_state['cal_year']}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align: center; margin:0;'>{month_name} {st.session_state['cal_year']}</h3>", unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.write("") # Spacer
 
-    # 3. DRAW THE GRID
+    # 3. CALENDAR GRID
     # Weekday Headers
     cols = st.columns(7)
-    days_header = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    days_header = ["M", "T", "W", "T", "F", "S", "S"]
     for i, day in enumerate(days_header):
-        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888;'>{day}</div>", unsafe_allow_html=True)
+        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888; font-size:14px;'>{day}</div>", unsafe_allow_html=True)
 
-    # Calendar Days
+    # Days Matrix
     month_matrix = calendar.monthcalendar(st.session_state['cal_year'], st.session_state['cal_month'])
     
     for week in month_matrix:
         cols = st.columns(7)
         for i, day in enumerate(week):
             if day == 0:
-                cols[i].write("") # Empty box
+                cols[i].write("") # Empty slot
             else:
-                # Construct date string YYYY-MM-DD
                 this_date_str = f"{st.session_state['cal_year']}-{st.session_state['cal_month']:02d}-{day:02d}"
                 
-                # Check if tasks exist for this date
-                task_count = len([t for t in st.session_state['timetable_slots'] if t.get('Date') == this_date_str])
+                # Check for tasks
+                has_task = any(t.get('Date') == this_date_str for t in st.session_state['timetable_slots'])
                 
-                # Style logic
+                # Button Label (Just number for clean grid)
                 label = f"{day}"
-                if task_count > 0: label += " 🔴"
+                if has_task: label += " •"
                 
-                # Highlight selected day
+                # Style selected
                 type_btn = "primary" if st.session_state['sel_date'] == this_date_str else "secondary"
                 
-                if cols[i].button(label, key=f"cal_{this_date_str}", type=type_btn, use_container_width=True):
+                if cols[i].button(label, key=f"day_{this_date_str}", type=type_btn):
                     st.session_state['sel_date'] = this_date_str
                     st.rerun()
 
-    # 4. TASK MANAGER (Appears below grid for Selected Date)
+    # 4. TASK MANAGER (Below Grid)
     st.markdown("---")
     selected = st.session_state['sel_date']
     
-    c_info, c_add = st.columns([2, 1])
+    # Show formatted date (e.g., "Monday, 14 January")
+    dt_obj = datetime.datetime.strptime(selected, "%Y-%m-%d")
+    pretty_date = dt_obj.strftime("%A, %d %B")
     
-    with c_info:
-        st.markdown(f"### 🎯 Missions for {selected}")
+    st.markdown(f"### 🎯 Missions: {pretty_date}")
+    
+    c_view, c_add = st.columns([3, 2])
+    
+    with c_view:
         day_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == selected]
-        
         if day_tasks:
-            for t in day_tasks:
+            for idx, t in enumerate(day_tasks):
                 status = "✅" if t['Done'] else "⬜"
-                st.markdown(f"""
-                <div style="background:var(--card-bg); padding:10px; border-radius:10px; margin-bottom:5px; border-left: 4px solid #B5FF5F; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                    {status} <b>{t['Time']}</b> : {t['Activity']} 
-                    <span style="float:right; font-size:12px; opacity:0.7;">{t['Category']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Edit Button (Simple Delete/Clear option for simplicity in this view)
-            if st.button("🗑️ Clear Day's Missions"):
-                st.session_state['timetable_slots'] = [t for t in st.session_state['timetable_slots'] if t.get('Date') != selected]
-                sync_data()
-                st.rerun()
+                st.info(f"{status} **{t['Time']}**: {t['Activity']} ({t['Category']})")
         else:
-            st.info("No active operations in this sector.")
+            st.caption("No missions scheduled for this day.")
 
     with c_add:
-        with st.form("quick_add_cal"):
-            st.markdown("#### ➕ Add New")
-            new_task = st.text_input("Task Name")
+        with st.form("quick_cal_add", clear_on_submit=True):
+            st.caption("Add New Task")
+            new_task = st.text_input("Task", placeholder="Mission Name")
             new_time = st.time_input("Time")
-            new_cat = st.selectbox("Category", ["Study", "Project", "Health", "Errand"])
+            new_cat = st.selectbox("Type", ["Study", "Work", "Health"])
             
-            if st.form_submit_button("Deploy"):
+            if st.form_submit_button("➕ Add"):
                 st.session_state['timetable_slots'].append({
                     "Date": selected,
                     "Time": new_time.strftime("%H:%M"),
@@ -1178,7 +1169,6 @@ def page_calendar():
                     "Difficulty": "Medium", "Done": False, "XP": 50
                 })
                 sync_data()
-                st.toast("Mission Added to Calendar")
                 st.rerun()
 
 # --- 8. PAGE: AI ASSISTANT ---
@@ -1324,7 +1314,7 @@ def page_ai_assistant():
 def inject_custom_css():
     # 1. Load User Preferences
     theme_color = st.session_state.get('theme_color', 'Venom Green (Default)')
-    theme_mode = st.session_state.get('theme_mode', 'Light') # Default to Light to match your screenshot
+    theme_mode = st.session_state.get('theme_mode', 'Light') 
     
     # 2. Define Accent Colors
     colors = {
@@ -1337,22 +1327,20 @@ def inject_custom_css():
     
     # 3. Define Visual Protocols
     if theme_mode == "Light":
-        # ORIGINAL PREMIUM LOOK (The "Morning" Gradient)
         main_bg = "linear-gradient(180deg, #FFF6E5 0%, #FFFFFF 40%, #Eef2ff 100%)"
         sidebar_bg = "linear-gradient(180deg, #FDF3E6 0%, #FFFFFF 100%)"
         card_bg = "#FFFFFF"
         text_color = "#1A1A1A"
         sub_text = "#444444"
         border_color = "rgba(0,0,0,0.05)"
-        shadow = "0 10px 40px -10px rgba(0,0,0,0.08)" # The "Floating" shadow
+        shadow = "0 10px 40px -10px rgba(0,0,0,0.08)"
         input_bg = "#FFFFFF"
         nav_active_bg = accent
         nav_active_text = "#000000"
     else:
-        # PREMIUM DARK MODE (Deep & Glassy)
         main_bg = "linear-gradient(180deg, #0E1117 0%, #151922 100%)"
         sidebar_bg = "#0E1117"
-        card_bg = "#1E232F" # Slightly lighter than bg
+        card_bg = "#1E232F"
         text_color = "#FAFAFA"
         sub_text = "#A0A0A0"
         border_color = "rgba(255,255,255,0.1)"
@@ -1381,7 +1369,7 @@ def inject_custom_css():
                 border-right: 1px solid {border_color};
             }}
             
-            /* --- TYPOGRAPHY (BIG & BOLD) --- */
+            /* --- TYPOGRAPHY --- */
             h1 {{
                 font-size: 42px !important;
                 font-weight: 800 !important;
@@ -1408,7 +1396,7 @@ def inject_custom_css():
                 color: {sub_text} !important;
             }}
             
-            /* --- CARDS (The key to the look) --- */
+            /* --- CARDS --- */
             .css-card {{
                 background-color: {card_bg};
                 border-radius: 24px;
@@ -1469,7 +1457,7 @@ def inject_custom_css():
                 border-radius: 10px;
             }}
             
-            /* --- BLACK CARD OVERRIDE (For Schedule) --- */
+            /* --- BLACK CARD OVERRIDE --- */
             .black-card {{
                 background-color: #1A1A1A !important; 
                 color: white !important; 
@@ -1478,12 +1466,28 @@ def inject_custom_css():
                 border: 1px solid #333;
                 box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             }}
-            .black-card * {{ color: white !important; }} 
+            .black-card * {{ color: white !important; }}
+
+            /* --- MOBILE CALENDAR GRID FIX (CRITICAL) --- */
+            /* This forces the 7 calendar columns to stay side-by-side on mobile */
+            [data-testid="column"] {{
+                width: calc(14.2% - 10px) !important;
+                flex: 1 1 calc(14.2% - 10px) !important;
+                min-width: 0 !important;
+            }}
+            
+            /* Reset width for bigger columns (like main layout) so they don't break */
+            .stMain [data-testid="column"]:has(div.big-title),
+            .stMain [data-testid="column"]:has(div.css-card) {{
+                width: 100% !important;
+                flex: 1 1 100% !important;
+            }}
         </style>
     """, unsafe_allow_html=True)
 
+
 # --- 10. MAIN ROUTER ---
-# --- PDF REPORT GENERATOR ---
+
 def create_mission_report(user_name, level, xp, history):
     pdf = FPDF()
     pdf.add_page()
