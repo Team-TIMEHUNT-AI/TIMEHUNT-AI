@@ -1419,29 +1419,32 @@ def create_mission_report(user_name, level, xp, history):
     # Return PDF as bytes
     return pdf.output(dest='S').encode('latin-1')
 
+# --- 10. MAIN ROUTER ---
 def page_home():
-    # Greeting Logic
-    current_hour = datetime.datetime.now().hour
-    if current_hour < 12: greeting = "Good Morning"
-    elif current_hour < 18: greeting = "Good Afternoon"
-    else: greeting = "Good Evening"
+    # --- TIMEZONE FIX: CALCULATE IST (UTC + 5:30) ---
+    ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    current_hour = ist_now.hour
+    
+    # Dynamic Greeting Logic based on IST
+    if 5 <= current_hour < 12:
+        greeting = "Good Morning"
+    elif 12 <= current_hour < 17:
+        greeting = "Good Afternoon"
+    elif 17 <= current_hour < 22:
+        greeting = "Good Evening"
+    else:
+        greeting = "Night Owl Protocol Active 🦉" # Cool touch for late night
 
     # Quotes
-    quotes = ["Be Productive Today 🙌", "Hunt Down Your Goals 🏹", "Focus. Execute. Win. 🏆"]
+    quotes = ["Be Productive Today 🙌", "Hunt Down Your Goals 🏹", "Focus. Execute. Win. 🏆", "Discipline equals Freedom ⚔️"]
     random_sub = random.choice(quotes)
 
-    # Variables
-    if 'current_objective' not in st.session_state:
-        st.session_state['current_objective'] = "Clear Backlog"
-    xp_in_level = st.session_state['user_xp'] % 500
-    progress_pct = min((xp_in_level / 500) * 100, 100)
-    
-    # Render Header (Classes will use the big fonts from CSS now)
+    # Render Header
     st.markdown(f'<div class="big-title">{greeting}, {st.session_state["user_name"]}!</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sub-title">{random_sub}</div>', unsafe_allow_html=True)
 
     with st.expander("🖊️ Update Dashboard Status"):
-        new_obj = st.text_input("Current Objective", value=st.session_state['current_objective'])
+        new_obj = st.text_input("Current Objective", value=st.session_state.get('current_objective', 'Clear Backlog'))
         if st.button("Update"):
             st.session_state['current_objective'] = new_obj
             st.rerun()
@@ -1449,7 +1452,7 @@ def page_home():
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        # CLEAN CARD (Removed hardcoded styles, uses CSS classes)
+        # XP CARD
         st.markdown(f"""
         <div class="css-card">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1457,10 +1460,7 @@ def page_home():
                 <span style="background:rgba(181, 255, 95, 0.2); padding:5px 10px; border-radius:15px; font-size:12px; color:var(--text);">Protocol Active</span>
             </div>
             <br>
-            <div class="card-sub" style="font-size:18px; margin-bottom:15px;">{st.session_state['current_objective']}</div>
-            <div style="height:8px; width:100%; background:rgba(0,0,0,0.1); border-radius:4px;">
-                <div style="height:100%; width:{progress_pct}%; background:var(--accent); border-radius:4px;"></div>
-            </div>
+            <div class="card-sub" style="font-size:18px; margin-bottom:15px;">{st.session_state.get('current_objective', 'Clear Backlog')}</div>
             <div style="display:flex; justify-content:space-between; margin-top:15px;">
                 <div><div class="stat-num">{st.session_state['user_xp']}</div><div class="card-sub">Total XP</div></div>
                 <div><div class="stat-num">{st.session_state['user_level']}</div><div class="card-sub">Level</div></div>
@@ -1468,7 +1468,7 @@ def page_home():
         </div>
         """, unsafe_allow_html=True)
         
-        # Breathing Exercise (ANIMATED NEON CIRCLE)
+        # BREATHING EXERCISE
         with st.expander("🧘 Tactical Decompression"):
             st.markdown("""
             <style>
@@ -1477,20 +1477,14 @@ def page_home():
                     50% { transform: scale(1.6); opacity: 1; box-shadow: 0 0 25px var(--accent); }
                     100% { transform: scale(1); opacity: 0.5; box-shadow: 0 0 5px var(--accent); }
                 }
-                .breath-container {
-                    display: flex; flex-direction: column; align-items: center; padding: 20px;
-                }
+                .breath-container { display: flex; flex-direction: column; align-items: center; padding: 20px; }
                 .breath-circle {
-                    width: 60px; height: 60px;
-                    border-radius: 50%;
+                    width: 60px; height: 60px; border-radius: 50%;
                     background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
-                    border: 2px solid var(--accent);
-                    animation: breathe 5s infinite ease-in-out;
+                    border: 2px solid var(--accent); animation: breathe 5s infinite ease-in-out;
                     margin-bottom: 15px;
                 }
-                .breath-text {
-                    font-family: monospace; color: var(--text); opacity: 0.8; letter-spacing: 2px;
-                }
+                .breath-text { font-family: monospace; color: var(--text); opacity: 0.8; letter-spacing: 2px; }
             </style>
             <div class="breath-container">
                 <div class="breath-circle"></div>
@@ -1499,7 +1493,7 @@ def page_home():
             """, unsafe_allow_html=True)
 
     with col2:
-        # Green Card (Hardcoded Green is okay here for emphasis, but we use the variable)
+        # DAILY FOCUS CARD
         st.markdown(f"""
         <div class="css-card" style="background-color: var(--accent) !important;">
             <div class="card-title" style="color:#000 !important;">Daily Focus</div>
@@ -1507,13 +1501,16 @@ def page_home():
         </div>
         """, unsafe_allow_html=True)
 
-        # Black Card (Specific Design)
+        # NEXT TASK CARD
         next_task = st.session_state['reminders'][-1]['task'] if st.session_state['reminders'] else "No alerts"
+        # We also format the date using IST
+        date_str = ist_now.strftime("%b %d")
+        
         st.markdown(f"""
         <div class="black-card">
             <div style="font-weight:bold; margin-bottom:10px; font-size:18px;">Scheduled</div>
             <div style="background:#333; padding:10px; border-radius:10px; text-align:center; margin-bottom:15px;">
-                <div style="font-size:20px; font-weight:bold;">{datetime.datetime.now().strftime("%b %d")}</div>
+                <div style="font-size:20px; font-weight:bold;">{date_str}</div>
             </div>
             <div style="color:#aaa; font-size:12px;">NEXT REMINDER:</div>
             <div style="color:white; font-size:14px;">{next_task}</div>
