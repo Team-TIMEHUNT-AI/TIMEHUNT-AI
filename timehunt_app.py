@@ -65,7 +65,6 @@ def render_alarm_ui():
         idx = alarm_data['index']
         
         # 1. PLAY SOUND (With Loop)
-        # We use a looping audio player so it keeps beeping until you stop it
         sound_file = "alarm.mp3"
         if os.path.exists(sound_file):
             with open(sound_file, "rb") as f:
@@ -96,7 +95,9 @@ def render_alarm_ui():
                     st.session_state['reminders'][idx]['time'] = new_time
                     st.session_state['reminders'][idx]['notified'] = False
                     st.session_state['active_alarm'] = None
-                    save_data()
+                    
+                    sync_data()  # <--- CHANGED THIS LINE (Old: save_data())
+                    
                     st.toast("Alarm Snoozed for 5 minutes.")
                     st.rerun()
 
@@ -106,7 +107,9 @@ def render_alarm_ui():
                     # Remove the reminder entirely
                     st.session_state['reminders'].pop(idx)
                     st.session_state['active_alarm'] = None
-                    save_data()
+                    
+                    sync_data()  # <--- CHANGED THIS LINE (Old: save_data())
+                    
                     st.toast("Task marked as complete.")
                     st.rerun()
 
@@ -139,31 +142,107 @@ def play_alarm_sound():
             """, unsafe_allow_html=True)
 
 # --- DATA PERSISTENCE FUNCTIONS (NEW) ---
-DATA_FILE = "user_data.json"
+# --- NEW: CLOUD SYNC ENGINE (REPLACES JSON) ---
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    return {}
+def sync_data():
+    """Saves current Reminders & Timetable to Google Sheets (Reminders Tab)"""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        uid = st.session_state.get('user_id')
+        if not uid: return
 
-def save_data():
-    data = {
-        'user_name': st.session_state.get('user_name'),
-        'user_type': st.session_state.get('user_type'),
-        'struggle_type': st.session_state.get('struggle_type'),
-        'user_avatar': st.session_state.get('user_avatar'),
-        'onboarding_complete': st.session_state.get('onboarding_complete'),
-        'chat_history': st.session_state.get('chat_history', []),
-        'timetable_slots': st.session_state.get('timetable_slots', []),
-        'user_xp': st.session_state.get('user_xp', 0),
-        'user_level': st.session_state.get('user_level', 1),
-        'xp_history': st.session_state.get('xp_history', []),
-        'study_hours': st.session_state.get('study_hours', 4),
-        'reminders': st.session_state.get('reminders', []) # <--- ADDED THIS LINE
-    }
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, default=str)
+        # 1. READ EXISTING SHEET
+        try:
+            df_cloud = conn.read(worksheet="Reminders", ttl=0)
+            # Filter out THIS user's old data (keep everyone else's)
+            if not df_cloud.empty and "UserID" in df_cloud.columns:
+                df_others = df_cloud[df_cloud["UserID"] != uid]
+            else:
+                df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
+        except:
+            df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
+
+        # 2. PREPARE NEW ROWS FROM SESSION STATE
+        new_rows = []
+        
+        # A. Alarms
+        for rem in st.session_state.get('reminders', []):
+            new_rows.append({
+                "UserID": uid,
+                "Task": rem['task'],
+                "Time": str(rem['time']), 
+                "Status": "Done" if rem.get('notified') else "Pending",
+                "Type": "Alarm"
+            })
+            
+        # B. Timetable Slots
+        for slot in st.session_state.get('timetable_slots', []):
+             new_rows.append({
+                "UserID": uid,
+                "Task": slot['Activity'],
+                "Time": slot['Time'],
+                "Status": "Done" if slot['Done'] else "Pending",
+                "Type": f"Schedule-{slot['Category']}" # e.g., Schedule-Study
+            })
+
+        # 3. MERGE & UPLOAD
+        if new_rows:
+            df_my_data = pd.DataFrame(new_rows)
+            df_final = pd.concat([df_others, df_my_data], ignore_index=True)
+        else:
+            df_final = df_others # User cleared everything
+            
+        conn.update(worksheet="Reminders", data=df_final)
+
+    except Exception as e:
+        print(f"Cloud Sync Error: {e}")
+
+def load_cloud_data():
+    """Loads Reminders & Timetable from Google Sheets on Login"""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        uid = st.session_state.get('user_id')
+        
+        # Read Reminders Tab
+        try:
+            df = conn.read(worksheet="Reminders", ttl=0)
+        except:
+            return # Tab might not exist yet
+
+        if not df.empty and "UserID" in df.columns:
+            my_data = df[df["UserID"] == uid]
+            
+            loaded_reminders = []
+            loaded_timetable = []
+            
+            for _, row in my_data.iterrows():
+                # Parse Alarms
+                if row['Type'] == "Alarm":
+                    loaded_reminders.append({
+                        "task": row['Task'],
+                        "time": row['Time'], # Will be string, parsed later by check_reminders
+                        "notified": (row['Status'] == "Done")
+                    })
+                # Parse Schedule
+                elif "Schedule" in str(row['Type']):
+                    cat = row['Type'].split("-")[1] if "-" in row['Type'] else "General"
+                    loaded_timetable.append({
+                        "Time": row['Time'],
+                        "Activity": row['Task'],
+                        "Category": cat,
+                        "Done": (row['Status'] == "Done"),
+                        "XP": 50, # Default XP
+                        "Difficulty": "Medium" # Default
+                    })
+            
+            st.session_state['reminders'] = loaded_reminders
+            st.session_state['timetable_slots'] = loaded_timetable
+            
+    except Exception as e:
+        print(f"Cloud Load Error: {e}")
+
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -471,7 +550,8 @@ def check_reminders():
                     'index': i
                 }
                 rem['notified'] = True 
-                save_data()
+                
+                sync_data()  # <--- CHANGED THIS LINE (Old: save_data())
                 
                 # --- NEW: TRIGGER BROWSER NOTIFICATION ---
                 # This runs JS to pop up a system alert
@@ -489,8 +569,6 @@ def check_reminders():
 
 # --- 6. PAGE: ONBOARDING (DESIGN OPTIMIZED) ---
 
-# --- 6. PAGE: SMART ONBOARDING (With Suggestions & PIN) ---
-# --- 6. PAGE: SMART ONBOARDING (Fixed PIN & Avatars) ---
 def page_onboarding():
     
     # 1. Background Setup
@@ -571,6 +649,7 @@ def page_onboarding():
                                         st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
                                         st.session_state['onboarding_complete'] = True
                                         st.toast(f"Welcome back, {name_input}!", icon="🔓")
+                                        load_cloud_data()
                                         time.sleep(1)
                                         st.rerun()
                                     else:
@@ -671,7 +750,7 @@ def page_onboarding():
             
             if st.button("🚀 LAUNCH COMMAND CENTER"):
                st.session_state['onboarding_complete'] = True
-               save_data()  # <--- CRITICAL: Save to file BEFORE restarting!
+               sync_data()  # <--- CRITICAL: Save to file BEFORE restarting!
                st.rerun()
 
 # --- 7. PAGE: SCHEDULER ---
@@ -752,7 +831,7 @@ def page_scheduler():
 
     if st.button("🗑️ Reset Schedule"):
         st.session_state['timetable_slots'] = []
-        save_data()
+        sync_data()
         st.rerun()
     
     if st.session_state['timetable_slots']:
@@ -801,7 +880,7 @@ def page_scheduler():
                         # 3. Log History
                         today_str = datetime.date.today().strftime("%Y-%m-%d")
                         st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
-                        save_data() 
+                        sync_data() 
                         
                         st.balloons() # CELEBRATION
                         st.toast(f"Reward: {raw_xp} x {multiplier:.1f} Streak = +{final_xp} XP!", icon="🎉")
@@ -822,7 +901,7 @@ def page_ai_assistant():
         # --- NEW: DELETE CHAT BUTTON ---
         if st.button("🗑️ Clear Comms"):
             st.session_state['chat_history'] = []
-            save_data() # Update file
+            sync_data() # Update file
             st.rerun()
 
     st.markdown('<div class="sub-title">Intelligence & Strategy Center</div>', unsafe_allow_html=True)
@@ -928,7 +1007,7 @@ def handle_chat(prompt):
                          "XP": 50
                      })
                  res_text = "✅ **Protocol Established.** I have automatically added the new timetable to your Scheduler tab."
-                 save_data() 
+                 sync_data() 
              except Exception as e:
                  print(f"JSON Parse Error: {e}")
                  # If parsing fails, we just keep the text response
@@ -936,7 +1015,7 @@ def handle_chat(prompt):
 
          # 3. Add AI Message
          st.session_state['chat_history'].append({"role": "assistant", "text": res_text})
-         save_data() 
+         sync_data() 
     
     st.rerun()
 
@@ -1412,7 +1491,7 @@ def page_settings():
     new_name = st.text_input("Update Codename", st.session_state.get('user_name', ''))
     if st.button("Save Name"):
         st.session_state['user_name'] = new_name
-        save_data()
+        sync_data()
         st.toast("Identity Updated.")
 
     st.markdown("---")
