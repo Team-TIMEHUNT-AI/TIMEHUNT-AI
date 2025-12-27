@@ -1262,7 +1262,7 @@ def page_about():
     st.markdown("## 🛡️ TimeHunt AI: System Overview")
     
     # --- FIXED CAPSTONE BADGE ---
-    # Added 'text-align: left' and adjusted margins for perfect visibility
+    # Added 'text-align: left' and specific margins to fix the layout
     st.markdown("""
     <div style="
         background: linear-gradient(90deg, #1A1A1A, #333); 
@@ -1303,6 +1303,7 @@ def page_about():
 
     st.markdown("---")
     st.caption("Developed with ❤️ using Python & Streamlit")
+
 
     
 # ------ SETTINGS PAGE --------
