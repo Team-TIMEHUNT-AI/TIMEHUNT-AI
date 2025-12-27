@@ -371,8 +371,7 @@ def initialize_session_state():
     
     # 1. Define Defaults (What to use if NO saved data exists)
     today_str = datetime.date.today().strftime("%Y-%m-%d")
-    
-        defaults = {
+    defaults = {
         'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
         'active_alarm': None,
         'splash_played': False,
