@@ -1066,66 +1066,30 @@ def page_timer():
 
 # --- 8. PAGE: AI ASSISTANT ---
 
+# --- 8. PAGE: AI ASSISTANT (GEMINI STYLE) ---
 def page_ai_assistant():
-    # Note: Sidebar is now handled in main(), this is just the main area UI
-    
-    # Header & Options
-        # 2. MAIN HEADER & OPTIONS (Improved Alignment)
-    c_head, c_btn = st.columns([4, 1], gap="small", vertical_alignment="center")
-    
-    with c_head:
-        st.markdown(f'<div class="big-title">Tactical AI Support 🤖</div>', unsafe_allow_html=True)
-        st.caption(f"Current Session: {st.session_state.get('current_session_name', 'New Chat')}")
-        
-    with c_btn:
-        # Puts the button on the far right
-        with st.popover("⚙️ Options", use_container_width=True):
-            new_name = st.text_input("Rename Chat", value=st.session_state.get('current_session_name', ''))
-            if st.button("Save Name"):
-                if st.session_state.get('current_session_id'):
-                    rename_chat_session(st.session_state['current_session_id'], new_name)
-                    st.session_state['current_session_name'] = new_name
-                    st.rerun()
-            
-            if st.button("🗑️ Delete Chat", type="primary"):
-                if st.session_state.get('current_session_id'):
-                    delete_chat_session(st.session_state['current_session_id'])
-                    st.session_state['current_session_id'] = None
-                    st.session_state['chat_history'] = []
-                    st.rerun()
-
-    # Display Messages
-    if not st.session_state['chat_history']:
-        st.info("Tactical Uplink Ready. Initialize command.")
-    
-    for msg in st.session_state['chat_history']:
-        role = msg.get('role') or msg.get('Role')
-        text = msg.get('text') or msg.get('Content')
-        
-        if role == "model" or role == "assistant":
-            with st.chat_message("assistant", avatar="1000592991.png"): # Ensure correct image path
-                st.write(text)
-        else:
-            user_av = st.session_state.get('user_avatar', "👤")
-            full_path = os.path.join(current_dir, str(user_av))
-            avatar_to_use = full_path if str(user_av).endswith(('.png', '.jpg')) and os.path.exists(full_path) else "👤"
-            with st.chat_message("user", avatar=avatar_to_use):
-                st.write(text)
-
-    # Chat Input
-    if prompt := st.chat_input("Input command parameters..."):
+    # --- 1. SETUP & HELPER FUNCTION ---
+    # We define this inside so both the Input Bar and Buttons can use it
+    def process_new_message(user_text):
+        # A. Initialize Session if New
         if not st.session_state.get('current_session_id'):
             new_id = str(uuid.uuid4())
             st.session_state['current_session_id'] = new_id
-            short_name = " ".join(prompt.split()[:4])
+            # Auto-name: First 4 words
+            short_name = " ".join(user_text.split()[:4])
             st.session_state['current_session_name'] = short_name
         
-        st.session_state['chat_history'].append({"role": "user", "text": prompt})
-        save_chat_to_cloud("user", prompt) 
+        # B. Save User Message
+        st.session_state['chat_history'].append({"role": "user", "text": user_text})
+        save_chat_to_cloud("user", user_text) 
         
-        with st.chat_message("assistant", avatar="1000592991.png"): # Ensure correct image path
-             with st.spinner("Processing Strategy..."):
-                 res_text, _ = perform_auto_search(prompt)
+        # C. Generate Response (with Spinner in the right place)
+        # We need a placeholder because we are inside a function
+        with st.chat_message("assistant", avatar="1000592991.png"):
+             with st.spinner("Analyzing Strategy..."):
+                 res_text, _ = perform_auto_search(user_text)
+                 
+                 # Check for JSON schedule
                  json_match = re.search(r'\[\s*\{.*?\}\s*\]', res_text, re.DOTALL)
                  if json_match:
                      try:
@@ -1136,14 +1100,108 @@ def page_ai_assistant():
                                  "Time": slot.get("Time", "00:00"), "Activity": slot.get("Activity", "Mission"),
                                  "Category": slot.get("Category", "Study"), "Done": False, "XP": 50, "Difficulty": "Medium"
                              })
-                         res_text = "✅ **Protocol Established.** I have automatically added the new timetable to your Scheduler tab."
+                         res_text = "✅ **Protocol Established.** Timetable added to Scheduler."
                          sync_data() 
                      except: pass
                  st.write(res_text)
         
+        # D. Save AI Response
         st.session_state['chat_history'].append({"role": "assistant", "text": res_text})
         save_chat_to_cloud("assistant", res_text) 
         st.rerun()
+
+    # --- 2. HEADER UI ---
+    c_head, c_btn = st.columns([4, 1], gap="small", vertical_alignment="center")
+    with c_head:
+        st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
+        st.caption(f"Session: {st.session_state.get('current_session_name', 'New Chat')}")
+        
+    with c_btn:
+        with st.popover("⚙️ Options", use_container_width=True):
+            new_name = st.text_input("Rename", value=st.session_state.get('current_session_name', ''))
+            if st.button("Save Name"):
+                if st.session_state.get('current_session_id'):
+                    rename_chat_session(st.session_state['current_session_id'], new_name)
+                    st.session_state['current_session_name'] = new_name
+                    st.rerun()
+            if st.button("🗑️ Delete", type="primary"):
+                if st.session_state.get('current_session_id'):
+                    delete_chat_session(st.session_state['current_session_id'])
+                    st.session_state['current_session_id'] = None
+                    st.session_state['chat_history'] = []
+                    st.rerun()
+
+    # --- 3. WELCOME SCREEN (If History is Empty) ---
+    if not st.session_state['chat_history']:
+        # Dynamic Greetings List
+        greetings = [
+            "Where should we start?",
+            "What is the mission?",
+            "Ready to optimize?",
+            "Awaiting instructions.",
+            "Let's hunt some goals."
+        ]
+        user_first_name = st.session_state['user_name'].split()[0]
+        random_greet = random.choice(greetings)
+        
+        # Gemini-Style Welcome UI
+        st.markdown(f"""
+        <style>
+            .welcome-text {{
+                font-size: 40px;
+                font-weight: 600;
+                background: -webkit-linear-gradient(45deg, #B5FF5F, #00E5FF);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin-top: 20px;
+            }}
+            .sub-text {{
+                font-size: 40px;
+                font-weight: 600;
+                color: #ccc; 
+                margin-bottom: 40px;
+            }}
+        </style>
+        <div>
+            <div class="welcome-text">Hi, {user_first_name}</div>
+            <div class="sub-text">{random_greet}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Suggestion Chips (Buttons)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            if st.button("📅 Plan Day", use_container_width=True):
+                process_new_message("Create a strict hourly schedule for me today.")
+        with c2:
+            if st.button("🧠 Learn", use_container_width=True):
+                process_new_message("Explain a complex topic simply.")
+        with c3:
+            if st.button("🔥 Motivate", use_container_width=True):
+                process_new_message("I am tired. Give me elite motivation.")
+        with c4:
+            if st.button("📝 Study Tips", use_container_width=True):
+                process_new_message("Give me the best scientific study techniques.")
+
+    # --- 4. CHAT HISTORY DISPLAY ---
+    else:
+        for msg in st.session_state['chat_history']:
+            role = msg.get('role') or msg.get('Role')
+            text = msg.get('text') or msg.get('Content')
+            
+            if role == "model" or role == "assistant":
+                with st.chat_message("assistant", avatar="1000592991.png"):
+                    st.write(text)
+            else:
+                user_av = st.session_state.get('user_avatar', "👤")
+                full_path = os.path.join(current_dir, str(user_av))
+                avatar_to_use = full_path if str(user_av).endswith(('.png', '.jpg')) and os.path.exists(full_path) else "👤"
+                with st.chat_message("user", avatar=avatar_to_use):
+                    st.write(text)
+
+    # --- 5. CHAT INPUT BAR ---
+    if prompt := st.chat_input("Input command parameters..."):
+        process_new_message(prompt)
 
 # --- 9. CUSTOM UI STYLING (SIDEBAR & MAIN THEME) ---
 
