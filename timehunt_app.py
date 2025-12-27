@@ -195,7 +195,7 @@ def sync_data():
         conn.update(worksheet="Reminders", data=df_final) # Write fresh
         
     except Exception as e:
-        print(f"Sync Error: {e}")
+        st.toast(f"Sync Error: {e}", icon="⚠️")
 
 def load_cloud_data():
     """Loads Reminders & Timetable from Google Sheets on Login"""
@@ -761,13 +761,12 @@ def page_scheduler():
             if 'Done' not in slot: slot['Done'] = False
             if 'Activity' not in slot: slot['Activity'] = "Unknown Mission"
             if 'Category' not in slot: slot['Category'] = "Study"
-            if 'Difficulty' not in slot: slot['Difficulty'] = "Medium" # NEW
+            if 'Difficulty' not in slot: slot['Difficulty'] = "Medium"
             if 'XP' not in slot: slot['XP'] = 50
 
     col_header, col_av = st.columns([4,1])
     with col_header:
         st.markdown('<div class="big-title">Mission Control ⚙️</div>', unsafe_allow_html=True)
-        # SHOW STREAK HERE
         streak = st.session_state.get('streak', 1)
         st.markdown(f'<div class="sub-title">Current Streak: <span style="color:#B5FF5F; font-weight:bold;">🔥 {streak} Days</span> (XP x{1 + (streak*0.1):.1f})</div>', unsafe_allow_html=True)
     
@@ -782,45 +781,29 @@ def page_scheduler():
             with cols_form[1]:
                 m_type = st.selectbox("Type", ["Study", "Project", "Health", "Errand"])
             with cols_form[2]:
-                # NEW DIFFICULTY SELECTOR
                 diff = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
             
             submitted = st.form_submit_button("Add to Schedule ➔")
             
-            # --- CORRECTED BLOCK STARTS HERE ---
             if submitted and task:
-                # 1. Add to Session State
                 base_xp = 30 if diff == "Easy" else 50 if diff == "Medium" else 100
-                new_entry = {
+                st.session_state['timetable_slots'].append({
                     "Time": datetime.datetime.now().strftime("%H:%M"),
                     "Activity": task, 
                     "Category": m_type, 
                     "Difficulty": diff,
                     "Done": False, 
                     "XP": base_xp
-                }
-                st.session_state['timetable_slots'].append(new_entry)
-                
-                # 2. DEBUG PRINT ON SCREEN (Blue Box)
-                st.info("👇 1. DATA ADDED TO MEMORY:")
-                st.write(new_entry)
-
-                # 3. Attempt Sync
-                st.warning("🔄 2. ATTEMPTING SYNC TO GOOGLE SHEETS...")
-                sync_data()
-                st.success("✅ 3. SYNC FUNCTION FINISHED")
-                
-                # 4. STOP HERE (To let you read the debug messages)
-                st.error("🛑 AUTO-REFRESH STOPPED FOR DEBUGGING. CHECK YOUR GOOGLE SHEET NOW.")
-                # st.rerun() # <--- Commented out so you can see the results
-            # --- CORRECTED BLOCK ENDS HERE ---
+                })
+                sync_data() # Save to cloud
+                st.toast(f"Mission Deployed: {task}", icon="🦅")
+                st.rerun()
 
     with c2:
         total_tasks = len(st.session_state['timetable_slots'])
         pending_tasks = len([t for t in st.session_state['timetable_slots'] if not t['Done']])
         completed_tasks = total_tasks - pending_tasks
         
-        # CLEAN CARD HTML
         st.markdown(f"""
         <div class="css-card" style="text-align: center;">
             <div class="card-title" style="margin-bottom: 15px;">Mission Status</div>
@@ -865,7 +848,6 @@ def page_scheduler():
                 num_rows="dynamic"
             )
 
-            # Update session state if edited manually
             st.session_state['timetable_slots'] = edited_df.to_dict('records')
             
             st.write("")
@@ -887,10 +869,9 @@ def page_scheduler():
                         
                         today_str = datetime.date.today().strftime("%Y-%m-%d")
                         st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
-                        
                         sync_data() 
                         
-                        st.balloons() 
+                        st.balloons()
                         st.toast(f"Reward: {raw_xp} x {multiplier:.1f} Streak = +{final_xp} XP!", icon="🎉")
                         time.sleep(2)
                         st.rerun()
@@ -900,6 +881,7 @@ def page_scheduler():
         st.info("No active protocols. Deploy a mission above.")
 
 # --- 8. PAGE: AI ASSISTANT (ENHANCED) ---
+
 def page_ai_assistant():
     # 1. Header with Clear Button
     c_head, c_btn = st.columns([3, 1])
