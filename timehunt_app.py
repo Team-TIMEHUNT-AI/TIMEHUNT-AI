@@ -490,6 +490,7 @@ def check_reminders():
 # --- 6. PAGE: ONBOARDING (DESIGN OPTIMIZED) ---
 
 # --- 6. PAGE: SMART ONBOARDING (With Suggestions & PIN) ---
+# --- 6. PAGE: SMART ONBOARDING (Fixed PIN & Avatars) ---
 def page_onboarding():
     
     # 1. Background Setup
@@ -534,7 +535,6 @@ def page_onboarding():
             st.markdown('<div class="cyber-header">TIMEHUNT</div>', unsafe_allow_html=True)
             st.markdown('<p style="color:#B5FF5F;">SECURE IDENTITY PROTOCOL</p>', unsafe_allow_html=True)
             
-            # Smart Input: Uses clicked suggestion if available
             default_val = st.session_state.get('suggested_name_choice', "")
             name_input = st.text_input("CODENAME", value=default_val, placeholder="ENTER IDENTITY...", key="login_name").strip()
             pin_input = st.text_input("ACCESS PIN (4-DIGIT)", placeholder="####", type="password", key="login_pin", max_chars=4)
@@ -550,13 +550,19 @@ def page_onboarding():
                             df = conn.read(worksheet="Sheet1", ttl=0)
                             
                             if not df.empty and 'Name' in df.columns:
-                                df['PIN'] = df['PIN'].astype(str)
+                                # --- PIN FIX: Force conversion to string and remove decimals ---
+                                df['PIN'] = df['PIN'].astype(str).replace(r'\.0$', '', regex=True)
+                                
                                 existing = df[df['Name'] == name_input]
                                 
                                 if not existing.empty:
                                     # USER EXISTS -> CHECK PIN
                                     stored_pin = str(existing.iloc[0]['PIN']).strip()
-                                    if pin_input == stored_pin:
+                                    
+                                    # Debug print if needed (check console)
+                                    print(f"DEBUG: Input='{pin_input}', Stored='{stored_pin}'")
+                                    
+                                    if str(pin_input) == stored_pin:
                                         # Login Success
                                         row = existing.iloc[0]
                                         st.session_state['user_name'] = row['Name']
@@ -572,7 +578,6 @@ def page_onboarding():
                                         st.error(f"⛔ Identity '{name_input}' is taken. Incorrect PIN.")
                                         st.markdown("**Available Suggestions:**")
                                         
-                                        # Generate Suggestions
                                         s1, s2, s3 = f"{name_input}_{random.randint(10,99)}", f"Agent_{name_input}", f"{name_input}X"
                                         c_s1, c_s2, c_s3 = st.columns(3)
                                         if c_s1.button(s1): 
@@ -604,23 +609,27 @@ def page_onboarding():
                     st.warning("Enter Codename & PIN.")
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- STEP 2: AVATAR ---
+        # --- STEP 2: AVATAR (NOW WITH IMAGES) ---
         elif step == 2:
             st.markdown('<div class="cyber-glass"><div class="cyber-header">AVATAR</div>', unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
-            # Avatar Buttons
-            if c1.button("SCHOLAR"): 
-                st.session_state['user_avatar'] = "Gemini_Generated_Image_djfbqkdjfbqkdjfb.png"
-                st.session_state['onboarding_step'] = 3
-                st.rerun()
-            if c2.button("TECHIE"): 
-                st.session_state['user_avatar'] = "Gemini_Generated_Image_z8e73dz8e73dz8e7.png"
-                st.session_state['onboarding_step'] = 3
-                st.rerun()
-            if c3.button("HUNTER"): 
-                st.session_state['user_avatar'] = "Gemini_Generated_Image_18oruj18oruj18or.png"
-                st.session_state['onboarding_step'] = 3
-                st.rerun()
+            
+            # Helper to show image safely
+            def show_av(col, name, file):
+                with col:
+                    if os.path.exists(file):
+                        st.image(file, width=100)
+                    else:
+                        st.write("🖼️") # Fallback icon
+                    if st.button(name):
+                        st.session_state['user_avatar'] = file
+                        st.session_state['onboarding_step'] = 3
+                        st.rerun()
+
+            show_av(c1, "SCHOLAR", "Gemini_Generated_Image_djfbqkdjfbqkdjfb.png")
+            show_av(c2, "TECHIE", "Gemini_Generated_Image_z8e73dz8e73dz8e7.png")
+            show_av(c3, "HUNTER", "Gemini_Generated_Image_18oruj18oruj18or.png")
+            
             st.markdown('</div>', unsafe_allow_html=True)
 
         # --- STEP 3: MISSION & SAVE ---
@@ -633,7 +642,6 @@ def page_onboarding():
                  st.session_state['user_type'] = role
                  st.session_state['user_goal'] = goal
                  
-                 # Upload Logic
                  try:
                      from streamlit_gsheets import GSheetsConnection
                      conn = st.connection("gsheets", type=GSheetsConnection)
@@ -645,7 +653,7 @@ def page_onboarding():
                          "XP": 0, "League": "Bronze",
                          "Avatar": st.session_state.get('user_avatar', "👤"),
                          "LastActive": datetime.date.today().strftime("%Y-%m-%d"),
-                         "PIN": st.session_state.get('temp_pin', "0000")
+                         "PIN": str(st.session_state.get('temp_pin', "0000")) # Ensure PIN is string
                      }])
                      
                      updated_df = new_user if df.empty else pd.concat([df, new_user], ignore_index=True)
@@ -658,6 +666,7 @@ def page_onboarding():
                  except Exception as e:
                      st.error(f"Upload Failed: {e}")
             st.markdown('</div>', unsafe_allow_html=True)
+
 
             
             if st.button("🚀 LAUNCH COMMAND CENTER"):
