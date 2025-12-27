@@ -143,97 +143,98 @@ def play_alarm_sound():
 
 # --- DATA PERSISTENCE FUNCTIONS (NEW) ---
 def sync_data():
-    """Nuclear Option: Wipes and rewrites the user's data to ensure sync."""
+    """Syncs data. MERGES Date+Time into 'Time' column for Sheets compatibility."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         uid = st.session_state.get('user_id')
         if not uid: return
 
-        # 1. READ EVERYTHING (To save other users)
+        # 1. Read existing
         try:
             df_cloud = conn.read(worksheet="Reminders", ttl=0)
             if not df_cloud.empty and "UserID" in df_cloud.columns:
-                # Keep everyone else's data, drop MINE
                 df_others = df_cloud[df_cloud["UserID"] != str(uid)]
             else:
                 df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
         except:
-            # If read fails, assume empty
             df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
 
-        # 2. BUILD MY NEW DATA
         new_rows = []
-        
-        # Alarms
+        # 2. Add Alarms
         for rem in st.session_state.get('reminders', []):
             new_rows.append({
                 "UserID": str(uid), "Task": str(rem['task']), "Time": str(rem['time']), 
                 "Status": "Done" if rem.get('notified') else "Pending", "Type": "Alarm"
             })
             
-        # Timetable
+        # 3. Add Schedule & Calendar Tasks (CRITICAL CALENDAR FIX)
         for slot in st.session_state.get('timetable_slots', []):
+             # Default to today if date is missing
+             date_val = slot.get('Date', datetime.date.today().strftime("%Y-%m-%d"))
+             # Combine Date and Time: "2025-10-27 14:00"
+             combined_time = f"{date_val} {slot['Time']}"
+             
              new_rows.append({
-                "UserID": str(uid), "Task": str(slot['Activity']), "Time": str(slot['Time']),
-                "Status": "Done" if slot['Done'] else "Pending", "Type": f"Schedule-{slot['Category']}"
+                "UserID": str(uid), "Task": str(slot['Activity']), 
+                "Time": combined_time, 
+                "Status": "Done" if slot['Done'] else "Pending", 
+                "Type": f"Schedule-{slot['Category']}"
             })
 
-        # 3. COMBINE & FORCE WRITE
+        # 4. Save
         if new_rows:
             df_my_data = pd.DataFrame(new_rows)
             df_final = pd.concat([df_others, df_my_data], ignore_index=True)
         else:
             df_final = df_others
 
-        # Ensure columns & types are perfect
-        df_final = df_final[["UserID", "Task", "Time", "Status", "Type"]]
-        df_final = df_final.astype(str)
-
-        # --- THE FIX: CLEAR & UPDATE ---
-        conn.clear(worksheet="Reminders") # Wipe it clean
-        conn.update(worksheet="Reminders", data=df_final) # Write fresh
+        df_final = df_final[["UserID", "Task", "Time", "Status", "Type"]].astype(str)
+        conn.clear(worksheet="Reminders")
+        conn.update(worksheet="Reminders", data=df_final)
         
     except Exception as e:
         st.toast(f"Sync Error: {e}", icon="⚠️")
 
 def load_cloud_data():
-    """Loads Reminders & Timetable from Google Sheets on Login"""
+    """Loads Reminders & Timetable. Parses Date/Time correctly."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         uid = st.session_state.get('user_id')
         
-        # Read Reminders Tab
-        try:
-            df = conn.read(worksheet="Reminders", ttl=0)
-        except:
-            return # Tab might not exist yet
+        try: df = conn.read(worksheet="Reminders", ttl=0)
+        except: return 
 
         if not df.empty and "UserID" in df.columns:
-            my_data = df[df["UserID"] == uid]
-            
+            my_data = df[df["UserID"] == str(uid)]
             loaded_reminders = []
             loaded_timetable = []
             
             for _, row in my_data.iterrows():
-                # Parse Alarms
                 if row['Type'] == "Alarm":
                     loaded_reminders.append({
-                        "task": row['Task'],
-                        "time": row['Time'], # Will be string, parsed later by check_reminders
-                        "notified": (row['Status'] == "Done")
+                        "task": row['Task'], "time": row['Time'], "notified": (row['Status'] == "Done")
                     })
-                # Parse Schedule
                 elif "Schedule" in str(row['Type']):
                     cat = row['Type'].split("-")[1] if "-" in row['Type'] else "General"
+                    
+                    # --- CALENDAR PARSING LOGIC ---
+                    raw_time = str(row['Time'])
+                    try:
+                        # Try parsing "YYYY-MM-DD HH:MM"
+                        dt_obj = datetime.datetime.strptime(raw_time, "%Y-%m-%d %H:%M")
+                        date_val = dt_obj.strftime("%Y-%m-%d")
+                        time_val = dt_obj.strftime("%H:%M")
+                    except ValueError:
+                        # Fallback for old data -> Assume Today
+                        date_val = datetime.date.today().strftime("%Y-%m-%d")
+                        time_val = raw_time
+
                     loaded_timetable.append({
-                        "Time": row['Time'],
-                        "Activity": row['Task'],
-                        "Category": cat,
-                        "Done": (row['Status'] == "Done"),
-                        "XP": 50, # Default XP
-                        "Difficulty": "Medium" # Default
+                        "Date": date_val, "Time": time_val,
+                        "Activity": row['Task'], "Category": cat,
+                        "Done": (row['Status'] == "Done"), "XP": 50, "Difficulty": "Medium"
                     })
             
             st.session_state['reminders'] = loaded_reminders
@@ -1064,9 +1065,68 @@ def page_timer():
         """
         components.html(timer_html, height=300)
 
+# --- NEW: CALENDAR PAGE ---
+def page_calendar():
+    st.markdown('<div class="big-title">📅 Tactical Calendar</div>', unsafe_allow_html=True)
+    
+    c_cal, c_list = st.columns([1, 2])
+    
+    with c_cal:
+        # Date Picker
+        sel_date = st.date_input("Select Deployment Date", datetime.date.today())
+        sel_date_str = sel_date.strftime("%Y-%m-%d")
+        
+        # Add Task Form
+        with st.form("cal_add", clear_on_submit=True):
+            st.write(f"**Add Mission for {sel_date_str}**")
+            task = st.text_input("Mission Objective")
+            time_at = st.time_input("Time")
+            cat = st.selectbox("Type", ["Study", "Project", "Health", "Errand"])
+            
+            if st.form_submit_button("Deploy to Calendar"):
+                st.session_state['timetable_slots'].append({
+                    "Date": sel_date_str,
+                    "Time": time_at.strftime("%H:%M"),
+                    "Activity": task, "Category": cat,
+                    "Difficulty": "Medium", "Done": False, "XP": 50
+                })
+                sync_data()
+                st.toast("Mission Scheduled.")
+                st.rerun()
+
+    with c_list:
+        st.markdown(f"### Missions for {sel_date_str}")
+        # Filter tasks for selected date
+        day_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == sel_date_str]
+        
+        if day_tasks:
+            for t in day_tasks:
+                status = "✅" if t['Done'] else "⬜"
+                st.markdown(f"""
+                <div style="background:#FFF; padding:10px; border-radius:10px; margin-bottom:5px; border-left: 5px solid #B5FF5F; box-shadow:0 2px 5px rgba(0,0,0,0.05); color:black;">
+                    {status} <b>{t['Time']}</b> : {t['Activity']} <span style="float:right; font-size:12px; background:#eee; padding:2px 8px; border-radius:10px;">{t['Category']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No operations scheduled.")
+
+    st.markdown("---")
+    st.markdown("### 🔭 Upcoming Intel (Next 3 Days)")
+    c1, c2, c3 = st.columns(3)
+    cols = [c1, c2, c3]
+    for i in range(1, 4):
+        future_date = datetime.date.today() + datetime.timedelta(days=i)
+        f_str = future_date.strftime("%Y-%m-%d")
+        f_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == f_str]
+        
+        with cols[i-1]:
+            st.markdown(f"**{future_date.strftime('%a, %b %d')}**")
+            if f_tasks:
+                for t in f_tasks: st.caption(f"• {t['Time']} {t['Activity']}")
+            else: st.caption("Clear")
+
 # --- 8. PAGE: AI ASSISTANT ---
 
-# --- 8. PAGE: AI ASSISTANT (GEMINI STYLE) ---
 def page_ai_assistant():
     # --- 1. SETUP & HELPER FUNCTION ---
     # We define this inside so both the Input Bar and Buttons can use it
@@ -1762,14 +1822,15 @@ def main():
             
             st.markdown("---")
             
-            # --- UPDATED NAVIGATION ---
+                        # --- UPDATED NAVIGATION ---
             nav = option_menu(
                 menu_title=None,
-                # Added 'Timer' to the list below
-                options=["Home", "Scheduler", "AI Assistant", "Timer", "Dashboard", "About", "Settings"], 
-                icons=["house", "calendar-check", "robot", "hourglass-split", "graph-up", "info-circle", "gear"], 
+                # ADD "Calendar" HERE 👇
+                options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "About", "Settings"], 
+                icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "info-circle", "gear"], 
                 default_index=0
             )
+
             st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
 
         # Router Logic
@@ -1778,7 +1839,8 @@ def main():
             st.rerun()
         elif nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
-        elif nav == "Timer": page_timer()  # <--- NEW ROUTE
+        elif nav == "Calendar": page_calendar()
+        elif nav == "Timer": page_timer()  
         elif nav == "Dashboard": page_dashboard()
         elif nav == "About": page_about()
         elif nav == "Settings": page_settings()
