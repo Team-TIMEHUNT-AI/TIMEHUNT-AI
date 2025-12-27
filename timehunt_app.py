@@ -16,6 +16,7 @@ import time
 import base64
 import json 
 import uuid
+import calendar
 # --- NEW: LIVE CLOCK & AUDIO ENGINE ---
 def render_live_clock():
     # We use an iframe so the clock is isolated and never gets stuck on "Loading..."
@@ -1066,64 +1067,119 @@ def page_timer():
         components.html(timer_html, height=300)
 
 # --- NEW: CALENDAR PAGE ---
+# --- NEW: TACTICAL GRID CALENDAR ---
 def page_calendar():
-    st.markdown('<div class="big-title">📅 Tactical Calendar</div>', unsafe_allow_html=True)
-    
-    c_cal, c_list = st.columns([1, 2])
-    
-    with c_cal:
-        # Date Picker
-        sel_date = st.date_input("Select Deployment Date", datetime.date.today())
-        sel_date_str = sel_date.strftime("%Y-%m-%d")
-        
-        # Add Task Form
-        with st.form("cal_add", clear_on_submit=True):
-            st.write(f"**Add Mission for {sel_date_str}**")
-            task = st.text_input("Mission Objective")
-            time_at = st.time_input("Time")
-            cat = st.selectbox("Type", ["Study", "Project", "Health", "Errand"])
-            
-            if st.form_submit_button("Deploy to Calendar"):
-                st.session_state['timetable_slots'].append({
-                    "Date": sel_date_str,
-                    "Time": time_at.strftime("%H:%M"),
-                    "Activity": task, "Category": cat,
-                    "Difficulty": "Medium", "Done": False, "XP": 50
-                })
-                sync_data()
-                st.toast("Mission Scheduled.")
-                st.rerun()
+    st.markdown('<div class="big-title">📅 Tactical Grid</div>', unsafe_allow_html=True)
 
-    with c_list:
-        st.markdown(f"### Missions for {sel_date_str}")
-        # Filter tasks for selected date
-        day_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == sel_date_str]
+    # 1. Initialize Session State for Calendar View
+    if 'cal_year' not in st.session_state: st.session_state['cal_year'] = datetime.date.today().year
+    if 'cal_month' not in st.session_state: st.session_state['cal_month'] = datetime.date.today().month
+    if 'sel_date' not in st.session_state: st.session_state['sel_date'] = datetime.date.today().strftime("%Y-%m-%d")
+
+    # 2. Month Navigation
+    c_prev, c_month, c_next = st.columns([1, 5, 1], vertical_alignment="center")
+    
+    with c_prev:
+        if st.button("◀", use_container_width=True):
+            st.session_state['cal_month'] -= 1
+            if st.session_state['cal_month'] < 1:
+                st.session_state['cal_month'] = 12
+                st.session_state['cal_year'] -= 1
+            st.rerun()
+
+    with c_next:
+        if st.button("▶", use_container_width=True):
+            st.session_state['cal_month'] += 1
+            if st.session_state['cal_month'] > 12:
+                st.session_state['cal_month'] = 1
+                st.session_state['cal_year'] += 1
+            st.rerun()
+
+    with c_month:
+        month_name = calendar.month_name[st.session_state['cal_month']]
+        st.markdown(f"<h2 style='text-align: center; margin:0;'>{month_name} {st.session_state['cal_year']}</h2>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # 3. DRAW THE GRID
+    # Weekday Headers
+    cols = st.columns(7)
+    days_header = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    for i, day in enumerate(days_header):
+        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888;'>{day}</div>", unsafe_allow_html=True)
+
+    # Calendar Days
+    month_matrix = calendar.monthcalendar(st.session_state['cal_year'], st.session_state['cal_month'])
+    
+    for week in month_matrix:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day == 0:
+                cols[i].write("") # Empty box
+            else:
+                # Construct date string YYYY-MM-DD
+                this_date_str = f"{st.session_state['cal_year']}-{st.session_state['cal_month']:02d}-{day:02d}"
+                
+                # Check if tasks exist for this date
+                task_count = len([t for t in st.session_state['timetable_slots'] if t.get('Date') == this_date_str])
+                
+                # Style logic
+                label = f"{day}"
+                if task_count > 0: label += " 🔴"
+                
+                # Highlight selected day
+                type_btn = "primary" if st.session_state['sel_date'] == this_date_str else "secondary"
+                
+                if cols[i].button(label, key=f"cal_{this_date_str}", type=type_btn, use_container_width=True):
+                    st.session_state['sel_date'] = this_date_str
+                    st.rerun()
+
+    # 4. TASK MANAGER (Appears below grid for Selected Date)
+    st.markdown("---")
+    selected = st.session_state['sel_date']
+    
+    c_info, c_add = st.columns([2, 1])
+    
+    with c_info:
+        st.markdown(f"### 🎯 Missions for {selected}")
+        day_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == selected]
         
         if day_tasks:
             for t in day_tasks:
                 status = "✅" if t['Done'] else "⬜"
                 st.markdown(f"""
-                <div style="background:#FFF; padding:10px; border-radius:10px; margin-bottom:5px; border-left: 5px solid #B5FF5F; box-shadow:0 2px 5px rgba(0,0,0,0.05); color:black;">
-                    {status} <b>{t['Time']}</b> : {t['Activity']} <span style="float:right; font-size:12px; background:#eee; padding:2px 8px; border-radius:10px;">{t['Category']}</span>
+                <div style="background:var(--card-bg); padding:10px; border-radius:10px; margin-bottom:5px; border-left: 4px solid #B5FF5F; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                    {status} <b>{t['Time']}</b> : {t['Activity']} 
+                    <span style="float:right; font-size:12px; opacity:0.7;">{t['Category']}</span>
                 </div>
                 """, unsafe_allow_html=True)
+            
+            # Edit Button (Simple Delete/Clear option for simplicity in this view)
+            if st.button("🗑️ Clear Day's Missions"):
+                st.session_state['timetable_slots'] = [t for t in st.session_state['timetable_slots'] if t.get('Date') != selected]
+                sync_data()
+                st.rerun()
         else:
-            st.info("No operations scheduled.")
+            st.info("No active operations in this sector.")
 
-    st.markdown("---")
-    st.markdown("### 🔭 Upcoming Intel (Next 3 Days)")
-    c1, c2, c3 = st.columns(3)
-    cols = [c1, c2, c3]
-    for i in range(1, 4):
-        future_date = datetime.date.today() + datetime.timedelta(days=i)
-        f_str = future_date.strftime("%Y-%m-%d")
-        f_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == f_str]
-        
-        with cols[i-1]:
-            st.markdown(f"**{future_date.strftime('%a, %b %d')}**")
-            if f_tasks:
-                for t in f_tasks: st.caption(f"• {t['Time']} {t['Activity']}")
-            else: st.caption("Clear")
+    with c_add:
+        with st.form("quick_add_cal"):
+            st.markdown("#### ➕ Add New")
+            new_task = st.text_input("Task Name")
+            new_time = st.time_input("Time")
+            new_cat = st.selectbox("Category", ["Study", "Project", "Health", "Errand"])
+            
+            if st.form_submit_button("Deploy"):
+                st.session_state['timetable_slots'].append({
+                    "Date": selected,
+                    "Time": new_time.strftime("%H:%M"),
+                    "Activity": new_task,
+                    "Category": new_cat,
+                    "Difficulty": "Medium", "Done": False, "XP": 50
+                })
+                sync_data()
+                st.toast("Mission Added to Calendar")
+                st.rerun()
 
 # --- 8. PAGE: AI ASSISTANT ---
 
