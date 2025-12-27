@@ -14,8 +14,8 @@ import random
 import pandas as pd
 import time
 import base64
-import json # <--- ADD THIS
-
+import json 
+import uuid
 # --- NEW: LIVE CLOCK & AUDIO ENGINE ---
 def render_live_clock():
     # We use an iframe so the clock is isolated and never gets stuck on "Loading..."
@@ -241,6 +241,86 @@ def load_cloud_data():
             
     except Exception as e:
         print(f"Cloud Load Error: {e}")
+        
+# --- NEW: CHAT HISTORY DATABASE FUNCTIONS ---
+
+def get_all_chats():
+    """Reads the ChatHistory sheet safely."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        return conn.read(worksheet="ChatHistory", ttl=0)
+    except:
+        return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
+
+def save_chat_to_cloud(role, content):
+    """Saves a single message to the cloud."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # Prepare data
+        uid = str(st.session_state['user_id'])
+        sid = str(st.session_state['current_session_id'])
+        sname = str(st.session_state['current_session_name'])
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Read existing to append (safest method)
+        df_existing = get_all_chats()
+        
+        new_row = pd.DataFrame([{
+            "UserID": uid, "SessionID": sid, "SessionName": sname,
+            "Role": role, "Content": content, "Timestamp": ts
+        }])
+        
+        # Combine and Write
+        df_final = pd.concat([df_existing, new_row], ignore_index=True)
+        conn.update(worksheet="ChatHistory", data=df_final)
+    except Exception as e:
+        print(f"Chat Save Error: {e}")
+
+def load_chat_sessions():
+    """Returns unique sessions for the Sidebar list."""
+    df = get_all_chats()
+    uid = str(st.session_state.get('user_id'))
+    if not df.empty and "UserID" in df.columns:
+        my_chats = df[df["UserID"] == uid]
+        if not my_chats.empty:
+            # Return unique sessions, reversed to show newest first
+            return my_chats[["SessionID", "SessionName"]].drop_duplicates().to_dict('records')[::-1]
+    return []
+
+def load_messages_for_session(session_id):
+    """Loads history for a specific chat."""
+    df = get_all_chats()
+    if not df.empty and "SessionID" in df.columns:
+        messages = df[df["SessionID"] == str(session_id)]
+        return messages.to_dict('records')
+    return []
+
+def delete_chat_session(session_id):
+    """Deletes a chat session from cloud."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="ChatHistory", ttl=0)
+        if not df.empty:
+            df_cleaned = df[df["SessionID"] != str(session_id)]
+            conn.clear(worksheet="ChatHistory")
+            conn.update(worksheet="ChatHistory", data=df_cleaned)
+    except: pass
+
+def rename_chat_session(session_id, new_name):
+    """Renames a chat session."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="ChatHistory", ttl=0)
+        if not df.empty:
+            df.loc[df["SessionID"] == str(session_id), "SessionName"] = new_name
+            conn.update(worksheet="ChatHistory", data=df)
+    except: pass
+
 
 
 # --- 1. PAGE CONFIGURATION ---
@@ -292,11 +372,13 @@ def initialize_session_state():
     # 1. Define Defaults (What to use if NO saved data exists)
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     
-    defaults = {
-        'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", # Generate unique ID per session
+        defaults = {
+        'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
         'active_alarm': None,
         'splash_played': False,
         'chat_history': [], 
+        'current_session_id': None,        # <--- NEW: Tracks which chat is open
+        'current_session_name': "New Chat", # <--- NEW: Tracks chat name
         'user_xp': 0, 
         'user_level': 1,
         'streak': 1,
@@ -449,11 +531,24 @@ def perform_auto_search(query):
         - IF Burnout: Be empathetic, suggest "Deep Rest".
         """
 
+        # --- BUILD CHAT HISTORY CONTEXT ---
+    history_context = ""
+    # Get last 10 messages from current session state for context
+    if st.session_state.get('chat_history'):
+        history_context = "PREVIOUS CHAT CONTEXT:\n"
+        for msg in st.session_state['chat_history'][-10:]:
+            # Handle keys depending if they came from Cloud (Capitalized) or Local (Lower)
+            role = msg.get('Role') or msg.get('role')
+            content = msg.get('Content') or msg.get('text')
+            history_context += f"- {role}: {content}\n"
+
     PERSONALIZED_INSTRUCTION = f"""
     You are TimeHunt AI.
     --- USER INTEL ---
     NAME: {user_name} | ROLE: {user_role} 
     GOAL: {user_goal} | OBSTACLE: {user_struggle}
+    
+    {history_context}
     
     {MODE_INSTRUCTION}
     
@@ -888,131 +983,121 @@ def page_scheduler():
 # --- 8. PAGE: AI ASSISTANT (ENHANCED) ---
 
 def page_ai_assistant():
-    # 1. Header with Clear Button
+    # 1. SIDEBAR: Chat History List
+    with st.sidebar:
+        st.markdown("### 🗂️ Mission Logs")
+        if st.button("➕ New Operation", use_container_width=True):
+            st.session_state['current_session_id'] = None
+            st.session_state['current_session_name'] = "New Chat"
+            st.session_state['chat_history'] = []
+            st.rerun()
+            
+        # Load Sessions from Cloud
+        sessions = load_chat_sessions()
+        for s in sessions:
+            # Create a button for each past chat
+            if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
+                st.session_state['current_session_id'] = s['SessionID']
+                st.session_state['current_session_name'] = s['SessionName']
+                # Load messages for this specific chat
+                msgs = load_messages_for_session(s['SessionID'])
+                # Standardize keys for the chat display
+                formatted_msgs = []
+                for m in msgs:
+                    formatted_msgs.append({"role": m["Role"], "text": m["Content"]})
+                st.session_state['chat_history'] = formatted_msgs
+                st.rerun()
+
+    # 2. MAIN HEADER & OPTIONS
     c_head, c_btn = st.columns([3, 1])
     with c_head:
-        st.markdown('<div class="big-title">Tactical AI Support 🤖</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="big-title">Tactical AI Support 🤖</div>', unsafe_allow_html=True)
+        st.caption(f"Current Session: {st.session_state.get('current_session_name', 'New Chat')}")
+        
     with c_btn:
-        # --- NEW: DELETE CHAT BUTTON ---
-        if st.button("🗑️ Clear Comms"):
-            st.session_state['chat_history'] = []
-            sync_data() # Update file
-            st.rerun()
+        # Options Popover for Rename/Delete
+        with st.popover("⚙️ Chat Options"):
+            new_name = st.text_input("Rename Chat", value=st.session_state.get('current_session_name', ''))
+            if st.button("Save Name"):
+                if st.session_state.get('current_session_id'):
+                    rename_chat_session(st.session_state['current_session_id'], new_name)
+                    st.session_state['current_session_name'] = new_name
+                    st.rerun()
+            
+            if st.button("🗑️ Delete Chat", type="primary"):
+                if st.session_state.get('current_session_id'):
+                    delete_chat_session(st.session_state['current_session_id'])
+                    st.session_state['current_session_id'] = None
+                    st.session_state['chat_history'] = []
+                    st.rerun()
 
-    st.markdown('<div class="sub-title">Intelligence & Strategy Center</div>', unsafe_allow_html=True)
-
-    # 2. Custom CSS (Kept same)
-    st.markdown("""
-    <style>
-    .stChatMessage { background-color: rgba(255, 255, 255, 0.7); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.5); box-shadow: 0 2px 10px rgba(0,0,0,0.03); margin-bottom: 10px; }
-    .stButton button { border-radius: 20px; border: 1px solid #eee; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.3s; height: 50px; }
-    .stButton button:hover { border-color: #B5FF5F; background: #f9f9f9; transform: translateY(-2px); }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # 3. Dynamic Greeting Logic
+    # 3. DISPLAY MESSAGES
     if not st.session_state['chat_history']:
-        greetings = [
-            f"How can I help you reach your objective today, {st.session_state['user_name']}?",
-            "Ready to strategize? Describe your current mission bottleneck.",
-            "Mission intelligence is online. What are we tackling?",
-            "Standing by for your command. Give me a deadline.",
-            "Systems green. Ready to optimize your trajectory."
-        ]
+        st.info("Tactical Uplink Ready. Initialize command.")
+    
+    for msg in st.session_state['chat_history']:
+        role = msg.get('role') or msg.get('Role')
+        text = msg.get('text') or msg.get('Content')
         
-        # We use a placeholder to keep it clean
-        selected_greeting = random.choice(greetings)
-
-        st.markdown(f"""
-            <div class="css-card" style="text-align: center; padding: 40px; margin-top: 20px;">
-                <div style="font-size: 60px; margin-bottom: 10px;">⚡</div>
-                <div class="card-title" style="font-size: 28px; margin-bottom: 10px;">{selected_greeting}</div>
-                <div class="card-sub" style="margin-bottom: 30px;">
-                    Target: {st.session_state['struggle_type']} Protocol | Capacity: {st.session_state['study_hours']}h
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # Action Buttons
-        c1, c2, c3 = st.columns(3)
-        if c1.button("📝 Make Timetable", use_container_width=True): 
-            handle_chat(f"Create a strict tactical timetable for a {st.session_state['user_type']} with {st.session_state['study_hours']} hours of focus. Ask me if I am at base or school first.")
-        if c2.button("💡 Explain Concept", use_container_width=True): 
-            handle_chat("Explain a complex topic for my current level.")
-        if c3.button("🚀 Elite Motivation", use_container_width=True): 
-            handle_chat("I am feeling demotivated. Remind me of my mission goals and my rank.")
-
-    # 4. Render Chat History
-    else:
-        for msg in st.session_state['chat_history']:
-            role = msg['role']
-            if role == "model" or role == "assistant":
-                with st.chat_message(role, avatar="1000592991.png"): 
-                    st.write(msg['text'])
+        if role == "model" or role == "assistant":
+            with st.chat_message("assistant", avatar="1000592991.png"): # Ensure this image exists or change to "🤖"
+                st.write(text)
+        else:
+            # User Avatar Logic
+            user_av = st.session_state.get('user_avatar', "👤")
+            full_path = os.path.join(current_dir, str(user_av))
+            if str(user_av).endswith(('.png', '.jpg', '.jpeg')) and os.path.exists(full_path):
+                avatar_to_use = full_path
             else:
-                # USER AVATAR LOGIC (FORCE PATH)
-                user_av = st.session_state.get('user_avatar', "👤")
-                
-                # 1. CREATE FULL PATH (combines C:/Users/... with filename.png)
-                # str(user_av) ensures we don't crash if it's an emoji object
-                full_path = os.path.join(current_dir, str(user_av))
-                
-                # 2. CHECK IF FILE EXISTS AT THAT EXACT PATH
-                # We check extensions to avoid errors with emojis
-                if str(user_av).endswith(('.png', '.jpg', '.jpeg')) and os.path.exists(full_path):
-                    avatar_to_use = full_path
-                else:
-                    # If file check fails, check if it is a simple emoji
-                    avatar_to_use = user_av if len(str(user_av)) < 5 else "👤"
+                avatar_to_use = user_av if len(str(user_av)) < 5 else "👤"
+            
+            with st.chat_message("user", avatar=avatar_to_use):
+                st.write(text)
 
-                with st.chat_message(role, avatar=avatar_to_use):
-                    st.write(msg['text'])
-
-    # 5. Chat Input
+    # 4. CHAT INPUT & SAVING
     if prompt := st.chat_input("Input command parameters..."):
-        handle_chat(prompt)
-
-# --- HELPER: CHAT HANDLER (SMARTER VERSION) ---
-import re # Make sure this is imported at the top of your file!
-
-def handle_chat(prompt):
-    # 1. Add User Message
-    st.session_state['chat_history'].append({"role": "user", "text": prompt})
-    
-    # 2. Get AI Response
-    with st.spinner("Processing Strategy..."):
-         res_text, source = perform_auto_search(prompt)
-         
-         # --- IMPROVED PARSER: Uses Regex to find JSON anywhere ---
-         # This looks for content between [ and ] that looks like JSON
-         json_match = re.search(r'\[\s*\{.*?\}\s*\]', res_text, re.DOTALL)
-         
-         if json_match:
-             try:
-                 json_str = json_match.group(0)
-                 new_slots = json.loads(json_str)
+        # A. Initialize Session if this is the first message
+        if not st.session_state.get('current_session_id'):
+            new_id = str(uuid.uuid4())
+            st.session_state['current_session_id'] = new_id
+            # Auto-name the session based on first few words
+            short_name = " ".join(prompt.split()[:4])
+            st.session_state['current_session_name'] = short_name
+        
+        # B. Show User Message
+        st.session_state['chat_history'].append({"role": "user", "text": prompt})
+        save_chat_to_cloud("user", prompt) # <--- Save to Cloud
+        
+        # C. Get AI Response
+        with st.chat_message("assistant", avatar="1000592991.png"):
+             with st.spinner("Processing Strategy..."):
+                 res_text, source = perform_auto_search(prompt)
                  
-                 # Add to Scheduler
-                 for slot in new_slots:
-                     st.session_state['timetable_slots'].append({
-                         "Time": slot.get("Time", "00:00"),
-                         "Activity": slot.get("Activity", "Mission"),
-                         "Category": slot.get("Category", "Study"),
-                         "Done": False,
-                         "XP": 50
-                     })
-                 res_text = "✅ **Protocol Established.** I have automatically added the new timetable to your Scheduler tab."
-                 sync_data() 
-             except Exception as e:
-                 print(f"JSON Parse Error: {e}")
-                 # If parsing fails, we just keep the text response
-                 pass
+                 # Check for JSON schedule (Timetable Logic)
+                 json_match = re.search(r'\[\s*\{.*?\}\s*\]', res_text, re.DOTALL)
+                 if json_match:
+                     try:
+                         json_str = json_match.group(0)
+                         new_slots = json.loads(json_str)
+                         for slot in new_slots:
+                             st.session_state['timetable_slots'].append({
+                                 "Time": slot.get("Time", "00:00"),
+                                 "Activity": slot.get("Activity", "Mission"),
+                                 "Category": slot.get("Category", "Study"),
+                                 "Done": False, "XP": 50, "Difficulty": "Medium"
+                             })
+                         res_text = "✅ **Protocol Established.** I have automatically added the new timetable to your Scheduler tab."
+                         sync_data() # Sync the new timetable
+                     except: pass
 
-         # 3. Add AI Message
-         st.session_state['chat_history'].append({"role": "assistant", "text": res_text})
-         sync_data() 
-    
-    st.rerun()
+                 st.write(res_text)
+        
+        # D. Save AI Response
+        st.session_state['chat_history'].append({"role": "assistant", "text": res_text})
+        save_chat_to_cloud("assistant", res_text) # <--- Save to Cloud
+        
+        # Reload to update sidebar name if new
+        st.rerun()
 
 # --- 9. CUSTOM UI STYLING (SIDEBAR & MAIN THEME) ---
 
