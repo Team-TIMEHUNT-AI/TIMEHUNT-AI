@@ -207,40 +207,15 @@ Return strictly in this format inside a code block if a plan is requested:
 """
 
 # --- 3. SESSION STATE & PERSISTENCE ---
-# --- REPLACEMENT FOR initialize_session_state (PERMANENT MEMORY FIX) ---
+
 def initialize_session_state():
-    # 1. Try to Load Saved Data from Disk
-    saved_data = {}
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r") as f:
-                saved_data = json.load(f)
-        except Exception as e:
-            print(f"Error loading data: {e}")
-
-    # 2. Setup ID (Create new if not saved)
-    if 'user_id' not in st.session_state:
-        st.session_state['user_id'] = saved_data.get('user_id', f"ID-{random.randint(1000, 9999)}-{int(time.time())}")
-
-    # 3. Streak Logic (Calculate based on dates)
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
-    last_active = saved_data.get('last_active_date', today_str)
-    current_streak = saved_data.get('streak', 1)
+    # --- FIX: Removed local file loading to prevent "Ghost Profile" on new devices ---
     
-    if last_active != today_str:
-        last_date = datetime.datetime.strptime(last_active, "%Y-%m-%d").date()
-        yesterday = datetime.date.today() - datetime.timedelta(days=1)
-        if last_date == yesterday:
-            current_streak += 1
-        elif last_date < yesterday:
-            current_streak = 1 # Streak broken
-        
-        # Update the saved variable immediately so we don't lose it
-        saved_data['last_active_date'] = today_str
-        saved_data['streak'] = current_streak
-
-    # 4. Define Defaults (What to use if NO saved data exists)
+    # 1. Define Defaults (What to use if NO saved data exists)
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    
     defaults = {
+        'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", # Generate unique ID per session
         'active_alarm': None,
         'splash_played': False,
         'chat_history': [], 
@@ -263,16 +238,12 @@ def initialize_session_state():
         'theme_color': 'Venom Green (Default)'
     }
 
-    # 5. CRITICAL STEP: Merge Saved Data into Session State
+    # 2. Setup Session State
     for key, default_val in defaults.items():
-        # If the key exists in our SAVED JSON, use that.
-        if key in saved_data:
-            st.session_state[key] = saved_data[key]
-        # If not in JSON, but also not in Session, use Default.
-        elif key not in st.session_state:
+        if key not in st.session_state:
             st.session_state[key] = default_val
 
-    # 6. API Key Setup (Secrets)
+    # 3. API Key Setup (Secrets)
     if 'gemini_api_keys' not in st.session_state or not st.session_state['gemini_api_keys']:
         if "GEMINI_API_KEY" in st.secrets:
             st.session_state['gemini_api_keys'] = [st.secrets["GEMINI_API_KEY"]]
@@ -280,7 +251,7 @@ def initialize_session_state():
             st.session_state['gemini_api_keys'] = [st.secrets["GOOGLE_API_KEY"]]
         else:
             st.session_state['gemini_api_keys'] = []
-            
+           
 # --- 4. WORLD-CLASS CINEMATIC SPLASH (UPDATED TEXT) ---
 def show_comet_splash():
     if not st.session_state['splash_played']:
@@ -517,7 +488,7 @@ def check_reminders():
                 """, unsafe_allow_html=True)
 
 # --- 6. PAGE: ONBOARDING (DESIGN OPTIMIZED) ---
-# --- REPLACEMENT FOR page_onboarding (THE NUCLEAR OPTION) ---
+
 def page_onboarding():
     
     # 1. READ THE FILE (Strict Mode)
@@ -754,8 +725,8 @@ def page_onboarding():
                save_data()  # <--- CRITICAL: Save to file BEFORE restarting!
                st.rerun()
 
-# --- 7. PAGE: SCHEDULER (FIXED HTML RENDERING) ---
-# --- REPLACEMENT FOR page_scheduler ---
+# --- 7. PAGE: SCHEDULER ---
+
 def page_scheduler():
     # Data Repair
     if 'timetable_slots' in st.session_state:
@@ -978,7 +949,6 @@ def page_ai_assistant():
     if prompt := st.chat_input("Input command parameters..."):
         handle_chat(prompt)
 
-# --- HELPER: CHAT HANDLER (UPDATED) ---
 # --- HELPER: CHAT HANDLER (SMARTER VERSION) ---
 import re # Make sure this is imported at the top of your file!
 
@@ -1022,8 +992,7 @@ def handle_chat(prompt):
     st.rerun()
 
 # --- 9. CUSTOM UI STYLING (SIDEBAR & MAIN THEME) ---
-# --- 9. DYNAMIC THEME ENGINE (PREMIUM VISUALS RESTORED) ---
-# --- 9. DYNAMIC THEME ENGINE (PREMIUM VISUALS RESTORED) ---
+
 def inject_custom_css():
     # 1. Load User Preferences
     theme_color = st.session_state.get('theme_color', 'Venom Green (Default)')
@@ -1716,12 +1685,6 @@ def main():
             from streamlit_gsheets import GSheetsConnection
             
             conn = st.connection("gsheets", type=GSheetsConnection)
-            # Read data (TTL=0 means no cache, always get fresh data)
-            df = conn.read(worksheet="Sheet1", ttl=0) 
-        except Exception as e:
-            st.error(f"📡 Connection Failed: {e}")
-            st.info("Did you share the Google Sheet with the bot email?")
-            st.stop()
 
         # --- 2. UPDATE YOUR DATA TO CLOUD ---
         current_user = st.session_state['user_name']
@@ -1753,6 +1716,16 @@ def main():
 
         # Write back to Google Sheet
         conn.update(worksheet="Sheet1", data=df)
+                # --- FIX: DEFINE df_sorted HERE ---
+        # Ensure XP is numeric and sort
+        if not df.empty and 'XP' in df.columns:
+            df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
+            df_sorted = df.sort_values(by='XP', ascending=False)
+        else:
+            # Fallback if dataframe is empty
+            df_sorted = pd.DataFrame(columns=["Name", "XP", "Avatar"])
+        # ----------------------------------
+
 
         # --- 3. RENDER LEADERBOARD UI ---
         st.markdown(f'<div class="big-title">Global Rankings 🏆</div>', unsafe_allow_html=True)
@@ -1828,4 +1801,5 @@ def main():
         page_settings()
 
 if __name__ == "__main__":
+
     main()
