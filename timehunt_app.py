@@ -371,30 +371,22 @@ def initialize_session_state():
     
     # 1. Define Defaults (What to use if NO saved data exists)
     today_str = datetime.date.today().strftime("%Y-%m-%d")
-    defaults = {
+        defaults = {
         'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
         'active_alarm': None,
         'splash_played': False,
         'chat_history': [], 
-        'current_session_id': None,        # <--- NEW: Tracks which chat is open
-        'current_session_name': "New Chat", # <--- NEW: Tracks chat name
-        'user_xp': 0, 
-        'user_level': 1,
-        'streak': 1,
+        'current_session_id': None,
+        'current_session_name': "New Chat",
+        'page_mode': 'main', # <--- NEW: THIS CONTROLS THE SIDEBAR SWITCH
+        'user_xp': 0, 'user_level': 1, 'streak': 1,
         'last_active_date': today_str,
-        'timetable_slots': [], 
-        'reminders': [],
-        'onboarding_step': 1,
-        'onboarding_complete': False, 
-        'user_name': "Hunter",        
-        'user_type': "Student",
-        'user_goal': "General Productivity",
-        'struggle_type': "Procrastination",
-        'user_avatar': "🏹",
-        'study_hours': 6,
-        'xp_history': [], 
-        'theme_mode': 'Light',
-        'theme_color': 'Venom Green (Default)'
+        'timetable_slots': [], 'reminders': [],
+        'onboarding_step': 1, 'onboarding_complete': False, 
+        'user_name': "Hunter", 'user_type': "Student",
+        'user_goal': "General Productivity", 'struggle_type': "Procrastination",
+        'user_avatar': "🏹", 'study_hours': 6, 'xp_history': [], 
+        'theme_mode': 'Light', 'theme_color': 'Venom Green (Default)'
     }
 
     # 2. Setup Session State
@@ -979,43 +971,22 @@ def page_scheduler():
     else:
         st.info("No active protocols. Deploy a mission above.")
 
-# --- 8. PAGE: AI ASSISTANT (ENHANCED) ---
+# --- 8. PAGE: AI ASSISTANT ---
 
 def page_ai_assistant():
-    # 1. SIDEBAR: Chat History List
-    with st.sidebar:
-        st.markdown("### 🗂️ Mission Logs")
-        if st.button("➕ New Operation", use_container_width=True):
-            st.session_state['current_session_id'] = None
-            st.session_state['current_session_name'] = "New Chat"
-            st.session_state['chat_history'] = []
-            st.rerun()
-            
-        # Load Sessions from Cloud
-        sessions = load_chat_sessions()
-        for s in sessions:
-            # Create a button for each past chat
-            if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
-                st.session_state['current_session_id'] = s['SessionID']
-                st.session_state['current_session_name'] = s['SessionName']
-                # Load messages for this specific chat
-                msgs = load_messages_for_session(s['SessionID'])
-                # Standardize keys for the chat display
-                formatted_msgs = []
-                for m in msgs:
-                    formatted_msgs.append({"role": m["Role"], "text": m["Content"]})
-                st.session_state['chat_history'] = formatted_msgs
-                st.rerun()
-
-    # 2. MAIN HEADER & OPTIONS
-    c_head, c_btn = st.columns([3, 1])
+    # Note: Sidebar is now handled in main(), this is just the main area UI
+    
+    # Header & Options
+        # 2. MAIN HEADER & OPTIONS (Improved Alignment)
+    c_head, c_btn = st.columns([4, 1], gap="small", vertical_alignment="center")
+    
     with c_head:
         st.markdown(f'<div class="big-title">Tactical AI Support 🤖</div>', unsafe_allow_html=True)
         st.caption(f"Current Session: {st.session_state.get('current_session_name', 'New Chat')}")
         
     with c_btn:
-        # Options Popover for Rename/Delete
-        with st.popover("⚙️ Chat Options"):
+        # Puts the button on the far right
+        with st.popover("⚙️ Options", use_container_width=True):
             new_name = st.text_input("Rename Chat", value=st.session_state.get('current_session_name', ''))
             if st.button("Save Name"):
                 if st.session_state.get('current_session_id'):
@@ -1030,7 +1001,7 @@ def page_ai_assistant():
                     st.session_state['chat_history'] = []
                     st.rerun()
 
-    # 3. DISPLAY MESSAGES
+    # Display Messages
     if not st.session_state['chat_history']:
         st.info("Tactical Uplink Ready. Initialize command.")
     
@@ -1039,40 +1010,29 @@ def page_ai_assistant():
         text = msg.get('text') or msg.get('Content')
         
         if role == "model" or role == "assistant":
-            with st.chat_message("assistant", avatar="1000592991.png"): # Ensure this image exists or change to "🤖"
+            with st.chat_message("assistant", avatar="1000592991.png"): # Ensure correct image path
                 st.write(text)
         else:
-            # User Avatar Logic
             user_av = st.session_state.get('user_avatar', "👤")
             full_path = os.path.join(current_dir, str(user_av))
-            if str(user_av).endswith(('.png', '.jpg', '.jpeg')) and os.path.exists(full_path):
-                avatar_to_use = full_path
-            else:
-                avatar_to_use = user_av if len(str(user_av)) < 5 else "👤"
-            
+            avatar_to_use = full_path if str(user_av).endswith(('.png', '.jpg')) and os.path.exists(full_path) else "👤"
             with st.chat_message("user", avatar=avatar_to_use):
                 st.write(text)
 
-    # 4. CHAT INPUT & SAVING
+    # Chat Input
     if prompt := st.chat_input("Input command parameters..."):
-        # A. Initialize Session if this is the first message
         if not st.session_state.get('current_session_id'):
             new_id = str(uuid.uuid4())
             st.session_state['current_session_id'] = new_id
-            # Auto-name the session based on first few words
             short_name = " ".join(prompt.split()[:4])
             st.session_state['current_session_name'] = short_name
         
-        # B. Show User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt})
-        save_chat_to_cloud("user", prompt) # <--- Save to Cloud
+        save_chat_to_cloud("user", prompt) 
         
-        # C. Get AI Response
-        with st.chat_message("assistant", avatar="1000592991.png"):
+        with st.chat_message("assistant", avatar="1000592991.png"): # Ensure correct image path
              with st.spinner("Processing Strategy..."):
-                 res_text, source = perform_auto_search(prompt)
-                 
-                 # Check for JSON schedule (Timetable Logic)
+                 res_text, _ = perform_auto_search(prompt)
                  json_match = re.search(r'\[\s*\{.*?\}\s*\]', res_text, re.DOTALL)
                  if json_match:
                      try:
@@ -1080,22 +1040,16 @@ def page_ai_assistant():
                          new_slots = json.loads(json_str)
                          for slot in new_slots:
                              st.session_state['timetable_slots'].append({
-                                 "Time": slot.get("Time", "00:00"),
-                                 "Activity": slot.get("Activity", "Mission"),
-                                 "Category": slot.get("Category", "Study"),
-                                 "Done": False, "XP": 50, "Difficulty": "Medium"
+                                 "Time": slot.get("Time", "00:00"), "Activity": slot.get("Activity", "Mission"),
+                                 "Category": slot.get("Category", "Study"), "Done": False, "XP": 50, "Difficulty": "Medium"
                              })
                          res_text = "✅ **Protocol Established.** I have automatically added the new timetable to your Scheduler tab."
-                         sync_data() # Sync the new timetable
+                         sync_data() 
                      except: pass
-
                  st.write(res_text)
         
-        # D. Save AI Response
         st.session_state['chat_history'].append({"role": "assistant", "text": res_text})
-        save_chat_to_cloud("assistant", res_text) # <--- Save to Cloud
-        
-        # Reload to update sidebar name if new
+        save_chat_to_cloud("assistant", res_text) 
         st.rerun()
 
 # --- 9. CUSTOM UI STYLING (SIDEBAR & MAIN THEME) ---
@@ -1586,200 +1540,77 @@ def page_settings():
             st.rerun()
 
 # --- MAIN APP FUNCTION ---
+# --- MAIN CONTROLLER (DUAL SIDEBAR LOGIC) ---
 def main():
     initialize_session_state()
-    
-    # --- 1. GLOBAL ALARM SYSTEM ---
     alarm_container = st.container()
     check_reminders()
-    with alarm_container:
-        render_alarm_ui()
-    
-    # --- 2. CSS & SPLASH ---
+    with alarm_container: render_alarm_ui()
     inject_custom_css()
     show_comet_splash()
 
-    # --- 3. SESSION STATE CHECKS ---
-    if 'user_name' not in st.session_state: st.session_state['user_name'] = "Hunter"
-    if 'user_xp' not in st.session_state: st.session_state['user_xp'] = 0
-    if 'user_level' not in st.session_state: st.session_state['user_level'] = 1
-    if 'xp_history' not in st.session_state: st.session_state['xp_history'] = [] 
-    if 'timetable_slots' not in st.session_state: st.session_state['timetable_slots'] = []
-    
-    # --- 4. CHECK ONBOARDING ---
     if not st.session_state['onboarding_complete']:
         page_onboarding()
         return 
 
-    # --- 5. SIDEBAR ---
-    with st.sidebar:
-        st.markdown("<h1 style='text-align: center; margin-bottom: 20px;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
-        render_live_clock()
-        
-        st.markdown("---")
-        st.markdown("### 🎧 Sonic Intel")
-        
-        with st.container():
-            music_mode = st.selectbox("Frequency", ["Om Chanting (Spiritual)", "Binaural Beats (Focus)", "Divine Flute (Flow)", "Rainfall (Calm)"], label_visibility="collapsed")
-            local_map = {"Om Chanting (Spiritual)": "om.mp3", "Binaural Beats (Focus)": "binaural.mp3", "Divine Flute (Flow)": "flute.mp3", "Rainfall (Calm)": "rain.mp3"}
-            target_file = local_map.get(music_mode)
-
-            if target_file and os.path.exists(target_file):
-                st.audio(target_file, format="audio/mp3", loop=True)
-            else:
-                st.caption("Upload .mp3 to root directory.")
-
-        st.markdown("### ⏱️ Focus Timer")
-        pomo_html = """
-        <style>
-            .timer-box { background: #1A1A1A; color: #B5FF5F; font-family: monospace; font-size: 35px; text-align: center; border-radius: 15px; padding: 10px; border: 2px solid #B5FF5F; margin-bottom: 10px; }
-            .btn-grid { display: flex; gap: 10px; }
-            .btn { flex: 1; padding: 10px; border-radius: 10px; border: none; cursor: pointer; font-weight: bold; }
-            .btn-start { background: #B5FF5F; color: black; }
-            .btn-reset { background: #333; color: white; }
-        </style>
-        <div class="timer-box"><span id="timer-display">25:00</span></div>
-        <div class="btn-grid"><button class="btn btn-start" onclick="startTimer()">START</button><button class="btn btn-reset" onclick="resetTimer()">RESET</button></div>
-        <script>
-            let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
-            function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
-            function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Mission Complete!"); } }, 1000); }
-            function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
-        </script>
-        """
-        components.html(pomo_html, height=160)
-
-        st.markdown("---")
-        nav = option_menu(
-            menu_title=None,
-            options=["Home", "Scheduler", "AI Assistant", "Dashboard", "About", "Settings"], 
-            icons=["house", "calendar-check", "robot", "graph-up", "info-circle", "gear"], 
-            default_index=0
-        )
-        st.markdown("---")
-        st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
-
-    # --- 6. PAGE ROUTING (ALIGNED CORRECTLY) ---
-    if nav == "Home":
-        page_home()
-    elif nav == "Scheduler":
-        page_scheduler()
-    elif nav == "AI Assistant":
-        page_ai_assistant()
-    elif nav == "Dashboard":
-        # --- 1. CONNECT TO REAL DATABASE ---
-        try:
-            from streamlit_gsheets import GSheetsConnection
-            conn = st.connection("gsheets", type=GSheetsConnection)
-            df = conn.read(worksheet="Sheet1", ttl=0) 
-        except Exception as e:
-            st.error(f"📡 Connection Failed: {e}")
-            st.stop()
-
-        # --- 2. UPDATE YOUR DATA TO CLOUD ---
-        current_user = st.session_state['user_name']
-        current_xp = st.session_state['user_xp']
-        current_league = st.session_state.get('league', "Bronze")
-        current_avatar = str(st.session_state.get('user_avatar', "👤"))
-        today_str = datetime.date.today().strftime("%Y-%m-%d")
-
-        if df.empty or 'UserID' not in df.columns:
-            df = pd.DataFrame(columns=["UserID", "Name", "XP", "League", "Avatar", "LastActive"])
-
-        uid = st.session_state['user_id']
-        if uid in df['UserID'].values:
-            df.loc[df['UserID'] == uid, ['Name', 'XP', 'League', 'Avatar', 'LastActive']] = [current_user, current_xp, current_league, current_avatar, today_str]
-        else:
-            new_row = pd.DataFrame([{ "UserID": uid, "Name": current_user, "XP": current_xp, "League": current_league, "Avatar": current_avatar, "LastActive": today_str }])
-            df = pd.concat([df, new_row], ignore_index=True)
-
-        conn.update(worksheet="Sheet1", data=df)
-        
-        # --- FIX 1: SORT DATA ---
-        if not df.empty and 'XP' in df.columns:
-            df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
-            df_sorted = df.sort_values(by='XP', ascending=False)
-        else:
-            df_sorted = pd.DataFrame(columns=["Name", "XP", "Avatar"])
-
-        # --- FIX 2: CREATE COLUMNS ---
-        c_leaderboard, c_stats = st.columns([2, 1])
-
-                # --- 3. RENDER LEADERBOARD ---
-        st.markdown(f'<div class="big-title">Global Rankings 🏆</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="sub-title">Live Data from Cloud Database</div>', unsafe_allow_html=True)
-
-        st.markdown("### 🌍 Top Hunters")
-        
-        # .head(5) ensures we only take the first 5 winners
-        for i, row in df_sorted.head(5).iterrows():
-            is_me = row['Name'] == current_user
-            bg_color = "#B5FF5F" if is_me else "#FFFFFF"
-            text_color = "#1A1A1A" if is_me else "#333"
-            border = "2px solid #1A1A1A" if is_me else "1px solid #eee"
-            
-            # --- NEW: AVATAR IMAGE LOGIC ---
-            # Get the avatar filename from the database
-            avatar_filename = str(row['Avatar'])
-            avatar_html = ""
-            
-            # Check if the file exists locally to convert it to base64 for the HTML block
-            if os.path.exists(avatar_filename):
-                with open(avatar_filename, "rb") as f:
-                    data = base64.b64encode(f.read()).decode()
-                    avatar_html = f'<img src="data:image/png;base64,{data}" style="width:30px; height:30px; border-radius:50%;">'
-            else:
-                # Fallback if image file is missing
-                avatar_html = '<span style="font-size:24px;">👤</span>'
-
-            st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; background:{bg_color}; padding:15px; border-radius:12px; margin-bottom:10px; border:{border}; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <span style="font-size:20px; font-weight:bold; color:{text_color};">#{i+1}</span>
-                    {avatar_html}
-                    <span style="font-weight:bold; font-size:16px; color:{text_color};">{row['Name']}</span>
-                </div>
-                <div style="font-family:monospace; font-weight:bold; font-size:18px; color:{text_color};">
-                    {row['XP']} XP
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-        # --- 4. RENDER STATS ---
-        with c_stats:
-            st.markdown("### 📊 Your Status")
-            try:
-                # Find rank safely
-                rank = df_sorted.index[df_sorted['UserID'] == uid].tolist()
-                my_rank = rank[0] + 1 if rank else "?"
-                
-                st.markdown(f"""
-                <div class="css-card" style="text-align:center;">
-                    <div style="font-size:40px;">👑</div>
-                    <div class="card-title">Rank #{my_rank}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            except Exception as e:
-                st.info(f"Syncing... {e}")
-            
-            if st.button("🔄 Force Refresh"):
+    # --- LOGIC SWITCH: WHICH SIDEBAR TO SHOW? ---
+    
+    # 1. CHAT MODE SIDEBAR
+    if st.session_state.get('page_mode') == 'chat':
+        with st.sidebar:
+            st.markdown("### 💬 Chat History")
+            # The "Back" Button
+            if st.button("🏠 Back to Main Menu", type="primary", use_container_width=True):
+                st.session_state['page_mode'] = 'main'
                 st.rerun()
-            st.write("")
             
-            # REPORT BUTTON
-            if st.button("📄 Download Report"):
-                try:
-                    pdf_data = create_mission_report(st.session_state['user_name'], st.session_state['user_level'], st.session_state['user_xp'], st.session_state['xp_history'])
-                    st.download_button(label="⬇️ Save PDF", data=pdf_data, file_name=f"TimeHunt_Report_{today_str}.pdf", mime="application/pdf")
-                except:
-                    st.error("Install fpdf: pip install fpdf")
+            st.divider()
+            
+            if st.button("➕ New Chat", use_container_width=True):
+                st.session_state['current_session_id'] = None
+                st.session_state['current_session_name'] = "New Chat"
+                st.session_state['chat_history'] = []
+                st.rerun()
+            
+            st.markdown("---")
+            # Load History List
+            sessions = load_chat_sessions()
+            for s in sessions:
+                if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
+                    st.session_state['current_session_id'] = s['SessionID']
+                    st.session_state['current_session_name'] = s['SessionName']
+                    msgs = load_messages_for_session(s['SessionID'])
+                    formatted_msgs = []
+                    for m in msgs:
+                        formatted_msgs.append({"role": m["Role"], "text": m["Content"]})
+                    st.session_state['chat_history'] = formatted_msgs
+                    st.rerun()
+        
+        # Render the Chat Page
+        page_ai_assistant()
 
-    elif nav == "About":
-        page_about()
-    elif nav == "Settings":
-        page_settings()
+    # 2. MAIN MENU SIDEBAR (Default)
+    else:
+        with st.sidebar:
+            st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
+            render_live_clock()
+            nav = option_menu(
+                menu_title=None,
+                options=["Home", "Scheduler", "AI Assistant", "Dashboard", "About", "Settings"], 
+                icons=["house", "calendar-check", "robot", "graph-up", "info-circle", "gear"], 
+                default_index=0
+            )
+            st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
+
+        # Router Logic
+        if nav == "AI Assistant":
+            st.session_state['page_mode'] = 'chat'
+            st.rerun()
+        elif nav == "Home": page_home()
+        elif nav == "Scheduler": page_scheduler()
+        elif nav == "Dashboard": page_dashboard()
+        elif nav == "About": page_about()
+        elif nav == "Settings": page_settings()
 
 if __name__ == "__main__":
-
     main()
