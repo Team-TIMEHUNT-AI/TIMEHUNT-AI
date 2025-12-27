@@ -791,23 +791,35 @@ def page_scheduler():
             
             submitted = st.form_submit_button("Add to Schedule ➔")
             
+            # --- CORRECTED INDENTATION HERE ---
             if submitted and task:
-                # Assign XP based on difficulty
+                # 1. Add to Session State
                 base_xp = 30 if diff == "Easy" else 50 if diff == "Medium" else 100
-                
-                st.session_state['timetable_slots'].append({
+                new_entry = {
                     "Time": datetime.datetime.now().strftime("%H:%M"),
                     "Activity": task, 
                     "Category": m_type, 
                     "Difficulty": diff,
                     "Done": False, 
                     "XP": base_xp
-                })
+                }
+                st.session_state['timetable_slots'].append(new_entry)
                 
-                sync_data()
-                st.toast(f"Mission Deployed: {task}", icon="🦅")
-                st.rerun()
+                # 2. DEBUG PRINT ON SCREEN (Before Sync)
+                st.info("👇 1. DATA ADDED TO MEMORY:")
+                st.write(new_entry)
+                
+                st.info("👇 2. FULL LIST READY TO SYNC:")
+                st.write(st.session_state['timetable_slots'])
 
+                # 3. Attempt Sync
+                st.warning("🔄 3. ATTEMPTING SYNC NOW...")
+                sync_data()
+                st.success("✅ 4. SYNC FUNCTION FINISHED")
+                
+                # 4. STOP HERE (Do not Rerun)
+                st.error("🛑 RERUN STOPPED FOR DEBUGGING. CHECK YOUR SHEET NOW.")
+                # st.rerun() # <--- Commented out on purpose for testing
 
     with c2:
         total_tasks = len(st.session_state['timetable_slots'])
@@ -896,7 +908,7 @@ def page_scheduler():
                         st.toast("Mark tasks as done first.", icon="🚫")
     else:
         st.info("No active protocols. Deploy a mission above.")
-        
+
 # --- 8. PAGE: AI ASSISTANT (ENHANCED) ---
 def page_ai_assistant():
     # 1. Header with Clear Button
