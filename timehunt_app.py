@@ -787,16 +787,21 @@ def page_scheduler():
             
             if submitted and task:
                 base_xp = 30 if diff == "Easy" else 50 if diff == "Medium" else 100
+                
+                # --- TIMEZONE FIX: SHIFT UTC TO IST (+5:30) ---
+                ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+                current_time_str = ist_now.strftime("%H:%M")
+                
                 st.session_state['timetable_slots'].append({
-                    "Time": datetime.datetime.now().strftime("%H:%M"),
+                    "Time": current_time_str, # <--- USES CORRECTED TIME
                     "Activity": task, 
                     "Category": m_type, 
                     "Difficulty": diff,
                     "Done": False, 
                     "XP": base_xp
                 })
-                sync_data() # Save to cloud
-                st.toast(f"Mission Deployed: {task}", icon="🦅")
+                sync_data() 
+                st.toast(f"Mission Deployed at {current_time_str}", icon="🦅")
                 st.rerun()
 
     with c2:
