@@ -971,6 +971,99 @@ def page_scheduler():
     else:
         st.info("No active protocols. Deploy a mission above.")
 
+# --- NEW PAGE: FOCUS TIMER ---
+def page_timer():
+    st.markdown('<div class="big-title" style="text-align:center;">⏱️ Deep Focus Protocol</div>', unsafe_allow_html=True)
+    
+    # We use a larger, centered layout for the timer page
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.markdown("""
+        <div class="css-card" style="text-align: center; padding: 40px;">
+            <h3 style="margin-bottom: 20px;">Pomodoro Cycle</h3>
+            <div id="timer-container">
+                </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # The Timer HTML/JS Logic (Enhanced for Full Page)
+        timer_html = """
+        <style>
+            .timer-display { 
+                font-family: 'Courier New', monospace; 
+                font-size: 80px; 
+                font-weight: bold; 
+                color: #B5FF5F; 
+                text-shadow: 0 0 20px rgba(181, 255, 95, 0.4);
+                margin: 20px 0;
+            }
+            .btn-grid { display: flex; gap: 15px; justify-content: center; }
+            .btn-timer { 
+                padding: 15px 30px; 
+                border-radius: 30px; 
+                border: none; 
+                font-size: 18px; 
+                font-weight: bold; 
+                cursor: pointer; 
+                transition: transform 0.1s;
+            }
+            .btn-start { background: #B5FF5F; color: black; box-shadow: 0 0 15px rgba(181, 255, 95, 0.3); }
+            .btn-reset { background: #333; color: white; border: 1px solid #555; }
+            .btn-timer:active { transform: scale(0.95); }
+        </style>
+        
+        <div style="text-align:center;">
+            <div class="timer-display" id="display">25:00</div>
+            <div class="btn-grid">
+                <button class="btn-timer btn-start" onclick="startTimer()">START MISSION</button>
+                <button class="btn-timer btn-reset" onclick="resetTimer()">ABORT</button>
+            </div>
+        </div>
+
+        <script>
+            let timeLeft = 25 * 60; 
+            let timerId = null; 
+            
+            function updateDisplay() { 
+                let mins = Math.floor(timeLeft / 60); 
+                let secs = timeLeft % 60; 
+                document.getElementById('display').innerText = 
+                    (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; 
+            }
+            
+            function startTimer() { 
+                if (timerId) return; 
+                
+                // Audio Context for Beep
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                timerId = setInterval(() => { 
+                    if (timeLeft > 0) { 
+                        timeLeft--; 
+                        updateDisplay(); 
+                    } else { 
+                        clearInterval(timerId); 
+                        timerId = null;
+                        // Play Beep
+                        const oscillator = audioCtx.createOscillator();
+                        oscillator.connect(audioCtx.destination);
+                        oscillator.start();
+                        setTimeout(() => oscillator.stop(), 200);
+                        alert("MISSION COMPLETE! Take a break."); 
+                    } 
+                }, 1000); 
+            }
+            
+            function resetTimer() { 
+                clearInterval(timerId); 
+                timerId = null; 
+                timeLeft = 25 * 60; 
+                updateDisplay(); 
+            }
+        </script>
+        """
+        components.html(timer_html, height=300)
+
 # --- 8. PAGE: AI ASSISTANT ---
 
 def page_ai_assistant():
@@ -1540,7 +1633,7 @@ def page_settings():
             st.rerun()
 
 # --- MAIN APP FUNCTION ---
-# --- MAIN CONTROLLER (DUAL SIDEBAR LOGIC) ---
+# --- MAIN CONTROLLER ---
 def main():
     initialize_session_state()
     alarm_container = st.container()
@@ -1559,7 +1652,6 @@ def main():
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
-            # The "Back" Button
             if st.button("🏠 Back to Main Menu", type="primary", use_container_width=True):
                 st.session_state['page_mode'] = 'main'
                 st.rerun()
@@ -1573,7 +1665,6 @@ def main():
                 st.rerun()
             
             st.markdown("---")
-            # Load History List
             sessions = load_chat_sessions()
             for s in sessions:
                 if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
@@ -1586,7 +1677,6 @@ def main():
                     st.session_state['chat_history'] = formatted_msgs
                     st.rerun()
         
-        # Render the Chat Page
         page_ai_assistant()
 
     # 2. MAIN MENU SIDEBAR (Default)
@@ -1594,10 +1684,35 @@ def main():
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
             render_live_clock()
+            
+            # --- RESTORED AUDIO PLAYER ---
+            st.markdown("### 🎧 Sonic Intel")
+            with st.container():
+                music_mode = st.selectbox("Frequency", 
+                    ["Om Chanting (Spiritual)", "Binaural Beats (Focus)", "Divine Flute (Flow)", "Rainfall (Calm)"], 
+                    label_visibility="collapsed"
+                )
+                local_map = {
+                    "Om Chanting (Spiritual)": "om.mp3", 
+                    "Binaural Beats (Focus)": "binaural.mp3", 
+                    "Divine Flute (Flow)": "flute.mp3", 
+                    "Rainfall (Calm)": "rain.mp3"
+                }
+                target_file = local_map.get(music_mode)
+
+                if target_file and os.path.exists(target_file):
+                    st.audio(target_file, format="audio/mp3", loop=True)
+                else:
+                    st.caption("⚠️ File not found.")
+            
+            st.markdown("---")
+            
+            # --- UPDATED NAVIGATION ---
             nav = option_menu(
                 menu_title=None,
-                options=["Home", "Scheduler", "AI Assistant", "Dashboard", "About", "Settings"], 
-                icons=["house", "calendar-check", "robot", "graph-up", "info-circle", "gear"], 
+                # Added 'Timer' to the list below
+                options=["Home", "Scheduler", "AI Assistant", "Timer", "Dashboard", "About", "Settings"], 
+                icons=["house", "calendar-check", "robot", "hourglass-split", "graph-up", "info-circle", "gear"], 
                 default_index=0
             )
             st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
@@ -1608,6 +1723,7 @@ def main():
             st.rerun()
         elif nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
+        elif nav == "Timer": page_timer()  # <--- NEW ROUTE
         elif nav == "Dashboard": page_dashboard()
         elif nav == "About": page_about()
         elif nav == "Settings": page_settings()
