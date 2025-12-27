@@ -144,6 +144,7 @@ def play_alarm_sound():
 # --- DATA PERSISTENCE FUNCTIONS (NEW) ---
 # --- NEW: CLOUD SYNC ENGINE (REPLACES JSON) ---
 
+# --- DEBUG VERSION OF SYNC_DATA ---
 def sync_data():
     """Saves current Reminders & Timetable to Google Sheets (Reminders Tab)"""
     try:
@@ -152,10 +153,10 @@ def sync_data():
         uid = st.session_state.get('user_id')
         if not uid: return
 
-        # 1. READ EXISTING SHEET
+        # 1. READ EXISTING SHEET (To keep other users' data)
         try:
             df_cloud = conn.read(worksheet="Reminders", ttl=0)
-            # Filter out THIS user's old data (keep everyone else's)
+            # Filter out THIS user's old data
             if not df_cloud.empty and "UserID" in df_cloud.columns:
                 df_others = df_cloud[df_cloud["UserID"] != uid]
             else:
@@ -163,7 +164,7 @@ def sync_data():
         except:
             df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
 
-        # 2. PREPARE NEW ROWS FROM SESSION STATE
+        # 2. PREPARE NEW ROWS
         new_rows = []
         
         # A. Alarms
@@ -183,21 +184,31 @@ def sync_data():
                 "Task": slot['Activity'],
                 "Time": slot['Time'],
                 "Status": "Done" if slot['Done'] else "Pending",
-                "Type": f"Schedule-{slot['Category']}" # e.g., Schedule-Study
+                "Type": f"Schedule-{slot['Category']}"
             })
 
+        # --- DEBUG: SHOW DATA ON SCREEN ---
+        if new_rows:
+            st.warning(f"📡 SYNCING {len(new_rows)} ITEMS...")
+            st.table(new_rows) # This will show the exact data being sent
+        else:
+            st.error("⚠️ SYNCING EMPTY LIST")
+
         # 3. MERGE & UPLOAD
-        st.write("👀 DEBUG DATA BEING SENT:", new_rows)
         if new_rows:
             df_my_data = pd.DataFrame(new_rows)
+            # Force columns to match exactly
+            df_my_data = df_my_data[["UserID", "Task", "Time", "Status", "Type"]]
+            
             df_final = pd.concat([df_others, df_my_data], ignore_index=True)
         else:
-            df_final = df_others # User cleared everything
-            
+            df_final = df_others
+
         conn.update(worksheet="Reminders", data=df_final)
 
     except Exception as e:
-        print(f"Cloud Sync Error: {e}")
+        st.error(f"Cloud Sync Error: {e}")
+
 
 def load_cloud_data():
     """Loads Reminders & Timetable from Google Sheets on Login"""
