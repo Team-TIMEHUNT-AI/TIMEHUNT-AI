@@ -791,7 +791,7 @@ def page_scheduler():
             
             submitted = st.form_submit_button("Add to Schedule ➔")
             
-            if submitted and task:
+                        if submitted and task:
                 # Assign XP based on difficulty
                 base_xp = 30 if diff == "Easy" else 50 if diff == "Medium" else 100
                 
@@ -803,8 +803,11 @@ def page_scheduler():
                     "Done": False, 
                     "XP": base_xp
                 })
+                
+                sync_data()
                 st.toast(f"Mission Deployed: {task}", icon="🦅")
                 st.rerun()
+
 
     with c2:
         total_tasks = len(st.session_state['timetable_slots'])
@@ -1706,4 +1709,4 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+    main()
