@@ -791,7 +791,7 @@ def page_scheduler():
             
             submitted = st.form_submit_button("Add to Schedule ➔")
             
-            # --- CORRECTED INDENTATION HERE ---
+            # --- CORRECTED BLOCK STARTS HERE ---
             if submitted and task:
                 # 1. Add to Session State
                 base_xp = 30 if diff == "Easy" else 50 if diff == "Medium" else 100
@@ -805,28 +805,26 @@ def page_scheduler():
                 }
                 st.session_state['timetable_slots'].append(new_entry)
                 
-                # 2. DEBUG PRINT ON SCREEN (Before Sync)
+                # 2. DEBUG PRINT ON SCREEN (Blue Box)
                 st.info("👇 1. DATA ADDED TO MEMORY:")
                 st.write(new_entry)
-                
-                st.info("👇 2. FULL LIST READY TO SYNC:")
-                st.write(st.session_state['timetable_slots'])
 
                 # 3. Attempt Sync
-                st.warning("🔄 3. ATTEMPTING SYNC NOW...")
+                st.warning("🔄 2. ATTEMPTING SYNC TO GOOGLE SHEETS...")
                 sync_data()
-                st.success("✅ 4. SYNC FUNCTION FINISHED")
+                st.success("✅ 3. SYNC FUNCTION FINISHED")
                 
-                # 4. STOP HERE (Do not Rerun)
-                st.error("🛑 RERUN STOPPED FOR DEBUGGING. CHECK YOUR SHEET NOW.")
-                # st.rerun() # <--- Commented out on purpose for testing
+                # 4. STOP HERE (To let you read the debug messages)
+                st.error("🛑 AUTO-REFRESH STOPPED FOR DEBUGGING. CHECK YOUR GOOGLE SHEET NOW.")
+                # st.rerun() # <--- Commented out so you can see the results
+            # --- CORRECTED BLOCK ENDS HERE ---
 
     with c2:
         total_tasks = len(st.session_state['timetable_slots'])
         pending_tasks = len([t for t in st.session_state['timetable_slots'] if not t['Done']])
         completed_tasks = total_tasks - pending_tasks
         
-        # CLEAN CARD HTML (Uses proper CSS classes for styling)
+        # CLEAN CARD HTML
         st.markdown(f"""
         <div class="css-card" style="text-align: center;">
             <div class="card-title" style="margin-bottom: 15px;">Mission Status</div>
@@ -871,6 +869,7 @@ def page_scheduler():
                 num_rows="dynamic"
             )
 
+            # Update session state if edited manually
             st.session_state['timetable_slots'] = edited_df.to_dict('records')
             
             st.write("")
@@ -881,26 +880,21 @@ def page_scheduler():
                     completed_now = [t for t in current_slots if t['Done']]
                     
                     if completed_now:
-                        # 1. Calculate Gain with Multiplier
                         streak = st.session_state.get('streak', 1)
                         multiplier = 1 + (streak * 0.1)
-                        
                         raw_xp = sum([t['XP'] for t in completed_now])
                         final_xp = int(raw_xp * multiplier)
                         
-                        # 2. Update Stats
                         st.session_state['user_xp'] += final_xp
                         st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
-                        
-                        # Remove completed items
                         st.session_state['timetable_slots'] = [t for t in current_slots if not t['Done']]
                         
-                        # 3. Log History
                         today_str = datetime.date.today().strftime("%Y-%m-%d")
                         st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
+                        
                         sync_data() 
                         
-                        st.balloons() # CELEBRATION
+                        st.balloons() 
                         st.toast(f"Reward: {raw_xp} x {multiplier:.1f} Streak = +{final_xp} XP!", icon="🎉")
                         time.sleep(2)
                         st.rerun()
