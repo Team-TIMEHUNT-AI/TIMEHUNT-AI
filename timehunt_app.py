@@ -369,11 +369,10 @@ Return strictly in this format inside a code block if a plan is requested:
 # --- 3. SESSION STATE & PERSISTENCE ---
 
 def initialize_session_state():
-    # --- FIX: Removed local file loading to prevent "Ghost Profile" on new devices ---
-    
-    # 1. Define Defaults (What to use if NO saved data exists)
+    # 1. Define Defaults
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     
+    # --- FIX: Removed extra spaces before 'defaults' ---
     defaults = {
         'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
         'active_alarm': None,
@@ -381,7 +380,7 @@ def initialize_session_state():
         'chat_history': [], 
         'current_session_id': None,
         'current_session_name': "New Chat",
-        'page_mode': 'main', # <--- NEW: THIS CONTROLS THE SIDEBAR SWITCH
+        'page_mode': 'main',
         'user_xp': 0, 'user_level': 1, 'streak': 1,
         'last_active_date': today_str,
         'timetable_slots': [], 'reminders': [],
@@ -397,7 +396,7 @@ def initialize_session_state():
         if key not in st.session_state:
             st.session_state[key] = default_val
 
-    # 3. API Key Setup (Secrets)
+    # 3. API Key Setup
     if 'gemini_api_keys' not in st.session_state or not st.session_state['gemini_api_keys']:
         if "GEMINI_API_KEY" in st.secrets:
             st.session_state['gemini_api_keys'] = [st.secrets["GEMINI_API_KEY"]]
@@ -1068,105 +1067,78 @@ def page_timer():
         components.html(timer_html, height=300)
 
 # --- NEW: CALENDAR PAGE ---
-# --- NEW: TACTICAL GRID CALENDAR ---
+# --- CALENDAR PAGE ---
 def page_calendar():
-    # 1. Imports & Setup
-    import calendar 
+    import calendar
     st.markdown('<div class="big-title">📅 Tactical Grid</div>', unsafe_allow_html=True)
 
     if 'cal_year' not in st.session_state: st.session_state['cal_year'] = datetime.date.today().year
     if 'cal_month' not in st.session_state: st.session_state['cal_month'] = datetime.date.today().month
     if 'sel_date' not in st.session_state: st.session_state['sel_date'] = datetime.date.today().strftime("%Y-%m-%d")
 
-    # 2. Navigation
+    # 1. Navigation
     c_prev, c_month, c_next = st.columns([1, 4, 1], vertical_alignment="center")
     with c_prev:
-        if st.button("◀", key="prev_m"):
+        if st.button("◀"):
             st.session_state['cal_month'] -= 1
-            if st.session_state['cal_month'] < 1:
-                st.session_state['cal_month'] = 12
-                st.session_state['cal_year'] -= 1
+            if st.session_state['cal_month'] < 1: st.session_state['cal_month'] = 12; st.session_state['cal_year'] -= 1
             st.rerun()
     with c_next:
-        if st.button("▶", key="next_m"):
+        if st.button("▶"):
             st.session_state['cal_month'] += 1
-            if st.session_state['cal_month'] > 12:
-                st.session_state['cal_month'] = 1
-                st.session_state['cal_year'] += 1
+            if st.session_state['cal_month'] > 12: st.session_state['cal_month'] = 1; st.session_state['cal_year'] += 1
             st.rerun()
     with c_month:
         month_name = calendar.month_name[st.session_state['cal_month']]
-        st.markdown(f"<h3 style='text-align: center; margin:0;'>{month_name} {st.session_state['cal_year']}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align:center; margin:0;'>{month_name} {st.session_state['cal_year']}</h3>", unsafe_allow_html=True)
 
-    st.write("") # Spacer
-
-    # 3. CALENDAR GRID
-    # Weekday Headers
+    # 2. Grid Headers (M T W T F S S)
     cols = st.columns(7)
-    days_header = ["M", "T", "W", "T", "F", "S", "S"]
-    for i, day in enumerate(days_header):
-        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888; font-size:14px;'>{day}</div>", unsafe_allow_html=True)
+    for i, d in enumerate(["M","T","W","T","F","S","S"]):
+        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888; font-size:12px;'>{d}</div>", unsafe_allow_html=True)
 
-    # Days Matrix
+    # 3. Grid Days
     month_matrix = calendar.monthcalendar(st.session_state['cal_year'], st.session_state['cal_month'])
-    
     for week in month_matrix:
         cols = st.columns(7)
         for i, day in enumerate(week):
             if day == 0:
-                cols[i].write("") # Empty slot
+                cols[i].write("")
             else:
-                this_date_str = f"{st.session_state['cal_year']}-{st.session_state['cal_month']:02d}-{day:02d}"
-                
-                # Check for tasks
-                has_task = any(t.get('Date') == this_date_str for t in st.session_state['timetable_slots'])
-                
-                # Button Label (Just number for clean grid)
+                d_str = f"{st.session_state['cal_year']}-{st.session_state['cal_month']:02d}-{day:02d}"
+                has_task = any(t.get('Date') == d_str for t in st.session_state['timetable_slots'])
                 label = f"{day}"
-                if has_task: label += " •"
+                if has_task: label += "•"
                 
-                # Style selected
-                type_btn = "primary" if st.session_state['sel_date'] == this_date_str else "secondary"
-                
-                if cols[i].button(label, key=f"day_{this_date_str}", type=type_btn):
-                    st.session_state['sel_date'] = this_date_str
+                # Small button, primary if selected
+                btn_type = "primary" if st.session_state['sel_date'] == d_str else "secondary"
+                if cols[i].button(label, key=f"d_{d_str}", type=btn_type):
+                    st.session_state['sel_date'] = d_str
                     st.rerun()
 
-    # 4. TASK MANAGER (Below Grid)
+    # 4. Selected Date Details
     st.markdown("---")
-    selected = st.session_state['sel_date']
+    sel = st.session_state['sel_date']
+    st.markdown(f"### 🎯 Missions: {sel}")
     
-    # Show formatted date (e.g., "Monday, 14 January")
-    dt_obj = datetime.datetime.strptime(selected, "%Y-%m-%d")
-    pretty_date = dt_obj.strftime("%A, %d %B")
-    
-    st.markdown(f"### 🎯 Missions: {pretty_date}")
-    
-    c_view, c_add = st.columns([3, 2])
+    # Task List & Add Form
+    c_view, c_add = st.columns([1, 1]) # Stack on mobile, split on desktop
     
     with c_view:
-        day_tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == selected]
-        if day_tasks:
-            for idx, t in enumerate(day_tasks):
-                status = "✅" if t['Done'] else "⬜"
-                st.info(f"{status} **{t['Time']}**: {t['Activity']} ({t['Category']})")
+        tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == sel]
+        if tasks:
+            for t in tasks:
+                st.info(f"**{t['Time']}** {t['Activity']}")
         else:
-            st.caption("No missions scheduled for this day.")
+            st.caption("No missions.")
 
     with c_add:
-        with st.form("quick_cal_add", clear_on_submit=True):
-            st.caption("Add New Task")
-            new_task = st.text_input("Task", placeholder="Mission Name")
-            new_time = st.time_input("Time")
-            new_cat = st.selectbox("Type", ["Study", "Work", "Health"])
-            
-            if st.form_submit_button("➕ Add"):
+        with st.form("add_cal"):
+            task = st.text_input("Task")
+            time_at = st.time_input("Time")
+            if st.form_submit_button("Add"):
                 st.session_state['timetable_slots'].append({
-                    "Date": selected,
-                    "Time": new_time.strftime("%H:%M"),
-                    "Activity": new_task,
-                    "Category": new_cat,
-                    "Difficulty": "Medium", "Done": False, "XP": 50
+                    "Date": sel, "Time": time_at.strftime("%H:%M"), "Activity": task, "Done":False, "Category":"General", "XP":50
                 })
                 sync_data()
                 st.rerun()
@@ -1311,180 +1283,60 @@ def page_ai_assistant():
 
 # --- 9. CUSTOM UI STYLING (SIDEBAR & MAIN THEME) ---
 
+# --- 9. CUSTOM UI STYLING ---
 def inject_custom_css():
     # 1. Load User Preferences
     theme_color = st.session_state.get('theme_color', 'Venom Green (Default)')
     theme_mode = st.session_state.get('theme_mode', 'Light') 
     
-    # 2. Define Accent Colors
-    colors = {
-        "Venom Green (Default)": "#B5FF5F",
-        "Cyber Blue": "#00E5FF",
-        "Crimson Alert": "#FF2A2A",
-        "Stealth Grey": "#A0A0A0"
-    }
+    # 2. Define Colors
+    colors = {"Venom Green (Default)": "#B5FF5F", "Cyber Blue": "#00E5FF", "Crimson Alert": "#FF2A2A", "Stealth Grey": "#A0A0A0"}
     accent = colors.get(theme_color, "#B5FF5F")
     
-    # 3. Define Visual Protocols
+    # 3. Mode Logic
     if theme_mode == "Light":
-        main_bg = "linear-gradient(180deg, #FFF6E5 0%, #FFFFFF 40%, #Eef2ff 100%)"
-        sidebar_bg = "linear-gradient(180deg, #FDF3E6 0%, #FFFFFF 100%)"
-        card_bg = "#FFFFFF"
-        text_color = "#1A1A1A"
-        sub_text = "#444444"
-        border_color = "rgba(0,0,0,0.05)"
-        shadow = "0 10px 40px -10px rgba(0,0,0,0.08)"
+        main_bg, sidebar_bg, card_bg, text_color = "linear-gradient(180deg, #FFF6E5 0%, #FFFFFF 100%)", "linear-gradient(180deg, #FDF3E6 0%, #FFFFFF 100%)", "#FFFFFF", "#1A1A1A"
         input_bg = "#FFFFFF"
-        nav_active_bg = accent
-        nav_active_text = "#000000"
     else:
-        main_bg = "linear-gradient(180deg, #0E1117 0%, #151922 100%)"
-        sidebar_bg = "#0E1117"
-        card_bg = "#1E232F"
-        text_color = "#FAFAFA"
-        sub_text = "#A0A0A0"
-        border_color = "rgba(255,255,255,0.1)"
-        shadow = "0 4px 20px rgba(0,0,0,0.3)"
+        main_bg, sidebar_bg, card_bg, text_color = "linear-gradient(180deg, #0E1117 0%, #151922 100%)", "#0E1117", "#1E232F", "#FAFAFA"
         input_bg = "#262730"
-        nav_active_bg = accent
-        nav_active_text = "#000000"
 
-    # 4. INJECT CSS
+    # 4. INJECT CSS (WITH MOBILE GRID FIX)
     st.markdown(f"""
         <style>
-            /* --- VARIABLES --- */
-            :root {{
-                --accent: {accent};
-                --text: {text_color};
-                --card-bg: {card_bg};
-            }}
+            :root {{ --accent: {accent}; --text: {text_color}; --card-bg: {card_bg}; }}
+            .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
+            section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
             
-            /* --- BACKGROUNDS --- */
-            .stApp {{
-                background: {main_bg} !important;
-                color: {text_color} !important;
-            }}
-            section[data-testid="stSidebar"] {{
-                background: {sidebar_bg} !important;
-                border-right: 1px solid {border_color};
-            }}
+            /* Typography */
+            .big-title {{ font-size: 42px !important; font-weight: 900 !important; color: {text_color} !important; margin-bottom: 5px; }}
+            .sub-title {{ font-size: 18px !important; color: {text_color} !important; opacity: 0.8; margin-bottom: 20px; }}
             
-            /* --- TYPOGRAPHY --- */
-            h1 {{
-                font-size: 42px !important;
-                font-weight: 800 !important;
-                color: {text_color} !important;
-                margin-bottom: 10px !important;
-            }}
-            h2, h3 {{
-                font-weight: 700 !important;
-                color: {text_color} !important;
-            }}
-            .big-title {{
-                font-size: 48px !important; 
-                font-weight: 900 !important; 
-                color: {text_color} !important; 
-                margin-bottom: 5px;
-            }}
-            .sub-title {{
-                font-size: 20px !important; 
-                color: {sub_text} !important; 
-                font-weight: 500;
-                margin-bottom: 30px;
-            }}
-            p, label, .caption, .card-sub {{
-                color: {sub_text} !important;
-            }}
+            /* Cards & Inputs */
+            .css-card {{ background-color: {card_bg}; border-radius: 24px; padding: 25px; margin-bottom: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }}
+            .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {{ background-color: {input_bg} !important; border-radius: 12px; }}
             
-            /* --- CARDS --- */
-            .css-card {{
-                background-color: {card_bg};
-                border-radius: 24px;
-                padding: 30px;
-                margin-bottom: 20px;
-                box-shadow: {shadow};
-                border: 1px solid {border_color};
-                transition: transform 0.2s;
-            }}
-            .css-card:hover {{
-                transform: translateY(-3px);
-            }}
+            /* Buttons */
+            .stButton button {{ border-radius: 20px; font-weight: 600; width: 100%; border: 1px solid rgba(0,0,0,0.1); }}
             
-            .card-title {{
-                font-size: 22px; 
-                font-weight: 700; 
-                color: {text_color} !important;
-                margin-bottom: 10px;
-            }}
-            
-            /* --- STAT NUMBERS --- */
-            .stat-num {{
-                font-size: 36px;
-                font-weight: 800;
-                color: {text_color} !important;
-            }}
-            
-            /* --- INPUT FIELDS --- */
-            .stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stTextArea textarea {{
-                background-color: {input_bg} !important;
-                color: {text_color} !important;
-                border: 1px solid {border_color} !important;
-                border-radius: 12px;
-                padding: 10px;
-            }}
-            
-            /* --- BUTTONS --- */
-            .stButton button {{
-                background-color: {card_bg};
-                color: {text_color};
-                border: 1px solid {border_color};
-                border-radius: 30px;
-                font-weight: 600;
-                padding: 0.5rem 1rem;
-                box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-            }}
-            .stButton button:hover {{
-                border-color: {accent};
-                color: {accent} !important;
-                transform: translateY(-2px);
-            }}
-            
-            /* --- NAVIGATION --- */
-            .nav-link-selected {{
-                background-color: {nav_active_bg} !important;
-                color: {nav_active_text} !important;
-                font-weight: bold;
-                border-radius: 10px;
-            }}
-            
-            /* --- BLACK CARD OVERRIDE --- */
-            .black-card {{
-                background-color: #1A1A1A !important; 
-                color: white !important; 
-                border-radius: 32px; 
-                padding: 24px;
-                border: 1px solid #333;
-                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            }}
-            .black-card * {{ color: white !important; }}
-
-            /* --- MOBILE CALENDAR GRID FIX (CRITICAL) --- */
-            /* This forces the 7 calendar columns to stay side-by-side on mobile */
+            /* --- 📱 MOBILE CALENDAR FIX 📱 --- */
+            /* This forces columns to NOT stack on mobile */
             [data-testid="column"] {{
-                width: calc(14.2% - 10px) !important;
-                flex: 1 1 calc(14.2% - 10px) !important;
+                width: calc(14.2% - 8px) !important;
+                flex: 1 1 calc(14.2% - 8px) !important;
                 min-width: 0 !important;
+                padding: 0 2px !important;
             }}
             
-            /* Reset width for bigger columns (like main layout) so they don't break */
+            /* Restore normal width for big elements like Titles & Cards so they don't look squished */
             .stMain [data-testid="column"]:has(div.big-title),
-            .stMain [data-testid="column"]:has(div.css-card) {{
+            .stMain [data-testid="column"]:has(div.css-card),
+            .stMain [data-testid="column"]:has(div.stMarkdown) {{
                 width: 100% !important;
                 flex: 1 1 100% !important;
             }}
         </style>
     """, unsafe_allow_html=True)
-
 
 # --- 10. MAIN ROUTER ---
 
