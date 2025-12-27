@@ -1312,21 +1312,20 @@ def page_home():
 def page_about():
     st.markdown("## 🛡️ TimeHunt AI: System Overview")
     
-    # --- CAPSTONE BADGE ---
-    # --- CAPSTONE BADGE (FIXED COLOR) ---
+    # --- UPDATED CAPSTONE BADGE ---
     st.markdown("""
     <div style="
         background: linear-gradient(90deg, #1A1A1A, #333); 
         padding: 20px; 
         border-radius: 10px; 
         border-left: 5px solid #B5FF5F; 
-        color: white !important;  /* <--- FORCES TEXT WHITE */
+        color: white !important; 
         margin-bottom: 20px;">
         
         <h3 style="margin:0; color: #B5FF5F !important;">🎓 CBSE Capstone Project</h3>
         
         <p style="margin:5px 0 0 0; font-size: 14px; opacity: 0.9; color: white !important;">
-            <b>Class:</b> 12th | <b>Subject:</b> Computer Science | <b>Session:</b> 2024-25<br>
+            <b>Class:</b> 12th | <b>Subject:</b> Artificial Intelligence | <b>Session:</b> 2024-25<br>
             Demonstrating advanced Python integration, AI Logic, and State Management.
         </p>
     </div>
@@ -1348,6 +1347,8 @@ def page_about():
 
     st.markdown("---")
     st.caption("Developed with ❤️ using Python & Streamlit")
+    
+# ------ SETTINGS PAGE --------
 
 def page_settings():
     st.markdown("## ⚙️ Command Center")
@@ -1452,14 +1453,9 @@ def page_settings():
 def main():
     initialize_session_state()
     
-    # --- 1. GLOBAL ALARM SYSTEM (Runs on EVERY page) ---
-    # We use a container to ensure it stays at the top
+    # --- 1. GLOBAL ALARM SYSTEM ---
     alarm_container = st.container()
-    
-    # Logic to trigger alarm
     check_reminders()
-    
-    # Render the UI inside the container if ringing
     with alarm_container:
         render_alarm_ui()
     
@@ -1468,210 +1464,66 @@ def main():
     show_comet_splash()
 
     # --- 3. SESSION STATE CHECKS ---
-    if 'user_name' not in st.session_state:
-        st.session_state['user_name'] = "Hunter"
-    if 'user_xp' not in st.session_state:
-        st.session_state['user_xp'] = 0
-    if 'user_level' not in st.session_state:
-        st.session_state['user_level'] = 1
-    if 'xp_history' not in st.session_state:
-        st.session_state['xp_history'] = [] 
-    if 'timetable_slots' not in st.session_state:
-        st.session_state['timetable_slots'] = []
+    if 'user_name' not in st.session_state: st.session_state['user_name'] = "Hunter"
+    if 'user_xp' not in st.session_state: st.session_state['user_xp'] = 0
+    if 'user_level' not in st.session_state: st.session_state['user_level'] = 1
+    if 'xp_history' not in st.session_state: st.session_state['xp_history'] = [] 
+    if 'timetable_slots' not in st.session_state: st.session_state['timetable_slots'] = []
     
     # --- 4. CHECK ONBOARDING ---
     if not st.session_state['onboarding_complete']:
         page_onboarding()
-        return # Stop loading the rest of the app until onboarding is done
+        return 
 
-    # --- 5. SIDEBAR (Navigation & Tools) ---
+    # --- 5. SIDEBAR ---
     with st.sidebar:
         st.markdown("<h1 style='text-align: center; margin-bottom: 20px;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
         render_live_clock()
         
-        # --- TACTICAL AUDIO ENGINE ---
         st.markdown("---")
         st.markdown("### 🎧 Sonic Intel")
         
         with st.container():
-            # 1. Select Mode
-            music_mode = st.selectbox(
-                "Frequency Channel", 
-                ["Om Chanting (Spiritual)", "Binaural Beats (Focus)", "Divine Flute (Flow)", "Rainfall (Calm)"],
-                label_visibility="collapsed"
-            )
-            
-            # 2. File Map
-            local_map = {
-                "Om Chanting (Spiritual)": "om.mp3",
-                "Binaural Beats (Focus)": "binaural.mp3",
-                "Divine Flute (Flow)": "flute.mp3",
-                "Rainfall (Calm)": "rain.mp3"
-            }
+            music_mode = st.selectbox("Frequency", ["Om Chanting (Spiritual)", "Binaural Beats (Focus)", "Divine Flute (Flow)", "Rainfall (Calm)"], label_visibility="collapsed")
+            local_map = {"Om Chanting (Spiritual)": "om.mp3", "Binaural Beats (Focus)": "binaural.mp3", "Divine Flute (Flow)": "flute.mp3", "Rainfall (Calm)": "rain.mp3"}
             target_file = local_map.get(music_mode)
 
-            # 3. Visualizer & Player
             if target_file and os.path.exists(target_file):
-                # CSS for the "Visualizer" bars and Dark Mode Player
-                st.markdown("""
-                <style>
-                    /* Dark Mode Hack for Standard Audio Player */
-                    audio {
-                        width: 100%;
-                        height: 40px;
-                        filter: invert(1) hue-rotate(180deg) brightness(1.2) contrast(1.2);
-                        border-radius: 5px;
-                        margin-top: 10px;
-                    }
-                    
-                    /* The Green Container */
-                    .audio-box {
-                        background: #1A1A1A;
-                        border: 1px solid #333;
-                        border-left: 3px solid #B5FF5F;
-                        padding: 15px;
-                        border-radius: 10px;
-                        margin-bottom: 20px;
-                    }
-                    
-                    /* Animated Bars */
-                    .equalizer {
-                        display: flex;
-                        align-items: flex-end;
-                        height: 20px;
-                        gap: 3px;
-                        margin-bottom: 5px;
-                        opacity: 0.8;
-                    }
-                    .bar {
-                        width: 4px;
-                        background: #B5FF5F;
-                        animation: bounce 1s infinite ease-in-out;
-                    }
-                    .bar:nth-child(1) { animation-duration: 0.8s; height: 10px; }
-                    .bar:nth-child(2) { animation-duration: 1.1s; height: 18px; }
-                    .bar:nth-child(3) { animation-duration: 0.9s; height: 14px; }
-                    .bar:nth-child(4) { animation-duration: 1.2s; height: 8px; }
-                    .bar:nth-child(5) { animation-duration: 0.7s; height: 12px; }
-                    .bar:nth-child(6) { animation-duration: 1.0s; height: 16px; }
-                    @keyframes bounce {
-                        0%, 100% { transform: scaleY(1); opacity: 0.6; }
-                        50% { transform: scaleY(1.5); opacity: 1; }
-                    }
-                </style>
-                <div class="audio-box">
-                    <div style="color: #888; font-size: 10px; margin-bottom: 5px; letter-spacing: 1px;">ACTIVE FREQUENCY // {music_mode}</div>
-                    <div class="equalizer">
-                        <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-                        <div class="bar"></div><div class="bar"></div><div class="bar"></div>
-                    </div>
-                </div>
-                """.replace("{music_mode}", music_mode.upper()), unsafe_allow_html=True)
-                
-                # The Player (Placed outside the HTML box to keep functionality)
                 st.audio(target_file, format="audio/mp3", loop=True)
-            
             else:
-                st.warning(f"SIGNAL LOST: {target_file}")
                 st.caption("Upload .mp3 to root directory.")
 
-        # --- SMOOTH JAVASCRIPT TIMER (NO REFRESH) ---
         st.markdown("### ⏱️ Focus Timer")
-        
-        # This HTML/JS runs in the browser, so clicking Start WON'T refresh the python script
         pomo_html = """
         <style>
-            .timer-box {
-                background: #1A1A1A; 
-                color: #B5FF5F; 
-                font-family: monospace; 
-                font-size: 35px; 
-                text-align: center; 
-                border-radius: 15px; 
-                padding: 10px; 
-                border: 2px solid #B5FF5F; 
-                box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
-                margin-bottom: 10px;
-            }
+            .timer-box { background: #1A1A1A; color: #B5FF5F; font-family: monospace; font-size: 35px; text-align: center; border-radius: 15px; padding: 10px; border: 2px solid #B5FF5F; margin-bottom: 10px; }
             .btn-grid { display: flex; gap: 10px; }
-            .btn {
-                flex: 1; 
-                padding: 10px; 
-                border-radius: 10px; 
-                border: none; 
-                cursor: pointer; 
-                font-weight: bold;
-                transition: transform 0.1s;
-            }
-            .btn:active { transform: scale(0.95); }
+            .btn { flex: 1; padding: 10px; border-radius: 10px; border: none; cursor: pointer; font-weight: bold; }
             .btn-start { background: #B5FF5F; color: black; }
             .btn-reset { background: #333; color: white; }
         </style>
-        
-        <div class="timer-box">
-            <span id="timer-display">25:00</span>
-        </div>
-        <div class="btn-grid">
-            <button class="btn btn-start" onclick="startTimer()">START</button>
-            <button class="btn btn-reset" onclick="resetTimer()">RESET</button>
-        </div>
-
+        <div class="timer-box"><span id="timer-display">25:00</span></div>
+        <div class="btn-grid"><button class="btn btn-start" onclick="startTimer()">START</button><button class="btn btn-reset" onclick="resetTimer()">RESET</button></div>
         <script>
-            let timeLeft = 25 * 60; // 25 minutes in seconds
-            let timerId = null;
-            const display = document.getElementById('timer-display');
-
-            function updateDisplay() {
-                let mins = Math.floor(timeLeft / 60);
-                let secs = timeLeft % 60;
-                display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
-            }
-
-            function startTimer() {
-                if (timerId) return; // Prevent multiple clicks
-                timerId = setInterval(() => {
-                    if (timeLeft > 0) {
-                        timeLeft--;
-                        updateDisplay();
-                    } else {
-                        clearInterval(timerId);
-                        timerId = null;
-                        // Optional: Play a sound or alert here
-                        alert("Mission Complete! +50 XP");
-                    }
-                }, 1000);
-            }
-
-            function resetTimer() {
-                clearInterval(timerId);
-                timerId = null;
-                timeLeft = 25 * 60;
-                updateDisplay();
-            }
+            let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
+            function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
+            function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Mission Complete!"); } }, 1000); }
+            function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
         </script>
         """
-        # Render the HTML in the sidebar
         components.html(pomo_html, height=160)
 
         st.markdown("---")
-        
-        # NAVIGATION MENU
         nav = option_menu(
             menu_title=None,
             options=["Home", "Scheduler", "AI Assistant", "Dashboard", "About", "Settings"], 
             icons=["house", "calendar-check", "robot", "graph-up", "info-circle", "gear"], 
-            default_index=0,
-            styles={
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin": "0px"},
-                "nav-link-selected": {"background-color": "#B5FF5F", "color": "#1A1A1A"},
-            }
+            default_index=0
         )
-        
         st.markdown("---")
         st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
-        st.caption(f"🎖️ **Level:** {st.session_state['user_level']}")
-    
-    # --- 6. PAGE ROUTING (Must be inside main, after nav is defined) ---
+
+    # --- 6. PAGE ROUTING (ALIGNED CORRECTLY) ---
     if nav == "Home":
         page_home()
     elif nav == "Scheduler":
@@ -1681,10 +1533,12 @@ def main():
     elif nav == "Dashboard":
         # --- 1. CONNECT TO REAL DATABASE ---
         try:
-            # Import strictly inside the function to avoid errors if library is missing
             from streamlit_gsheets import GSheetsConnection
-            
             conn = st.connection("gsheets", type=GSheetsConnection)
+            df = conn.read(worksheet="Sheet1", ttl=0) 
+        except Exception as e:
+            st.error(f"📡 Connection Failed: {e}")
+            st.stop()
 
         # --- 2. UPDATE YOUR DATA TO CLOUD ---
         current_user = st.session_state['user_name']
@@ -1693,107 +1547,78 @@ def main():
         current_avatar = str(st.session_state.get('user_avatar', "👤"))
         today_str = datetime.date.today().strftime("%Y-%m-%d")
 
-        # Clean the dataframe to match our columns
         if df.empty or 'UserID' not in df.columns:
             df = pd.DataFrame(columns=["UserID", "Name", "XP", "League", "Avatar", "LastActive"])
 
-        # Check if user exists by UserID, not Name
         uid = st.session_state['user_id']
         if uid in df['UserID'].values:
-            # Update existing row (Name change won't create a new entry)
             df.loc[df['UserID'] == uid, ['Name', 'XP', 'League', 'Avatar', 'LastActive']] = [current_user, current_xp, current_league, current_avatar, today_str]
         else:
-            # Add new row with the unique ID
-            new_row = pd.DataFrame([{
-                "UserID": uid,
-                "Name": current_user, 
-                "XP": current_xp, 
-                "League": current_league, 
-                "Avatar": current_avatar,
-                "LastActive": today_str
-            }])
+            new_row = pd.DataFrame([{ "UserID": uid, "Name": current_user, "XP": current_xp, "League": current_league, "Avatar": current_avatar, "LastActive": today_str }])
             df = pd.concat([df, new_row], ignore_index=True)
 
-        # Write back to Google Sheet
         conn.update(worksheet="Sheet1", data=df)
-                # --- FIX: DEFINE df_sorted HERE ---
-        # Ensure XP is numeric and sort
+        
+        # --- FIX 1: SORT DATA ---
         if not df.empty and 'XP' in df.columns:
             df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
             df_sorted = df.sort_values(by='XP', ascending=False)
         else:
-            # Fallback if dataframe is empty
             df_sorted = pd.DataFrame(columns=["Name", "XP", "Avatar"])
-        # ----------------------------------
 
+        # --- FIX 2: CREATE COLUMNS ---
+        c_leaderboard, c_stats = st.columns([2, 1])
 
-        # --- 3. RENDER LEADERBOARD UI ---
-        st.markdown(f'<div class="big-title">Global Rankings 🏆</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="sub-title">Live Data from Cloud Database</div>', unsafe_allow_html=True)
-
-        st.markdown("### 🌍 Top Hunters")
-        # .head(5) ensures we only take the first 5 winners
-        for i, row in df_sorted.head(5).iterrows():
+        # --- 3. RENDER LEADERBOARD ---
+        with c_leaderboard:
+            st.markdown(f'<div class="big-title">Global Rankings 🏆</div>', unsafe_allow_html=True)
+            st.markdown("### 🌍 Top Hunters")
+            
+            for i, row in df_sorted.head(5).iterrows():
                 is_me = row['Name'] == current_user
-                
                 bg_color = "#B5FF5F" if is_me else "#FFFFFF"
                 text_color = "#1A1A1A" if is_me else "#333"
-                border = "2px solid #1A1A1A" if is_me else "1px solid #eee"
-                
-                # Render clean avatar
-                display_av = row['Avatar']
-                if len(str(display_av)) > 5: display_av = "👤" 
+                display_av = row['Avatar'] if len(str(row['Avatar'])) < 5 else "👤"
                 
                 st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; background:{bg_color}; padding:15px; border-radius:12px; margin-bottom:10px; border:{border}; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <div style="display:flex; justify-content:space-between; align-items:center; background:{bg_color}; padding:15px; border-radius:12px; margin-bottom:10px; color:{text_color}; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
                     <div style="display:flex; align-items:center; gap:15px;">
-                        <span style="font-size:20px; font-weight:bold; color:{text_color};">#{i+1}</span>
+                        <span style="font-size:20px; font-weight:bold;">#{i+1}</span>
                         <span style="font-size:24px;">{display_av}</span>
-                        <span style="font-weight:bold; font-size:16px; color:{text_color};">{row['Name']}</span>
+                        <span style="font-weight:bold; font-size:16px;">{row['Name']}</span>
                     </div>
-                    <div style="font-family:monospace; font-weight:bold; font-size:18px; color:{text_color};">
-                        {row['XP']} XP
-                    </div>
+                    <div style="font-family:monospace; font-weight:bold; font-size:18px;">{row['XP']} XP</div>
                 </div>
                 """, unsafe_allow_html=True)
 
+        # --- 4. RENDER STATS ---
         with c_stats:
             st.markdown("### 📊 Your Status")
             try:
-                rank = df_sorted[df_sorted['Name'] == current_user].index[0] + 1
+                # Find rank safely
+                rank = df_sorted.index[df_sorted['UserID'] == uid].tolist()
+                my_rank = rank[0] + 1 if rank else "?"
+                
                 st.markdown(f"""
                 <div class="css-card" style="text-align:center;">
                     <div style="font-size:40px;">👑</div>
-                    <div class="card-title">Rank #{rank}</div>
+                    <div class="card-title">Rank #{my_rank}</div>
                 </div>
                 """, unsafe_allow_html=True)
-            except:
-                st.info("Syncing...")
+            except Exception as e:
+                st.info(f"Syncing... {e}")
             
             if st.button("🔄 Force Refresh"):
                 st.rerun()
             st.write("")
-            st.markdown("### 🗂️ Intelligence")
             
-            # Generate Report Button
+            # REPORT BUTTON
             if st.button("📄 Download Report"):
                 try:
-                    pdf_data = create_mission_report(
-                        st.session_state['user_name'],
-                        st.session_state['user_level'],
-                        st.session_state['user_xp'],
-                        st.session_state['xp_history']
-                    )
-                    
-                    st.download_button(
-                        label="⬇️ Save PDF Brief",
-                        data=pdf_data,
-                        file_name=f"TimeHunt_Report_{today_str}.pdf",
-                        mime="application/pdf"
-                    )
-                except Exception as e:
-                    st.error(f"Report Generation Failed: {e}")
-                    st.info("Make sure 'fpdf' is installed: pip install fpdf")
+                    pdf_data = create_mission_report(st.session_state['user_name'], st.session_state['user_level'], st.session_state['user_xp'], st.session_state['xp_history'])
+                    st.download_button(label="⬇️ Save PDF", data=pdf_data, file_name=f"TimeHunt_Report_{today_str}.pdf", mime="application/pdf")
+                except:
+                    st.error("Install fpdf: pip install fpdf")
 
     elif nav == "About":
         page_about()
