@@ -143,63 +143,59 @@ def play_alarm_sound():
 
 # --- DATA PERSISTENCE FUNCTIONS (NEW) ---
 def sync_data():
-    """Saves current Reminders & Timetable to Google Sheets using WRITE mode"""
+    """Nuclear Option: Wipes and rewrites the user's data to ensure sync."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         uid = st.session_state.get('user_id')
         if not uid: return
 
-        # 1. READ EXISTING SHEET
+        # 1. READ EVERYTHING (To save other users)
         try:
             df_cloud = conn.read(worksheet="Reminders", ttl=0)
             if not df_cloud.empty and "UserID" in df_cloud.columns:
-                df_others = df_cloud[df_cloud["UserID"] != uid]
+                # Keep everyone else's data, drop MINE
+                df_others = df_cloud[df_cloud["UserID"] != str(uid)]
             else:
                 df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
         except:
+            # If read fails, assume empty
             df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
 
-        # 2. PREPARE NEW ROWS
+        # 2. BUILD MY NEW DATA
         new_rows = []
         
         # Alarms
         for rem in st.session_state.get('reminders', []):
             new_rows.append({
-                "UserID": str(uid),
-                "Task": str(rem['task']),
-                "Time": str(rem['time']), 
-                "Status": "Done" if rem.get('notified') else "Pending",
-                "Type": "Alarm"
+                "UserID": str(uid), "Task": str(rem['task']), "Time": str(rem['time']), 
+                "Status": "Done" if rem.get('notified') else "Pending", "Type": "Alarm"
             })
             
         # Timetable
         for slot in st.session_state.get('timetable_slots', []):
              new_rows.append({
-                "UserID": str(uid),
-                "Task": str(slot['Activity']),
-                "Time": str(slot['Time']),
-                "Status": "Done" if slot['Done'] else "Pending",
-                "Type": f"Schedule-{slot['Category']}"
+                "UserID": str(uid), "Task": str(slot['Activity']), "Time": str(slot['Time']),
+                "Status": "Done" if slot['Done'] else "Pending", "Type": f"Schedule-{slot['Category']}"
             })
 
-        # 3. MERGE & WRITE
+        # 3. COMBINE & FORCE WRITE
         if new_rows:
             df_my_data = pd.DataFrame(new_rows)
             df_final = pd.concat([df_others, df_my_data], ignore_index=True)
         else:
             df_final = df_others
 
-        # Force String Type to prevent Google rejection
+        # Ensure columns & types are perfect
+        df_final = df_final[["UserID", "Task", "Time", "Status", "Type"]]
         df_final = df_final.astype(str)
-        
-        # --- CRITICAL CHANGE: USE WRITE INSTEAD OF UPDATE ---
-        conn.write(worksheet="Reminders", data=df_final)
+
+        # --- THE FIX: CLEAR & UPDATE ---
+        conn.clear(worksheet="Reminders") # Wipe it clean
+        conn.update(worksheet="Reminders", data=df_final) # Write fresh
         
     except Exception as e:
-        print(f"Cloud Sync Error: {e}")
-
-
+        print(f"Sync Error: {e}")
 
 def load_cloud_data():
     """Loads Reminders & Timetable from Google Sheets on Login"""
