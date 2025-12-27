@@ -187,6 +187,7 @@ def sync_data():
             })
 
         # 3. MERGE & UPLOAD
+        st.write("👀 DEBUG DATA BEING SENT:", new_rows)
         if new_rows:
             df_my_data = pd.DataFrame(new_rows)
             df_final = pd.concat([df_others, df_my_data], ignore_index=True)
