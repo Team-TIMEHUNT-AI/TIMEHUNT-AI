@@ -1308,25 +1308,32 @@ def page_home():
         </div>
         """, unsafe_allow_html=True)
 
-# --- 11. PAGE: ABOUT (ENHANCED) ---
+# --- 11. PAGE: ABOUT (FIXED ALIGNMENT) ---
 def page_about():
     st.markdown("## 🛡️ TimeHunt AI: System Overview")
     
-    # --- UPDATED CAPSTONE BADGE ---
+    # --- FIXED CAPSTONE BADGE ---
+    # Added 'text-align: left' and adjusted margins for perfect visibility
     st.markdown("""
     <div style="
         background: linear-gradient(90deg, #1A1A1A, #333); 
-        padding: 20px; 
-        border-radius: 10px; 
-        border-left: 5px solid #B5FF5F; 
+        padding: 25px; 
+        border-radius: 12px; 
+        border-left: 6px solid #B5FF5F; 
         color: white !important; 
-        margin-bottom: 20px;">
+        text-align: left; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        margin-bottom: 25px;">
         
-        <h3 style="margin:0; color: #B5FF5F !important;">🎓 CBSE Capstone Project</h3>
+        <h3 style="margin: 0 0 10px 0 !important; color: #B5FF5F !important; font-size: 22px; font-weight: bold;">
+            🎓 CBSE Capstone Project
+        </h3>
         
-        <p style="margin:5px 0 0 0; font-size: 14px; opacity: 0.9; color: white !important;">
-            <b>Class:</b> 12th | <b>Subject:</b> Artificial Intelligence | <b>Session:</b> 2024-25<br>
-            Demonstrating advanced Python integration, AI Logic, and State Management.
+        <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #E0E0E0 !important;">
+            <strong style="color: white;">Class:</strong> 12th &nbsp;|&nbsp; 
+            <strong style="color: white;">Subject:</strong> Artificial Intelligence &nbsp;|&nbsp; 
+            <strong style="color: white;">Session:</strong> 2024-25<br>
+            <span style="opacity: 0.8;">Demonstrating advanced Python integration, AI Logic, and State Management.</span>
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -1347,6 +1354,7 @@ def page_about():
 
     st.markdown("---")
     st.caption("Developed with ❤️ using Python & Streamlit")
+
     
 # ------ SETTINGS PAGE --------
 
