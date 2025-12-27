@@ -1547,27 +1547,46 @@ def main():
         # --- FIX 2: CREATE COLUMNS ---
         c_leaderboard, c_stats = st.columns([2, 1])
 
-        # --- 3. RENDER LEADERBOARD ---
-        with c_leaderboard:
-            st.markdown(f'<div class="big-title">Global Rankings 🏆</div>', unsafe_allow_html=True)
-            st.markdown("### 🌍 Top Hunters")
+                # --- 3. RENDER LEADERBOARD ---
+        st.markdown(f'<div class="big-title">Global Rankings 🏆</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sub-title">Live Data from Cloud Database</div>', unsafe_allow_html=True)
+
+        st.markdown("### 🌍 Top Hunters")
+        
+        # .head(5) ensures we only take the first 5 winners
+        for i, row in df_sorted.head(5).iterrows():
+            is_me = row['Name'] == current_user
+            bg_color = "#B5FF5F" if is_me else "#FFFFFF"
+            text_color = "#1A1A1A" if is_me else "#333"
+            border = "2px solid #1A1A1A" if is_me else "1px solid #eee"
             
-            for i, row in df_sorted.head(5).iterrows():
-                is_me = row['Name'] == current_user
-                bg_color = "#B5FF5F" if is_me else "#FFFFFF"
-                text_color = "#1A1A1A" if is_me else "#333"
-                display_av = row['Avatar'] if len(str(row['Avatar'])) < 5 else "👤"
-                
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; background:{bg_color}; padding:15px; border-radius:12px; margin-bottom:10px; color:{text_color}; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                    <div style="display:flex; align-items:center; gap:15px;">
-                        <span style="font-size:20px; font-weight:bold;">#{i+1}</span>
-                        <span style="font-size:24px;">{display_av}</span>
-                        <span style="font-weight:bold; font-size:16px;">{row['Name']}</span>
-                    </div>
-                    <div style="font-family:monospace; font-weight:bold; font-size:18px;">{row['XP']} XP</div>
+            # --- NEW: AVATAR IMAGE LOGIC ---
+            # Get the avatar filename from the database
+            avatar_filename = str(row['Avatar'])
+            avatar_html = ""
+            
+            # Check if the file exists locally to convert it to base64 for the HTML block
+            if os.path.exists(avatar_filename):
+                with open(avatar_filename, "rb") as f:
+                    data = base64.b64encode(f.read()).decode()
+                    avatar_html = f'<img src="data:image/png;base64,{data}" style="width:30px; height:30px; border-radius:50%;">'
+            else:
+                # Fallback if image file is missing
+                avatar_html = '<span style="font-size:24px;">👤</span>'
+
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center; background:{bg_color}; padding:15px; border-radius:12px; margin-bottom:10px; border:{border}; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <span style="font-size:20px; font-weight:bold; color:{text_color};">#{i+1}</span>
+                    {avatar_html}
+                    <span style="font-weight:bold; font-size:16px; color:{text_color};">{row['Name']}</span>
                 </div>
-                """, unsafe_allow_html=True)
+                <div style="font-family:monospace; font-weight:bold; font-size:18px; color:{text_color};">
+                    {row['XP']} XP
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
 
         # --- 4. RENDER STATS ---
         with c_stats:
