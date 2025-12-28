@@ -1067,9 +1067,32 @@ def page_timer():
         components.html(timer_html, height=300)
 
 # --- NEW: CALENDAR PAGE ---
-# --- CALENDAR PAGE ---
 def page_calendar():
     import calendar
+    
+    # --- 📱 CRITICAL CSS FIX FOR CALENDAR GRID 📱 ---
+    # This forces the columns (days) to stay side-by-side on mobile
+    st.markdown("""
+    <style>
+        /* Force all columns on this page to be side-by-side with equal width */
+        [data-testid="column"], [data-testid="stColumn"] {
+            flex: 1 1 0% !important;
+            min-width: 0 !important;
+            padding: 0 1px !important; 
+        }
+        
+        /* Make the text centered and smaller so it fits */
+        [data-testid="column"] button, [data-testid="stColumn"] button {
+            padding: 0px 5px !important;
+            min-height: 40px !important; 
+            font-size: 12px !important;
+        }
+        
+        /* Fix the header alignment */
+        h3 { text-align: center; font-size: 20px !important; margin: 0 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
     st.markdown('<div class="big-title">📅 Tactical Grid</div>', unsafe_allow_html=True)
 
     if 'cal_year' not in st.session_state: st.session_state['cal_year'] = datetime.date.today().year
@@ -1079,23 +1102,27 @@ def page_calendar():
     # 1. Navigation
     c_prev, c_month, c_next = st.columns([1, 4, 1], vertical_alignment="center")
     with c_prev:
-        if st.button("◀"):
+        if st.button("◀", key="prev_m"):
             st.session_state['cal_month'] -= 1
             if st.session_state['cal_month'] < 1: st.session_state['cal_month'] = 12; st.session_state['cal_year'] -= 1
             st.rerun()
     with c_next:
-        if st.button("▶"):
+        if st.button("▶", key="next_m"):
             st.session_state['cal_month'] += 1
             if st.session_state['cal_month'] > 12: st.session_state['cal_month'] = 1; st.session_state['cal_year'] += 1
             st.rerun()
     with c_month:
         month_name = calendar.month_name[st.session_state['cal_month']]
-        st.markdown(f"<h3 style='text-align:center; margin:0;'>{month_name} {st.session_state['cal_year']}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3>{month_name} {st.session_state['cal_year']}</h3>", unsafe_allow_html=True)
 
     # 2. Grid Headers (M T W T F S S)
-    cols = st.columns(7)
-    for i, d in enumerate(["M","T","W","T","F","S","S"]):
-        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888; font-size:12px;'>{d}</div>", unsafe_allow_html=True)
+    # Use a container to slightly separate headers from days
+    with st.container():
+        cols = st.columns(7)
+        days = ["M","T","W","T","F","S","S"]
+        for i, d in enumerate(days):
+            # We use small font for mobile headers
+            cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888; font-size:12px;'>{d}</div>", unsafe_allow_html=True)
 
     # 3. Grid Days
     month_matrix = calendar.monthcalendar(st.session_state['cal_year'], st.session_state['cal_month'])
@@ -1108,11 +1135,12 @@ def page_calendar():
                 d_str = f"{st.session_state['cal_year']}-{st.session_state['cal_month']:02d}-{day:02d}"
                 has_task = any(t.get('Date') == d_str for t in st.session_state['timetable_slots'])
                 label = f"{day}"
-                if has_task: label += "•"
+                if has_task: label += " •"
                 
-                # Small button, primary if selected
+                # Highlight selected date
                 btn_type = "primary" if st.session_state['sel_date'] == d_str else "secondary"
-                if cols[i].button(label, key=f"d_{d_str}", type=btn_type):
+                
+                if cols[i].button(label, key=f"d_{d_str}", type=btn_type, use_container_width=True):
                     st.session_state['sel_date'] = d_str
                     st.rerun()
 
@@ -1121,27 +1149,31 @@ def page_calendar():
     sel = st.session_state['sel_date']
     st.markdown(f"### 🎯 Missions: {sel}")
     
-    # Task List & Add Form
-    c_view, c_add = st.columns([1, 1]) # Stack on mobile, split on desktop
+    # Task List & Add Form - Use tabs or simple stack on mobile
     
-    with c_view:
-        tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == sel]
-        if tasks:
-            for t in tasks:
-                st.info(f"**{t['Time']}** {t['Activity']}")
-        else:
-            st.caption("No missions.")
+    tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == sel]
+    
+    if tasks:
+        for t in tasks:
+            status = "✅" if t['Done'] else "⭕"
+            st.info(f"{status} **{t['Time']}** {t['Activity']}")
+    else:
+        st.caption("No missions.")
 
-    with c_add:
-        with st.form("add_cal"):
-            task = st.text_input("Task")
-            time_at = st.time_input("Time")
-            if st.form_submit_button("Add"):
-                st.session_state['timetable_slots'].append({
-                    "Date": sel, "Time": time_at.strftime("%H:%M"), "Activity": task, "Done":False, "Category":"General", "XP":50
-                })
-                sync_data()
-                st.rerun()
+    with st.form("add_cal", clear_on_submit=True):
+        st.markdown("**Add New Mission**")
+        c_t, c_time = st.columns([3, 2]) # These will also be side-by-side now due to our CSS, which is good
+        with c_t:
+            task = st.text_input("Task", label_visibility="collapsed", placeholder="Enter Task...")
+        with c_time:
+            time_at = st.time_input("Time", label_visibility="collapsed")
+            
+        if st.form_submit_button("Deploy Mission", use_container_width=True):
+            st.session_state['timetable_slots'].append({
+                "Date": sel, "Time": time_at.strftime("%H:%M"), "Activity": task, "Done":False, "Category":"General", "XP":50
+            })
+            sync_data()
+            st.rerun()
 
 # --- 8. PAGE: AI ASSISTANT ---
 
@@ -1318,23 +1350,6 @@ def inject_custom_css():
             
             /* Buttons */
             .stButton button {{ border-radius: 20px; font-weight: 600; width: 100%; border: 1px solid rgba(0,0,0,0.1); }}
-            
-            /* --- 📱 MOBILE CALENDAR FIX 📱 --- */
-            /* This forces columns to NOT stack on mobile */
-            [data-testid="column"] {{
-                width: calc(14.2% - 8px) !important;
-                flex: 1 1 calc(14.2% - 8px) !important;
-                min-width: 0 !important;
-                padding: 0 2px !important;
-            }}
-            
-            /* Restore normal width for big elements like Titles & Cards so they don't look squished */
-            .stMain [data-testid="column"]:has(div.big-title),
-            .stMain [data-testid="column"]:has(div.css-card),
-            .stMain [data-testid="column"]:has(div.stMarkdown) {{
-                width: 100% !important;
-                flex: 1 1 100% !important;
-            }}
         </style>
     """, unsafe_allow_html=True)
 
