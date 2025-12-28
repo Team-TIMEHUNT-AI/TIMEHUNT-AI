@@ -176,35 +176,42 @@ def get_all_chats():
         return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
 
 def save_chat_to_cloud(role, content):
-    """Saves a single message to the cloud."""
+    """Saves a single message to the cloud with ON-SCREEN ERROR REPORTING."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # Prepare data
+        # 1. Prepare Data
         uid = str(st.session_state.get('user_id', 'Unknown'))
         sid = str(st.session_state.get('current_session_id', 'Unknown'))
         sname = str(st.session_state.get('current_session_name', 'New Chat'))
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Read existing to append (safest method)
+        # 2. Read Sheet (Handle Empty Sheet Case)
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
         except:
-            # Create empty DF if sheet is empty/missing headers
+            # If read fails, assume empty and create structure
             df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
         
+        # 3. Create New Row
         new_row = pd.DataFrame([{
             "UserID": uid, "SessionID": sid, "SessionName": sname,
             "Role": role, "Content": content, "Timestamp": ts
         }])
         
-        # Combine and Write
+        # 4. Append and Update
+        # Ensure consistent columns to avoid Schema errors
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(worksheet="ChatHistory", data=df_final)
+        
     except Exception as e:
-        # SHOW ERROR ON SCREEN so you know why it failed
-        st.error(f"Cloud Save Failed: {e}")
+        # 🚨 THIS WILL SHOW THE ERROR ON YOUR SCREEN
+        st.error(f"⚠️ CLOUD SAVE FAILED: {str(e)}")
+        # Common fix hint
+        if "Schema" in str(e) or "columns" in str(e):
+            st.warning("Fix: Delete all columns in 'ChatHistory' sheet and let the app recreate them, or ensure headers match exactly: UserID, SessionID, SessionName, Role, Content, Timestamp")
+
 
 def load_chat_sessions():
     """Returns unique sessions for the Sidebar list."""
