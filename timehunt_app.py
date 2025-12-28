@@ -437,67 +437,97 @@ def get_system_context():
 
 def perform_ai_analysis(user_query):
     """
-    Sends the User Query + The System Context to Gemini.
+    Advanced AI Engine:
+    1. Loads ALL API keys from secrets (Rotational System).
+    2. Tries multiple models (Prioritizing 2.0, falling back to 1.5).
+    3. If Key #1 hits a limit, it auto-switches to Key #2.
     """
-    # Check for Gemini Library
+    # 1. Setup Library
     try:
         from google import genai
         from google.genai import types
     except ImportError:
         return "⚠️ SYSTEM FAILURE: `google-genai` library not installed.", "System"
 
-    # --- API KEY FIX ---
-    # This logic detects if your key is a list (["key"]) or string ("key") and handles both.
-    api_key = None
-    raw_key = None
+    # 2. Load ALL API Keys (The "List" you mentioned)
+    api_keys_list = []
     
+    # Check GEMINI_API_KEY
     if "GEMINI_API_KEY" in st.secrets:
-        raw_key = st.secrets["GEMINI_API_KEY"]
-    elif "GOOGLE_API_KEY" in st.secrets:
-        raw_key = st.secrets["GOOGLE_API_KEY"]
-
-    if raw_key:
-        # If it's a list, take the first one. If it's a string, use it directly.
-        if isinstance(raw_key, list):
-            api_key = raw_key[0]
-        else:
-            api_key = raw_key
+        raw = st.secrets["GEMINI_API_KEY"]
+        # If it's a list, use it. If it's a string, wrap it in a list.
+        api_keys_list = raw if isinstance(raw, list) else [raw]
     
-    if not api_key:
-        return "⚠️ AUTH ERROR: API Key missing in secrets.toml", "System"
+    # Fallback to GOOGLE_API_KEY
+    elif "GOOGLE_API_KEY" in st.secrets:
+        raw = st.secrets["GOOGLE_API_KEY"]
+        api_keys_list = raw if isinstance(raw, list) else [raw]
+    
+    if not api_keys_list:
+        return "⚠️ AUTH ERROR: No API Keys found in secrets.toml", "System"
 
-    try:
-        client = genai.Client(api_key=api_key)
-        model_id = "gemini-2.0-flash" 
+    # 3. Define Models (Your preferred list + Stable backup)
+    models_to_try = [
+        "gemini-2.0-flash",                     # The Smartest/Newest
+        "gemini-2.0-flash-lite-preview-02-05", # Fast Preview
+        "gemini-1.5-flash"                      # The Reliable Workhorse (Backup)
+    ]
 
-        # 1. Build Conversation History for Context
-        history_for_model = []
-        past_chats = st.session_state.get('chat_history', [])[-6:] 
-        for msg in past_chats:
-            role_label = msg.get('role') or msg.get('Role')
-            content_text = msg.get('text') or msg.get('Content')
-            api_role = "user" if role_label == "user" else "model"
-            history_for_model.append(types.Content(role=api_role, parts=[types.Part.from_text(text=str(content_text))]))
+    current_system_context = get_system_context()
+    
+    # 4. The "Rotational" Loop
+    last_error = "No connection attempted."
 
-        # 2. Configure the Chat
-        current_system_context = get_system_context()
-        
-        chat = client.chats.create(
-            model=model_id,
-            history=history_for_model,
-            config=types.GenerateContentConfig(
-                system_instruction=current_system_context,
-                temperature=0.7,
-                max_output_tokens=400
-            )
-        )
+    # Loop through every Key you have
+    for key_index, current_key in enumerate(api_keys_list):
+        try:
+            client = genai.Client(api_key=current_key)
+            
+            # Loop through every Model
+            for model_name in models_to_try:
+                try:
+                    # Construct History
+                    history_for_model = []
+                    past_chats = st.session_state.get('chat_history', [])[-6:]
+                    for msg in past_chats:
+                        role_label = msg.get('role') or msg.get('Role')
+                        content_text = msg.get('text') or msg.get('Content')
+                        api_role = "user" if role_label == "user" else "model"
+                        history_for_model.append(types.Content(role=api_role, parts=[types.Part.from_text(text=str(content_text))]))
 
-        # 3. Send Message
-        response = chat.send_message(user_query)
-        return response.text, "TimeHunt AI"
+                    # Attempt Generation
+                    chat = client.chats.create(
+                        model=model_name,
+                        history=history_for_model,
+                        config=types.GenerateContentConfig(
+                            system_instruction=current_system_context,
+                            temperature=0.7,
+                            max_output_tokens=400
+                        )
+                    )
+                    response = chat.send_message(user_query)
+                    
+                    # If successful, return immediately!
+                    return response.text, "TimeHunt AI"
 
-    except Exception as e:
-        return f"❌ CONNECTION LOST: {str(e)}", "System Error"
+                except Exception as model_err:
+                    # If it's a Rate Limit error, log it and try next model/key
+                    error_msg = str(model_err)
+                    if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                        print(f"⚠️ Key #{key_index+1} / {model_name} exhausted. Switching...")
+                        last_error = f"Rate Limit on Key #{key_index+1}"
+                        continue # Try next model
+                    else:
+                        # If it's a real error (like bad request), keep track but keep trying
+                        last_error = f"Error: {error_msg}"
+                        continue 
+
+        except Exception as key_err:
+            print(f"❌ Key #{key_index+1} Invalid: {key_err}")
+            continue
+
+    # 5. Total Failure (If all Keys and Models failed)
+    return f"⚠️ SYSTEM OVERLOAD: All {len(api_keys_list)} API Keys are currently exhausted. Please wait 30s. ({last_error})", "System"
     
 # --- 5.5 REMINDER CHECKER WITH BROWSER NOTIFICATIONS ---
 
