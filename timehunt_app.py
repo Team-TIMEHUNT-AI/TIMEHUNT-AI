@@ -119,46 +119,64 @@ def sync_data():
 
 def get_real_time_weather(city="Jaipur"):
     """
-    Fetches real weather data from Open-Meteo (No Key Required).
-    Falls back to a mock data if the API is down (Exam Safety).
+    Fetches real weather using standard Python libraries (No pip install required).
     """
+    import json
+    from urllib.request import urlopen, Request
+    from urllib.error import URLError
+
+    # Default fallback
+    fallback_temp = "24°C"
+    fallback_desc = f"{city.upper()} (Offline)"
+
     try:
-        import requests
-        # 1. Get Coordinates for the City (Simple Geocoding)
-        # We default to Jaipur coordinates to save an API call if user didn't change it
-        if city.lower() == "jaipur":
-            lat, lon = 26.9124, 75.7873
-        else:
-            # Quick lookup for other cities
-            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
-            geo_data = requests.get(geo_url).json()
-            if "results" in geo_data:
-                lat = geo_data["results"][0]["latitude"]
-                lon = geo_data["results"][0]["longitude"]
-            else:
-                return "25°C", "Unknown Sector"
+        # 1. Get Coordinates
+        lat, lon = 26.9124, 75.7873 # Default Jaipur
+        
+        if city.lower() != "jaipur":
+            try:
+                # User Agent is required by some APIs to prevent blocking
+                req = Request(
+                    f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json",
+                    headers={'User-Agent': 'Mozilla/5.0'}
+                )
+                with urlopen(req, timeout=3) as response:
+                    geo_data = json.loads(response.read().decode())
+                
+                if "results" in geo_data:
+                    lat = geo_data["results"][0]["latitude"]
+                    lon = geo_data["results"][0]["longitude"]
+            except:
+                # If geocoding fails, stick to Jaipur or return error
+                pass
 
         # 2. Get Weather
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
-        response = requests.get(weather_url)
-        data = response.json()
+        req_weather = Request(
+            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true",
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        
+        with urlopen(req_weather, timeout=3) as response:
+            data = json.loads(response.read().decode())
         
         if "current_weather" in data:
             temp = data["current_weather"]["temperature"]
-            # WMO Weather Codes (Simplified)
             code = data["current_weather"]["weathercode"]
-            desc = "Clear Sky"
-            if code > 3: desc = "Cloudy"
-            if code > 50: desc = "Rainy"
-            if code > 90: desc = "Storm"
+            
+            # Simple Code Mapping
+            desc = "Clear"
+            if code in [1, 2, 3]: desc = "Cloudy"
+            elif code in [45, 48]: desc = "Fog"
+            elif code >= 51: desc = "Rain"
             
             return f"{temp}°C", f"{city.upper()} ({desc})"
-            
+
     except Exception as e:
-        print(f"Weather Error: {e}")
-        
-    # EXAM SAFE FALLBACK (If internet fails)
-    return "24°C", f"{city.upper()} (Simulated)"
+        # If it fails, return the specific error so we can see it on screen
+        return "ERR", str(e)
+
+    return fallback_temp, fallback_desc
+
 
 def load_cloud_data():
     """Loads Reminders & Timetable. Parses Date/Time correctly."""
@@ -1605,7 +1623,9 @@ def create_mission_report(user_name, level, xp, history):
 # --- 10. MAIN ROUTER ---
 def page_home():
     # --- 1. TIME & GREETING LOGIC ---
-    ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    # Calculate IST (UTC + 5:30)
+    utc_now = datetime.datetime.utcnow()
+    ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
     current_hour = ist_now.hour
     
     if 5 <= current_hour < 12: greeting = "Good Morning"
@@ -1622,8 +1642,7 @@ def page_home():
     ]
     random_sub = random.choice(quotes)
 
-    # --- 2. HEADER SECTION (PREMIUM LOOK) ---
-    # Custom CSS for this page only
+    # --- 2. HERO BANNER (UPDATED WITH REAL WEATHER) ---
     st.markdown("""
     <style>
         .hero-container {
@@ -1664,7 +1683,6 @@ def page_home():
     </style>
     """, unsafe_allow_html=True)
 
-    # --- 2. HERO BANNER ---
     col_hero_text, col_hero_weather = st.columns([3, 1])
     
     with col_hero_text:
@@ -1672,10 +1690,10 @@ def page_home():
         st.markdown(f'<div style="color:#aaa; font-size:16px;">{random_sub}</div>', unsafe_allow_html=True)
     
     with col_hero_weather:
-        
+        # 1. Get Location from Session (Default: Jaipur)
         target_city = st.session_state.get('user_city', 'Jaipur')
         
-        # 2. Fetch Real Data
+        # 2. Fetch Real Data (Using the new urllib function)
         real_temp, real_desc = get_real_time_weather(target_city)
         
         # 3. Render Tactical Weather Widget
@@ -1690,11 +1708,9 @@ def page_home():
     st.write("")
 
     # --- 3. LEVEL & XP SYSTEM (VISUALIZED) ---
-    # Logic: Level 1 clears at 1000 XP.
     current_xp = st.session_state.get('user_xp', 0)
     current_lvl = st.session_state.get('user_level', 1)
     
-    # Calculate progress to next level
     xp_for_next_lvl = current_lvl * 1000
     xp_in_current_lvl = current_xp - ((current_lvl - 1) * 1000)
     progress_percent = min(100, max(0, (xp_in_current_lvl / 1000) * 100))
@@ -1718,14 +1734,11 @@ def page_home():
         """, unsafe_allow_html=True)
 
     with col_obj:
-        # Quick Objective Editor
         current_obj = st.session_state.get('current_objective', 'Clear Backlog')
         with st.container(border=True):
             st.caption("🎯 CURRENT OBJECTIVE")
             st.markdown(f"**{current_obj}**")
             if st.button("Edit", key="edit_obj_btn", help="Update your main focus"):
-                 # Using session state to toggle an input box would be complex here, 
-                 # so we use a popover for cleanliness
                  with st.popover("Update Objective"):
                      new_obj = st.text_input("New Focus", value=current_obj)
                      if st.button("Save Focus"):
@@ -1735,11 +1748,9 @@ def page_home():
     # --- 4. DASHBOARD GRID ---
     c1, c2, c3 = st.columns(3)
     
-    # CARD 1: NEXT MISSION (Intelligence)
     next_mission = "No Active Missions"
     mission_time = "--:--"
     
-    # Find the nearest future task
     sorted_slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
     pending_slots = [s for s in sorted_slots if not s['Done']]
     
@@ -1758,13 +1769,10 @@ def page_home():
         </div>
         """, unsafe_allow_html=True)
 
-    # CARD 2: QUICK ACTIONS
     with c2:
         with st.container(border=True):
             st.markdown("**⚡ Quick Actions**")
             if st.button("➕ New Task", use_container_width=True):
-                # Redirect logic (simulated by setting a session flag if we had a router, 
-                # but for now we just open the expander in scheduler manually or just show a toast)
                 st.toast("Go to Scheduler Tab to add detailed tasks.", icon="ℹ️")
             
             if st.button("🧘 Decompress", use_container_width=True):
@@ -1773,9 +1781,7 @@ def page_home():
                 
             if st.button("🤖 Ask AI", use_container_width=True):
                 st.toast("Switching to AI Assistant...", icon="🧠")
-                # In a real multi-page app, we'd switch the page index here.
 
-    # CARD 3: STREAK STATUS
     streak = st.session_state.get('streak', 1)
     with c3:
         st.markdown(f"""
@@ -1787,7 +1793,7 @@ def page_home():
         </div>
         """, unsafe_allow_html=True)
 
-    # --- 5. BREATHING OVERLAY (CONDITIONAL) ---
+    # --- 5. BREATHING OVERLAY ---
     if st.session_state.get('show_breathing', False):
         st.markdown("---")
         st.markdown("### 🧘 Tactical Decompression")
@@ -2295,7 +2301,7 @@ def main():
         page_onboarding()
         return 
 
-      # A. CHAT MODE SIDEBAR (UPDATED WITH DELETE FEATURE)
+    # A. CHAT MODE SIDEBAR (UPDATED WITH DELETE FEATURE)
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
@@ -2385,7 +2391,6 @@ def main():
         
         # Load the AI Page Content
         page_ai_assistant()
-            
 
     # B. MAIN MENU SIDEBAR (Default App Mode)
     else:
@@ -2413,16 +2418,18 @@ def main():
                 else:
                     st.caption("⚠️ File not found.")
             
-            # ... inside the main Sidebar ...
             st.markdown("---")
             
             # --- LOCATION OVERRIDE (For Exam Demo) ---
+            # THIS IS THE NEW CODE BLOCK
             with st.expander("📍 Sector Location"):
-                new_city = st.text_input("Base City", value=st.session_state.get('user_city', 'Jaipur'))
-                if new_city != st.session_state.get('user_city', 'Jaipur'):
-                    st.session_state['user_city'] = new_city
+                city_input = st.text_input("Base City", value=st.session_state.get('user_city', 'Jaipur'))
+                if city_input != st.session_state.get('user_city', 'Jaipur'):
+                    st.session_state['user_city'] = city_input
                     st.rerun()
 
+            st.markdown("---")
+            
             # --- MAIN NAVIGATION ---
             nav = option_menu(
                 menu_title=None,
