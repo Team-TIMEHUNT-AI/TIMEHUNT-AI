@@ -1360,7 +1360,7 @@ def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     
     # --- 1. SETUP & HELPER TO SEND MESSAGES ---
-        def process_message(prompt_text):
+def process_message(prompt_text):
         """Helper to send message, get AI response, and save to history."""
         # 1. HANDLE NEW CHAT SESSION (Critical for Saving)
         if not st.session_state.get('current_session_id'):
