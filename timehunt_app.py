@@ -1997,6 +1997,132 @@ def page_settings():
         if st.button("🔥 Factory Reset (Delete All Data)", type="primary"):
             st.session_state.clear()
             st.rerun()
+ 
+# --- MISSING ALARM OVERLAY FUNCTION ---
+def render_alarm_ui():
+    """
+    Renders a Full-Screen 'Code Red' Overlay when an alarm triggers.
+    Works on ANY page because it is injected at the top level.
+    """
+    if st.session_state.get('active_alarm'):
+        alarm_data = st.session_state['active_alarm']
+        task_name = alarm_data['task']
+        idx = alarm_data['index']
+        
+        # --- 1. PLAY SOUND (Hidden Loop) ---
+        sound_file = "alarm.mp3"
+        if os.path.exists(sound_file):
+            try:
+                with open(sound_file, "rb") as f:
+                    audio_bytes = f.read()
+                b64 = base64.b64encode(audio_bytes).decode()
+                # Autoplay, Loop, Hidden
+                st.markdown(f'<audio src="data:audio/mp3;base64,{b64}" autoplay loop></audio>', unsafe_allow_html=True)
+            except: pass
+        else:
+            # Fallback Beep
+            st.markdown('<audio src="https://www.soundjay.com/buttons/beep-01a.mp3" autoplay loop></audio>', unsafe_allow_html=True)
+
+        # --- 2. CSS FOR FULL-SCREEN OVERLAY ---
+        st.markdown("""
+        <style>
+            /* The Overlay Background */
+            .alarm-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.95);
+                z-index: 999999;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                backdrop-filter: blur(15px);
+                animation: fadeIn 0.3s ease-out;
+            }
+            
+            /* The Alarm Box */
+            .alarm-box {
+                width: 90%;
+                max-width: 500px;
+                background: linear-gradient(135deg, #1a0000 0%, #2d0000 100%);
+                border: 2px solid #FF2A2A;
+                border-radius: 20px;
+                padding: 40px;
+                text-align: center;
+                box-shadow: 0 0 60px rgba(255, 42, 42, 0.6);
+                animation: pulse-red 1.2s infinite ease-in-out;
+            }
+            
+            .alarm-title {
+                font-family: 'Courier New', monospace;
+                font-size: 32px;
+                font-weight: 900;
+                color: #FF2A2A;
+                margin-bottom: 15px;
+                text-transform: uppercase;
+                letter-spacing: 3px;
+                text-shadow: 0 0 10px rgba(255, 42, 42, 0.8);
+            }
+            
+            .alarm-task {
+                font-size: 28px;
+                color: white;
+                margin-bottom: 10px;
+                font-weight: bold;
+            }
+            
+            @keyframes pulse-red {
+                0% { box-shadow: 0 0 0 0 rgba(255, 42, 42, 0.7); transform: scale(1); }
+                50% { box-shadow: 0 0 0 20px rgba(255, 42, 42, 0); transform: scale(1.02); }
+                100% { box-shadow: 0 0 0 0 rgba(255, 42, 42, 0); transform: scale(1); }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # --- 3. RENDER VISUALS ---
+        st.markdown(f"""
+        <div class="alarm-overlay">
+            <div class="alarm-box">
+                <div style="font-size:70px; margin-bottom:10px;">🚨</div>
+                <div class="alarm-title">MISSION CRITICAL</div>
+                <div class="alarm-task">"{task_name}"</div>
+                <div style="color:#ffaaaa; margin-bottom:30px; font-family:monospace;">DEADLINE PROTOCOL ACTIVE</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # --- 4. RENDER BUTTONS (Streamlit native buttons float on top) ---
+        # We use a container that sits effectively "above" the HTML overlay due to Streamlit's layout engine
+        with st.container():
+            col1, col2, col3 = st.columns([1, 1, 1])
+            
+            with col1:
+                if st.button("🛑 STOP ALARM", type="primary", use_container_width=True):
+                    st.session_state['active_alarm'] = None
+                    st.rerun()
+            
+            with col2:
+                if st.button("💤 SNOOZE (5m)", use_container_width=True):
+                    # Logic: Add 5 mins
+                    st.session_state['reminders'][idx]['time'] += datetime.timedelta(minutes=5)
+                    st.session_state['reminders'][idx]['notified'] = False
+                    st.session_state['active_alarm'] = None
+                    sync_data()
+                    st.rerun()
+
+            with col3:
+                if st.button("✅ MARK DONE", use_container_width=True):
+                    # Logic: Remove Task
+                    st.session_state['reminders'].pop(idx)
+                    st.session_state['active_alarm'] = None
+                    sync_data()
+                    st.rerun()
+        
+        # STOP EXECUTION so the user is forced to interact
+        st.stop()
 
 # --- MAIN APP FUNCTION ---
 
