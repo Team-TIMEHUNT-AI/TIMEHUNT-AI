@@ -182,13 +182,17 @@ def save_chat_to_cloud(role, content):
         conn = st.connection("gsheets", type=GSheetsConnection)
         
         # Prepare data
-        uid = str(st.session_state['user_id'])
-        sid = str(st.session_state['current_session_id'])
-        sname = str(st.session_state['current_session_name'])
+        uid = str(st.session_state.get('user_id', 'Unknown'))
+        sid = str(st.session_state.get('current_session_id', 'Unknown'))
+        sname = str(st.session_state.get('current_session_name', 'New Chat'))
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Read existing to append (safest method)
-        df_existing = get_all_chats()
+        try:
+            df_existing = conn.read(worksheet="ChatHistory", ttl=0)
+        except:
+            # Create empty DF if sheet is empty/missing headers
+            df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
         
         new_row = pd.DataFrame([{
             "UserID": uid, "SessionID": sid, "SessionName": sname,
@@ -199,7 +203,8 @@ def save_chat_to_cloud(role, content):
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(worksheet="ChatHistory", data=df_final)
     except Exception as e:
-        print(f"Chat Save Error: {e}")
+        # SHOW ERROR ON SCREEN so you know why it failed
+        st.error(f"Cloud Save Failed: {e}")
 
 def load_chat_sessions():
     """Returns unique sessions for the Sidebar list."""
@@ -1523,7 +1528,7 @@ def page_ai_assistant():
                 process_message("Give me the best scientific study techniques.")
 
                # ELSE -> SHOW CHAT HISTORY
-    else:
+        else:
         chat_container = st.container()
         with chat_container:
             for msg in st.session_state['chat_history']:
@@ -1534,29 +1539,31 @@ def page_ai_assistant():
                 # 2. DETERMINE AVATAR & ROLE
                 if raw_role in ["model", "assistant", "ai"]:
                     ui_role = "assistant"
-                    # Force check for the TimeHunt Logo
+                    # CHECK LOCAL FILE -> FALLBACK TO URL
                     if os.path.exists("1000592991.png"):
                         avatar_icon = "1000592991.png"
                     else:
-                        avatar_icon = "🤖" # Fallback if file missing
+                        # Use a cool online image if local file is missing
+                        avatar_icon = "https://cdn-icons-png.flaticon.com/512/4712/4712035.png"
                         
                 else:
                     ui_role = "user"
                     # User Avatar Logic
                     user_av = st.session_state.get('user_avatar', "👤")
                     
-                    # If it's a file path (like from onboarding), check if it exists
                     if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')):
                         if os.path.exists(user_av):
                             avatar_icon = user_av
                         else:
-                            avatar_icon = "👤" # File missing
+                             # Fallback for user avatar
+                            avatar_icon = "https://cdn-icons-png.flaticon.com/512/9187/9187604.png"
                     else:
-                        avatar_icon = "👤" # Default
+                        avatar_icon = "👤"
 
                 # 3. RENDER
                 with st.chat_message(ui_role, avatar=avatar_icon):
                     st.write(content)
+
 
     # --- 5. CHAT INPUT (ALWAYS VISIBLE) ---
     if prompt := st.chat_input("Input command parameters..."):
