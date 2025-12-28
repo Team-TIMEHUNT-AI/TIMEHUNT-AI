@@ -459,14 +459,13 @@ def perform_ai_analysis(user_query):
     if not api_keys_list:
         return "⚠️ AUTH ERROR: No API Keys found in secrets.toml", "System"
 
-    # 3. Model Priority List (STABLE FIRST)
-    # We moved 1.5-flash to the top because 2.0 is hitting rate limits.
+    # 3. Model Priority List (UPDATED TO MATCH YOUR KEYS)
     models_to_try = [
-        "gemini-1.5-flash",          # Best balance (Stable)
-        "gemini-1.5-flash-latest",   # Alternative tag
-        "gemini-1.5-pro",            # High intelligence
-        "gemini-2.0-flash-exp",      # Experimental (High Limits)
-        "gemini-pro"                 # Legacy fallback
+        "gemini-2.0-flash",          # Current standard (Fast & Smart)
+        "gemini-2.5-flash",          # Newest experimental flash
+        "gemini-2.0-flash-lite",     # Extremely fast/cheap fallback
+        "gemini-2.0-pro-exp-02-05",  # If you need high intelligence (check exact name in your list)
+        "gemini-2.0-flash-exp",      # Older experimental
     ]
 
     current_system_context = get_system_context()
