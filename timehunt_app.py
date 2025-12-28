@@ -446,12 +446,22 @@ def perform_ai_analysis(user_query):
     except ImportError:
         return "⚠️ SYSTEM FAILURE: `google-genai` library not installed.", "System"
 
-    # Get API Key
+    # --- API KEY FIX ---
+    # This logic detects if your key is a list (["key"]) or string ("key") and handles both.
     api_key = None
+    raw_key = None
+    
     if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
+        raw_key = st.secrets["GEMINI_API_KEY"]
     elif "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
+        raw_key = st.secrets["GOOGLE_API_KEY"]
+
+    if raw_key:
+        # If it's a list, take the first one. If it's a string, use it directly.
+        if isinstance(raw_key, list):
+            api_key = raw_key[0]
+        else:
+            api_key = raw_key
     
     if not api_key:
         return "⚠️ AUTH ERROR: API Key missing in secrets.toml", "System"
@@ -462,16 +472,14 @@ def perform_ai_analysis(user_query):
 
         # 1. Build Conversation History for Context
         history_for_model = []
-        past_chats = st.session_state.get('chat_history', [])[-6:] # Limit to last 6 messages
+        past_chats = st.session_state.get('chat_history', [])[-6:] 
         for msg in past_chats:
-            # Handle key variations if any
             role_label = msg.get('role') or msg.get('Role')
             content_text = msg.get('text') or msg.get('Content')
-            
             api_role = "user" if role_label == "user" else "model"
             history_for_model.append(types.Content(role=api_role, parts=[types.Part.from_text(text=str(content_text))]))
 
-        # 2. Configure the Chat with the NEW System Context
+        # 2. Configure the Chat
         current_system_context = get_system_context()
         
         chat = client.chats.create(
