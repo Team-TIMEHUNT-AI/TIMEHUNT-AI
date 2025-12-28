@@ -117,6 +117,49 @@ def sync_data():
     except Exception as e:
         st.toast(f"Sync Error: {e}", icon="⚠️")
 
+def get_real_time_weather(city="Jaipur"):
+    """
+    Fetches real weather data from Open-Meteo (No Key Required).
+    Falls back to a mock data if the API is down (Exam Safety).
+    """
+    try:
+        import requests
+        # 1. Get Coordinates for the City (Simple Geocoding)
+        # We default to Jaipur coordinates to save an API call if user didn't change it
+        if city.lower() == "jaipur":
+            lat, lon = 26.9124, 75.7873
+        else:
+            # Quick lookup for other cities
+            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json"
+            geo_data = requests.get(geo_url).json()
+            if "results" in geo_data:
+                lat = geo_data["results"][0]["latitude"]
+                lon = geo_data["results"][0]["longitude"]
+            else:
+                return "25°C", "Unknown Sector"
+
+        # 2. Get Weather
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+        response = requests.get(weather_url)
+        data = response.json()
+        
+        if "current_weather" in data:
+            temp = data["current_weather"]["temperature"]
+            # WMO Weather Codes (Simplified)
+            code = data["current_weather"]["weathercode"]
+            desc = "Clear Sky"
+            if code > 3: desc = "Cloudy"
+            if code > 50: desc = "Rainy"
+            if code > 90: desc = "Storm"
+            
+            return f"{temp}°C", f"{city.upper()} ({desc})"
+            
+    except Exception as e:
+        print(f"Weather Error: {e}")
+        
+    # EXAM SAFE FALLBACK (If internet fails)
+    return "24°C", f"{city.upper()} (Simulated)"
+
 def load_cloud_data():
     """Loads Reminders & Timetable. Parses Date/Time correctly."""
     try:
@@ -1621,19 +1664,26 @@ def page_home():
     </style>
     """, unsafe_allow_html=True)
 
-    # Hero Banner
+    # --- 2. HERO BANNER ---
     col_hero_text, col_hero_weather = st.columns([3, 1])
+    
     with col_hero_text:
         st.markdown(f'<div class="big-title">{greeting}, {st.session_state["user_name"]}</div>', unsafe_allow_html=True)
         st.markdown(f'<div style="color:#aaa; font-size:16px;">{random_sub}</div>', unsafe_allow_html=True)
     
     with col_hero_weather:
-        # Simulated "Tactical Weather"
+        
+        target_city = st.session_state.get('user_city', 'Jaipur')
+        
+        # 2. Fetch Real Data
+        real_temp, real_desc = get_real_time_weather(target_city)
+        
+        # 3. Render Tactical Weather Widget
         st.markdown(f"""
-        <div style="text-align:right; color:#888; font-family:monospace;">
-            <div style="font-size:24px; color:var(--accent);">24°C</div>
-            <div>JAIPUR, IN</div>
-            <div>{ist_now.strftime('%H:%M')} IST</div>
+        <div style="text-align:right; font-family:monospace; animation: fadeIn 2s;">
+            <div style="font-size:28px; font-weight:bold; color:var(--accent); text-shadow: 0 0 10px rgba(0,229,255,0.3);">{real_temp}</div>
+            <div style="color:#fff; font-size:14px; letter-spacing:1px;">{real_desc}</div>
+            <div style="color:#888; font-size:12px;">{ist_now.strftime('%H:%M')} IST</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -2363,8 +2413,16 @@ def main():
                 else:
                     st.caption("⚠️ File not found.")
             
+            # ... inside the main Sidebar ...
             st.markdown("---")
             
+            # --- LOCATION OVERRIDE (For Exam Demo) ---
+            with st.expander("📍 Sector Location"):
+                new_city = st.text_input("Base City", value=st.session_state.get('user_city', 'Jaipur'))
+                if new_city != st.session_state.get('user_city', 'Jaipur'):
+                    st.session_state['user_city'] = new_city
+                    st.rerun()
+
             # --- MAIN NAVIGATION ---
             nav = option_menu(
                 menu_title=None,
