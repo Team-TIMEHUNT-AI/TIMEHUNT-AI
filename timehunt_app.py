@@ -1364,22 +1364,29 @@ def page_ai_assistant():
     # --- HELPER: PROCESS MESSAGE ---
     def process_message(prompt_text):
         """Helper to send message, get AI response, and save to history."""
-        # 1. HANDLE NEW CHAT SESSION
+        # 1. HANDLE NEW CHAT SESSION (Critical for Saving)
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
-            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:5])
+            # Create a name from the first 5 words
+            short_name = " ".join(prompt_text.split()[:5])
+            st.session_state['current_session_name'] = short_name
 
         # 2. USER MESSAGE
+        # A. Save to Screen
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        save_chat_to_cloud("user", prompt_text) # <--- Explicit Save
+        # B. Save to Cloud
+        save_chat_to_cloud("user", prompt_text)
         
         # 3. AI RESPONSE
         response_text, _ = perform_ai_analysis(prompt_text)
         
+        # A. Save to Screen
         st.session_state['chat_history'].append({"role": "model", "text": response_text})
-        save_chat_to_cloud("model", response_text) # <--- Explicit Save
+        # B. Save to Cloud
+        save_chat_to_cloud("model", response_text)
         
         # 4. AUDIO & RERUN
+        # (Your existing audio logic here - simplified for brevity)
         clean_text = response_text.replace('\n', ' ').replace('#', '')[:200]
         tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
         st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
@@ -1406,8 +1413,25 @@ def page_ai_assistant():
 
     # --- CHAT DISPLAY LOGIC ---
     if not st.session_state.get('chat_history'):
-        # ... (Welcome Screen Logic - same as before) ...
-        st.info("Awaiting Orders. Systems Online.")
+        # --- WELCOME SCREEN (Restored) ---
+        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
+        greetings = ["Where should we start?", "What is the mission?", "Ready to optimize?"]
+        random_greet = random.choice(greetings)
+
+        st.markdown(f"""
+        <style>
+            .welcome-text {{ font-family: 'Inter', sans-serif; font-size: 45px; font-weight: 600; background: -webkit-linear-gradient(0deg, #B5FF5F, #00E5FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-top: 20px; }}
+            .sub-text {{ font-family: 'Inter', sans-serif; font-size: 45px; font-weight: 600; color: #555; margin-bottom: 40px; }}
+        </style>
+        <div><div class="welcome-text">Hi, {user_name}</div><div class="sub-text">{random_greet}</div></div>
+        """, unsafe_allow_html=True)
+
+        c1, c2, c3, c4 = st.columns(4)
+        if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a strict hourly schedule for me today.")
+        if c2.button("🧠 Learn", use_container_width=True): process_message("Explain a complex topic simply.")
+        if c3.button("🔥 Motivate", use_container_width=True): process_message("I am tired. Give me military motivation.")
+        if c4.button("📝 Study", use_container_width=True): process_message("Give me scientific study techniques.")
+
     else:
         chat_container = st.container()
         with chat_container:
@@ -1415,11 +1439,10 @@ def page_ai_assistant():
                 content = msg.get('text') or msg.get('Content')
                 raw_role = str(msg.get('role') or msg.get('Role')).lower()
                 
-                # --- FIXED AVATAR LOGIC ---
+                # --- FIXED AVATAR LOGIC (With PIL) ---
                 if raw_role in ["model", "assistant", "ai"]:
                     ui_role = "assistant"
-                    # METHOD: Force Load Image using PIL
-                    # This fixes the "broken image" icon
+                    # Force Load Image using PIL
                     if os.path.exists("1000592991.png"):
                         avatar_icon = Image.open("1000592991.png")
                     else:
@@ -1429,11 +1452,12 @@ def page_ai_assistant():
                     ui_role = "user"
                     user_av = st.session_state.get('user_avatar', "👤")
                     
-                    # Check if user avatar is a file path and exists
+                    # Check if user avatar is a valid file path
                     if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')) and os.path.exists(user_av):
                         avatar_icon = Image.open(user_av)
                     else:
-                        avatar_icon = "👤"
+                        # Fallback to emoji or default if file check fails
+                        avatar_icon = user_av if user_av else "👤"
 
                 # RENDER
                 with st.chat_message(ui_role, avatar=avatar_icon):
@@ -1442,7 +1466,6 @@ def page_ai_assistant():
     # --- INPUT ---
     if prompt := st.chat_input("Input command parameters..."):
         process_message(prompt)
-
 
 # --- 9. CUSTOM UI STYLING ---
 def inject_custom_css():
