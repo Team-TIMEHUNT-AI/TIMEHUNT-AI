@@ -1358,35 +1358,30 @@ def page_calendar():
 def page_ai_assistant():
     # Import necessary libraries for this page
     from streamlit_mic_recorder import mic_recorder
-    from PIL import Image # <--- CRITICAL IMPORT FOR AVATARS
+    from PIL import Image 
     import io
 
     # --- HELPER: PROCESS MESSAGE ---
+    # NOTICE: This 'def' aligns perfectly with the imports above
     def process_message(prompt_text):
         """Helper to send message, get AI response, and save to history."""
-        # 1. HANDLE NEW CHAT SESSION (Critical for Saving)
+        # 1. HANDLE NEW CHAT SESSION
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
-            # Create a name from the first 5 words
             short_name = " ".join(prompt_text.split()[:5])
             st.session_state['current_session_name'] = short_name
 
         # 2. USER MESSAGE
-        # A. Save to Screen
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        # B. Save to Cloud
         save_chat_to_cloud("user", prompt_text)
         
         # 3. AI RESPONSE
         response_text, _ = perform_ai_analysis(prompt_text)
         
-        # A. Save to Screen
         st.session_state['chat_history'].append({"role": "model", "text": response_text})
-        # B. Save to Cloud
         save_chat_to_cloud("model", response_text)
         
         # 4. AUDIO & RERUN
-        # (Your existing audio logic here - simplified for brevity)
         clean_text = response_text.replace('\n', ' ').replace('#', '')[:200]
         tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
         st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
@@ -1404,16 +1399,13 @@ def page_ai_assistant():
     # --- VOICE LOGIC ---
     if audio_data:
         try:
-            # Simple text simulation for voice
             st.toast("Voice received. Processing...", icon="🎧")
-            # In production, use SpeechRecognition here. For now, we simulate:
-            # process_message("Hello (Voice Input)") 
         except Exception as e:
             st.error(f"Voice Error: {e}")
 
     # --- CHAT DISPLAY LOGIC ---
     if not st.session_state.get('chat_history'):
-        # --- WELCOME SCREEN (Restored) ---
+        # --- WELCOME SCREEN ---
         user_name = st.session_state.get('user_name', 'Hunter').split()[0]
         greetings = ["Where should we start?", "What is the mission?", "Ready to optimize?"]
         random_greet = random.choice(greetings)
@@ -1442,7 +1434,6 @@ def page_ai_assistant():
                 # --- FIXED AVATAR LOGIC (With PIL) ---
                 if raw_role in ["model", "assistant", "ai"]:
                     ui_role = "assistant"
-                    # Force Load Image using PIL
                     if os.path.exists("1000592991.png"):
                         avatar_icon = Image.open("1000592991.png")
                     else:
@@ -1452,11 +1443,9 @@ def page_ai_assistant():
                     ui_role = "user"
                     user_av = st.session_state.get('user_avatar', "👤")
                     
-                    # Check if user avatar is a valid file path
                     if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')) and os.path.exists(user_av):
                         avatar_icon = Image.open(user_av)
                     else:
-                        # Fallback to emoji or default if file check fails
                         avatar_icon = user_av if user_av else "👤"
 
                 # RENDER
