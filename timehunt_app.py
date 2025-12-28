@@ -2317,21 +2317,19 @@ def main():
         page_onboarding()
         return 
 
-    # --- LOGIC SWITCH: WHICH SIDEBAR TO SHOW? ---
-    
-        # A. CHAT MODE SIDEBAR (For AI Context Retention)
+      # A. CHAT MODE SIDEBAR (UPDATED WITH DELETE FEATURE)
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
             
-            # 1. Navigation Buttons
-            c_back, c_new = st.columns(2)
-            with c_back:
-                if st.button("🏠 Back", type="secondary", use_container_width=True):
+            # 1. Top Buttons (Back & New)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🏠 Back", use_container_width=True):
                     st.session_state['page_mode'] = 'main'
                     st.rerun()
-            with c_new:
-                if st.button("➕ New", type="primary", use_container_width=True):
+            with c2:
+                if st.button("➕ New", use_container_width=True):
                     st.session_state['current_session_id'] = None
                     st.session_state['current_session_name'] = "New Chat"
                     st.session_state['chat_history'] = []
@@ -2339,56 +2337,61 @@ def main():
             
             st.divider()
 
-            # 2. Delete Mode Toggle
+            # 2. DELETE TOGGLE LOGIC
+            # Initialize the state if it doesn't exist
             if 'delete_mode' not in st.session_state: 
                 st.session_state['delete_mode'] = False
             
             # The Toggle Button
-            btn_label = "❌ Cancel Delete" if st.session_state['delete_mode'] else "🗑️ Delete Chats"
-            if st.button(btn_label, use_container_width=True):
+            toggle_label = "❌ Cancel" if st.session_state['delete_mode'] else "🗑️ Delete Chats"
+            if st.button(toggle_label, use_container_width=True):
                 st.session_state['delete_mode'] = not st.session_state['delete_mode']
                 st.rerun()
 
             st.markdown("---")
             
-            # 3. List Chats (With Logic for Selection)
+            # 3. LIST CHATS
             sessions = load_chat_sessions()
             
             if st.session_state['delete_mode']:
-                # --- DELETE MODE ACTIVE: SHOW CHECKBOXES ---
+                # === DELETE MODE: SHOW CHECKBOXES ===
                 st.warning("Select chats to remove:")
                 
-                # We use a form so the user can check multiple boxes before submitting
-                with st.form("delete_chat_form"):
+                with st.form("del_form"):
                     selected_ids = []
+                    if not sessions:
+                        st.caption("No chats to delete.")
+                    
                     for s in sessions:
-                        # Checkbox for each session
-                        if st.checkbox(f"📄 {s['SessionName']}", key=f"del_{s['SessionID']}"):
+                        # Checkbox for each chat
+                        if st.checkbox(f"{s['SessionName']}", key=f"del_{s['SessionID']}"):
                             selected_ids.append(s['SessionID'])
                     
-                    if st.form_submit_button("🗑️ CONFIRM DELETION", type="primary"):
+                    # The Red Confirm Button
+                    if st.form_submit_button("🔥 PERMANENTLY DELETE", type="primary", use_container_width=True):
                         if selected_ids:
                             for sid in selected_ids:
                                 delete_chat_session(sid)
-                            st.toast(f"Deleted {len(selected_ids)} chats.")
-                            st.session_state['delete_mode'] = False # Exit delete mode
-                            # If current open chat was deleted, reset it
+                            st.toast(f"Deleted {len(selected_ids)} chats!")
+                            # Reset states
+                            st.session_state['delete_mode'] = False
                             if st.session_state.get('current_session_id') in selected_ids:
                                 st.session_state['current_session_id'] = None
                                 st.session_state['chat_history'] = []
-                            time.sleep(1)
+                            time.sleep(0.5)
                             st.rerun()
                         else:
-                            st.warning("No chats selected.")
+                            st.warning("Select at least one chat.")
                             
             else:
-                # --- NORMAL MODE: SHOW OPEN BUTTONS ---
+                # === NORMAL MODE: SHOW BUTTONS ===
                 if not sessions:
                     st.caption("No history found.")
                 
                 for s in sessions:
-                    # Highlight the active chat
-                    b_type = "primary" if s['SessionID'] == st.session_state.get('current_session_id') else "secondary"
+                    # Highlight active chat
+                    is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
+                    b_type = "primary" if is_active else "secondary"
                     
                     if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], type=b_type, use_container_width=True):
                         st.session_state['current_session_id'] = s['SessionID']
