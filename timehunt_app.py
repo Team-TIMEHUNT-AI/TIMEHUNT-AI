@@ -643,7 +643,7 @@ def page_onboarding():
                             
                             if not df.empty and 'Name' in df.columns:
                                 # --- PIN FIX: Force conversion to string and remove decimals ---
-                                df['PIN'] = df['PIN'].astype(str).replace(r'\.0$', '', regex=True)
+                                df['PIN'] = df['PIN'].astype(str).replace(r'\.0$', '', regex=True).str.zfill(4)
                                 
                                 existing = df[df['Name'] == name_input]
                                 
@@ -746,7 +746,7 @@ def page_onboarding():
                          "XP": 0, "League": "Bronze",
                          "Avatar": st.session_state.get('user_avatar', "👤"),
                          "LastActive": datetime.date.today().strftime("%Y-%m-%d"),
-                         "PIN": str(st.session_state.get('temp_pin', "0000")) # Ensure PIN is string
+                         "PIN": "'" + str(st.session_state.get('temp_pin', "0000"))
                      }])
                      
                      updated_df = new_user if df.empty else pd.concat([df, new_user], ignore_index=True)
