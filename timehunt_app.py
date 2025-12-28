@@ -437,10 +437,8 @@ def get_system_context():
 
 def perform_ai_analysis(user_query):
     """
-    Advanced AI Engine:
-    1. Loads ALL API keys from secrets (Rotational System).
-    2. Tries multiple models (Prioritizing 2.0, falling back to 1.5).
-    3. If Key #1 hits a limit, it auto-switches to Key #2.
+    Robust AI Engine with Smart Fallback.
+    Prioritizes Stable Models to avoid 429/404 errors.
     """
     # 1. Setup Library
     try:
@@ -449,16 +447,11 @@ def perform_ai_analysis(user_query):
     except ImportError:
         return "⚠️ SYSTEM FAILURE: `google-genai` library not installed.", "System"
 
-    # 2. Load ALL API Keys (The "List" you mentioned)
+    # 2. Load API Keys (Rotational)
     api_keys_list = []
-    
-    # Check GEMINI_API_KEY
     if "GEMINI_API_KEY" in st.secrets:
         raw = st.secrets["GEMINI_API_KEY"]
-        # If it's a list, use it. If it's a string, wrap it in a list.
         api_keys_list = raw if isinstance(raw, list) else [raw]
-    
-    # Fallback to GOOGLE_API_KEY
     elif "GOOGLE_API_KEY" in st.secrets:
         raw = st.secrets["GOOGLE_API_KEY"]
         api_keys_list = raw if isinstance(raw, list) else [raw]
@@ -466,24 +459,24 @@ def perform_ai_analysis(user_query):
     if not api_keys_list:
         return "⚠️ AUTH ERROR: No API Keys found in secrets.toml", "System"
 
-    # 3. Define Models (Your preferred list + Stable backup)
+    # 3. Model Priority List (STABLE FIRST)
+    # We moved 1.5-flash to the top because 2.0 is hitting rate limits.
     models_to_try = [
-        "gemini-2.0-flash",                     # The Smartest/Newest
-        "gemini-2.0-flash-lite-preview-02-05", # Fast Preview
-        "gemini-1.5-flash"                      # The Reliable Workhorse (Backup)
+        "gemini-1.5-flash",          # Best balance (Stable)
+        "gemini-1.5-flash-latest",   # Alternative tag
+        "gemini-1.5-pro",            # High intelligence
+        "gemini-2.0-flash-exp",      # Experimental (High Limits)
+        "gemini-pro"                 # Legacy fallback
     ]
 
     current_system_context = get_system_context()
-    
-    # 4. The "Rotational" Loop
     last_error = "No connection attempted."
 
-    # Loop through every Key you have
+    # 4. The Loop: Try Every Key x Every Model
     for key_index, current_key in enumerate(api_keys_list):
         try:
             client = genai.Client(api_key=current_key)
             
-            # Loop through every Model
             for model_name in models_to_try:
                 try:
                     # Construct History
@@ -502,32 +495,40 @@ def perform_ai_analysis(user_query):
                         config=types.GenerateContentConfig(
                             system_instruction=current_system_context,
                             temperature=0.7,
-                            max_output_tokens=400
+                            max_output_tokens=500
                         )
                     )
+                    
+                    # Send
                     response = chat.send_message(user_query)
                     
-                    # If successful, return immediately!
+                    # If we get here, it worked!
                     return response.text, "TimeHunt AI"
 
                 except Exception as model_err:
-                    # If it's a Rate Limit error, log it and try next model/key
-                    error_msg = str(model_err)
-                    if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                        print(f"⚠️ Key #{key_index+1} / {model_name} exhausted. Switching...")
-                        last_error = f"Rate Limit on Key #{key_index+1}"
-                        continue # Try next model
+                    err_str = str(model_err)
+                    
+                    # Handle Rate Limits (429) & Model Not Found (404) by just skipping to next model
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        print(f"⚠️ Key #{key_index} / {model_name} Busy. Switching...")
+                        last_error = "Server Busy (Rate Limit)"
+                        time.sleep(1) # Brief pause to be nice to API
+                        continue
+                    elif "404" in err_str or "NOT_FOUND" in err_str:
+                        print(f"⚠️ {model_name} not available on this key. Skipping.")
+                        last_error = f"Model {model_name} Not Found"
+                        continue
                     else:
-                        # If it's a real error (like bad request), keep track but keep trying
-                        last_error = f"Error: {error_msg}"
-                        continue 
+                        # Real error? Save it but keep trying other keys
+                        last_error = f"Error: {err_str}"
+                        continue
 
         except Exception as key_err:
-            print(f"❌ Key #{key_index+1} Invalid: {key_err}")
+            print(f"❌ Key #{key_index} Invalid: {key_err}")
             continue
 
-    # 5. Total Failure (If all Keys and Models failed)
-    return f"⚠️ SYSTEM OVERLOAD: All {len(api_keys_list)} API Keys are currently exhausted. Please wait 30s. ({last_error})", "System"
+    # 5. Total Failure
+    return f"⚠️ SYSTEM ALERT: Connection Unstable. Last Error: {last_error}. Try again in 1 minute.", "System"
     
 # --- 5.5 REMINDER CHECKER WITH BROWSER NOTIFICATIONS ---
 
