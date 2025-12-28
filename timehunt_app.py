@@ -458,152 +458,118 @@ div[data-testid="stVerticalBlock"] > div:has(.main-void) {{ gap: 0 !important; }
         st.session_state['splash_played'] = True
         
 # --- 5. AI ENGINE (UPDATED TO KNOW YOUR NAME) ---
-# --- REPLACEMENT FOR perform_auto_search (THE FINAL BRAIN) ---
-def perform_auto_search(query):
-    query_lower = query.lower()
-    
-    # 1. LOCAL REMINDERS
-    if any(word in query_lower for word in ["remind", "alarm", "timer"]):
-        seconds = 60 
-        import re
-        sec_match = re.search(r'(\d+)\s*sec', query_lower)
-        min_match = re.search(r'(\d+)\s*min', query_lower)
-        if sec_match: seconds = int(sec_match.group(1))
-        elif min_match: seconds = int(min_match.group(1)) * 60
-        
-        task = query.lower().replace("remind me to", "").replace("set alarm for", "").strip()
-        due_time = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
-        st.session_state['reminders'].append({"task": task, "time": due_time, "notified": False})
-        return f"✅ Timer Set: I will alert you in {seconds} seconds.", "System"
-    
-    # 2. CLOUD INTELLIGENCE
-    raw_keys = []
-    if "GEMINI_API_KEY" in st.secrets:
-        raw_keys = st.secrets["GEMINI_API_KEY"]
-    elif "GOOGLE_API_KEY" in st.secrets:
-        raw_keys = st.secrets["GOOGLE_API_KEY"]
-    else:
-        return "⚠️ Security Alert: No API Key found in Secrets.", "System Alert"
+# --- REPLACEMENT FOR SECTION 5: AI ENGINE ---
 
-    if isinstance(raw_keys, str): api_keys_list = [raw_keys]
-    elif isinstance(raw_keys, list): api_keys_list = raw_keys
-    else: return "⚠️ Config Error: API Key format not recognized.", "System Alert"
-
-    # --- SMART CONTEXT & MEMORY ---
-    user_name = st.session_state.get('user_name', 'Hunter')
-    user_role = st.session_state.get('user_type', 'Student')
-    user_goal = st.session_state.get('user_goal', 'Success')
-    user_struggle = st.session_state.get('struggle_type', 'Time')
-    current_schedule = st.session_state.get('timetable_slots', [])
-    
-    # DYNAMIC LOCATION LOGIC
-    # If Student -> Ask about School. If Entrepreneur -> Ask about Work.
-    target_location = "School/College" if "Student" in user_role else "Work/Office"
-
-    schedule_text = "No active missions."
-    if current_schedule:
-        schedule_text = "\n".join([f"- {t['Time']}: {t['Activity']} ({t['Category']})" for t in current_schedule])
-
-    # DETECT EMERGENCY (The "War Mode" you requested)
-    emergency_keywords = ["jee", "neet", "boards", "exam", "dead", "panic", "haven't studied", "zero", "left"]
-    is_emergency = any(k in query_lower for k in emergency_keywords) or \
-                   any(k in user_struggle.lower() for k in emergency_keywords)
-
-    if is_emergency:
-        MODE_INSTRUCTION = """
-        🚨 MODE: WAR COMMANDER (High Intensity)
-        - TONE: Intense, Direct, Motivating. Use "Cadet", "Mission", "Deploy".
-        - STRATEGY: High-yield topics ONLY. Sacrifice comfort.
-        - HEALTH: Force 4x 5-min "Tactical Decompression" breaks.
-        """
-    else:
-        MODE_INSTRUCTION = f"""
-        ✅ MODE: STRATEGIC PARTNER (Goal: {user_goal})
-        - TONE: Adaptive. The user struggles with "{user_struggle}".
-        - IF Procrastination: Be firm, suggest "5-minute starts".
-        - IF Burnout: Be empathetic, suggest "Deep Rest".
-        """
-
-        # --- BUILD CHAT HISTORY CONTEXT ---
-    history_context = ""
-    # Get last 10 messages from current session state for context
-    if st.session_state.get('chat_history'):
-        history_context = "PREVIOUS CHAT CONTEXT:\n"
-        for msg in st.session_state['chat_history'][-10:]:
-            # Handle keys depending if they came from Cloud (Capitalized) or Local (Lower)
-            role = msg.get('Role') or msg.get('role')
-            content = msg.get('Content') or msg.get('text')
-            history_context += f"- {role}: {content}\n"
-
-    PERSONALIZED_INSTRUCTION = f"""
-    You are TimeHunt AI.
-    --- USER INTEL ---
-    NAME: {user_name} | ROLE: {user_role} 
-    GOAL: {user_goal} | OBSTACLE: {user_struggle}
-    
-    {history_context}
-    
-    {MODE_INSTRUCTION}
-    
-    --- CRITICAL SCHEDULING RULES ---
-    1. AVAILABILITY CHECK: 
-       - If the user asks for a daily plan/schedule, you MUST FIRST ASK: 
-         "Are you going to {target_location} today?" 
-       - Do NOT generate the schedule until you know their free hours.
-    
-    2. JSON OUPUT (MANDATORY):
-       - Once they confirm availability, generate the plan and END with this JSON block:
-    ```json
-    [
-      {{"Time": "06:00", "Activity": "Wake Up", "Category": "Health"}},
-      {{"Time": "08:00", "Activity": "Deep Work", "Category": "Work"}}
-    ]
-    ```
+def get_system_context():
     """
+    Constructs a dynamic 'Brain Dump' of the user's current life state.
+    The AI reads this before every single response.
+    """
+    # 1. User Profile
+    user_name = st.session_state.get('user_name', 'Hunter')
+    role = st.session_state.get('user_type', 'Agent')
+    xp = st.session_state.get('user_xp', 0)
+    
+    # 2. Time & Date
+    now = datetime.datetime.now()
+    current_time = now.strftime("%H:%M")
+    current_date = now.strftime("%Y-%m-%d")
+    
+    # 3. The Schedule (The AI "sees" this)
+    schedule_txt = "NO ACTIVE MISSIONS."
+    slots = st.session_state.get('timetable_slots', [])
+    if slots:
+        # Filter for today's tasks only
+        todays_tasks = [s for s in slots if s.get('Date') == current_date or not s.get('Date')]
+        if todays_tasks:
+            schedule_txt = "\n".join(
+                [f"- [Time: {s['Time']}] {s['Activity']} ({s['Category']}) - {'DONE' if s['Done'] else 'PENDING'}" 
+                 for s in todays_tasks]
+            )
+    
+    # 4. Active Alarms/Reminders
+    reminders_txt = "NO ACTIVE ALERTS."
+    rems = st.session_state.get('reminders', [])
+    if rems:
+        pending_rems = [r for r in rems if not r['notified']]
+        if pending_rems:
+            reminders_txt = "\n".join([f"- {r['task']} at {r['time']}" for r in pending_rems])
 
-    models_to_try = [
-        "gemini-2.0-flash",                     
-        "gemini-2.0-flash-lite-preview-02-05", 
-        "gemini-2.5-flash"                      
-    ]
+    # 5. The Master Prompt
+    system_prompt = f"""
+    IDENTITY: You are TimeHunt AI, a tactical productivity command center.
+    USER: {user_name} | RANK: {role} | XP: {xp}
+    CURRENT STATUS: Date: {current_date} | Time: {current_time}
+    
+    === LIVE INTELLIGENCE FEED ===
+    [TODAY'S SCHEDULE]
+    {schedule_txt}
+    
+    [PENDING ALARMS]
+    {reminders_txt}
+    
+    === OPERATIONAL PROTOCOLS ===
+    1. BE CONTEXT AWARE: If the user asks "What should I do?", look at the [TODAY'S SCHEDULE] above and tell them specifically based on the current time ({current_time}).
+    2. TONE: Use "Military/Tactical" style but be supportive. Use words like "Mission", "Deploy", "Intel", "Sector".
+    3. STRICT DEADLINES: If a task is pending and time is close, warn them aggressively.
+    """
+    return system_prompt
 
-    last_error = "Unknown"
+def perform_ai_analysis(user_query):
+    """
+    Sends the User Query + The System Context to Gemini.
+    """
+    # Check for Gemini Library
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        return "⚠️ SYSTEM FAILURE: `google-genai` library not installed.", "System"
 
-    for index, current_key in enumerate(api_keys_list):
-        try:
-            client = genai.Client(api_key=current_key)
+    # Get API Key
+    api_key = None
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    elif "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    
+    if not api_key:
+        return "⚠️ AUTH ERROR: API Key missing in secrets.toml", "System"
+
+    try:
+        client = genai.Client(api_key=api_key)
+        model_id = "gemini-2.0-flash" 
+
+        # 1. Build Conversation History for Context
+        history_for_model = []
+        past_chats = st.session_state.get('chat_history', [])[-6:] # Limit to last 6 messages
+        for msg in past_chats:
+            # Handle key variations if any
+            role_label = msg.get('role') or msg.get('Role')
+            content_text = msg.get('text') or msg.get('Content')
             
-            for model_name in models_to_try:
-                try:
-                    history = []
-                    chat_data = st.session_state.get('chat_history', [])
-                    for msg in chat_data[-5:]:
-                        role = "user" if msg['role'] == "user" else "model"
-                        history.append(types.Content(role=role, parts=[types.Part.from_text(text=str(msg['text']))]))
+            api_role = "user" if role_label == "user" else "model"
+            history_for_model.append(types.Content(role=api_role, parts=[types.Part.from_text(text=str(content_text))]))
 
-                    chat = client.chats.create(
-                        model=model_name, 
-                        history=history,
-                        config=types.GenerateContentConfig(
-                            system_instruction=PERSONALIZED_INSTRUCTION, 
-                            temperature=0.7 
-                        )
-                    )
-                    
-                    response = chat.send_message(query)
-                    return response.text, "TimeHunt AI" 
+        # 2. Configure the Chat with the NEW System Context
+        current_system_context = get_system_context()
+        
+        chat = client.chats.create(
+            model=model_id,
+            history=history_for_model,
+            config=types.GenerateContentConfig(
+                system_instruction=current_system_context,
+                temperature=0.7,
+                max_output_tokens=400
+            )
+        )
 
-                except Exception as model_err:
-                    print(f"⚠️ Key #{index+1} failed with {model_name}: {model_err}")
-                    last_error = str(model_err)
-                    time.sleep(1) 
-                    continue 
+        # 3. Send Message
+        response = chat.send_message(user_query)
+        return response.text, "TimeHunt AI"
 
-        except Exception as key_err:
-            print(f"❌ Key #{index+1} Invalid: {key_err}")
-            continue
-
-    return f"❌ System Overload. Please wait 1 minute. Last Error: {last_error}", "System Failure"
+    except Exception as e:
+        return f"❌ CONNECTION LOST: {str(e)}", "System Error"
     
 # --- 5.5 REMINDER CHECKER WITH BROWSER NOTIFICATIONS ---
 
@@ -1178,142 +1144,45 @@ def page_calendar():
 # --- 8. PAGE: AI ASSISTANT ---
 
 def page_ai_assistant():
-    # --- 1. SETUP & HELPER FUNCTION ---
-    # We define this inside so both the Input Bar and Buttons can use it
-    def process_new_message(user_text):
-        # A. Initialize Session if New
-        if not st.session_state.get('current_session_id'):
-            new_id = str(uuid.uuid4())
-            st.session_state['current_session_id'] = new_id
-            # Auto-name: First 4 words
-            short_name = " ".join(user_text.split()[:4])
-            st.session_state['current_session_name'] = short_name
+    st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
+    
+    # 1. Chat Container (Scrollable area)
+    chat_container = st.container()
+    
+    with chat_container:
+        if not st.session_state.get('chat_history'):
+            st.info(f"👋 Ready, {st.session_state.get('user_name', 'Agent')}. I have read your Schedule and Profile.")
         
-        # B. Save User Message
-        st.session_state['chat_history'].append({"role": "user", "text": user_text})
-        save_chat_to_cloud("user", user_text) 
-        
-        # C. Generate Response (with Spinner in the right place)
-        # We need a placeholder because we are inside a function
-        with st.chat_message("assistant", avatar="1000592991.png"):
-             with st.spinner("Analyzing Strategy..."):
-                 res_text, _ = perform_auto_search(user_text)
-                 
-                 # Check for JSON schedule
-                 json_match = re.search(r'\[\s*\{.*?\}\s*\]', res_text, re.DOTALL)
-                 if json_match:
-                     try:
-                         json_str = json_match.group(0)
-                         new_slots = json.loads(json_str)
-                         for slot in new_slots:
-                             st.session_state['timetable_slots'].append({
-                                 "Time": slot.get("Time", "00:00"), "Activity": slot.get("Activity", "Mission"),
-                                 "Category": slot.get("Category", "Study"), "Done": False, "XP": 50, "Difficulty": "Medium"
-                             })
-                         res_text = "✅ **Protocol Established.** Timetable added to Scheduler."
-                         sync_data() 
-                     except: pass
-                 st.write(res_text)
-        
-        # D. Save AI Response
-        st.session_state['chat_history'].append({"role": "assistant", "text": res_text})
-        save_chat_to_cloud("assistant", res_text) 
-        st.rerun()
-
-    # --- 2. HEADER UI ---
-    c_head, c_btn = st.columns([4, 1], gap="small", vertical_alignment="center")
-    with c_head:
-        st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
-        st.caption(f"Session: {st.session_state.get('current_session_name', 'New Chat')}")
-        
-    with c_btn:
-        with st.popover("⚙️ Options", use_container_width=True):
-            new_name = st.text_input("Rename", value=st.session_state.get('current_session_name', ''))
-            if st.button("Save Name"):
-                if st.session_state.get('current_session_id'):
-                    rename_chat_session(st.session_state['current_session_id'], new_name)
-                    st.session_state['current_session_name'] = new_name
-                    st.rerun()
-            if st.button("🗑️ Delete", type="primary"):
-                if st.session_state.get('current_session_id'):
-                    delete_chat_session(st.session_state['current_session_id'])
-                    st.session_state['current_session_id'] = None
-                    st.session_state['chat_history'] = []
-                    st.rerun()
-
-    # --- 3. WELCOME SCREEN (If History is Empty) ---
-    if not st.session_state['chat_history']:
-        # Dynamic Greetings List
-        greetings = [
-            "Where should we start?",
-            "What is the mission?",
-            "Ready to optimize?",
-            "Awaiting instructions.",
-            "Let's hunt some goals."
-        ]
-        user_first_name = st.session_state['user_name'].split()[0]
-        random_greet = random.choice(greetings)
-        
-        # Gemini-Style Welcome UI
-        st.markdown(f"""
-        <style>
-            .welcome-text {{
-                font-size: 40px;
-                font-weight: 600;
-                background: -webkit-linear-gradient(45deg, #B5FF5F, #00E5FF);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                margin-top: 20px;
-            }}
-            .sub-text {{
-                font-size: 40px;
-                font-weight: 600;
-                color: #ccc; 
-                margin-bottom: 40px;
-            }}
-        </style>
-        <div>
-            <div class="welcome-text">Hi, {user_first_name}</div>
-            <div class="sub-text">{random_greet}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Suggestion Chips (Buttons)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            if st.button("📅 Plan Day", use_container_width=True):
-                process_new_message("Create a strict hourly schedule for me today.")
-        with c2:
-            if st.button("🧠 Learn", use_container_width=True):
-                process_new_message("Explain a complex topic simply.")
-        with c3:
-            if st.button("🔥 Motivate", use_container_width=True):
-                process_new_message("I am tired. Give me elite motivation.")
-        with c4:
-            if st.button("📝 Study Tips", use_container_width=True):
-                process_new_message("Give me the best scientific study techniques.")
-
-    # --- 4. CHAT HISTORY DISPLAY ---
-    else:
-        for msg in st.session_state['chat_history']:
-            role = msg.get('role') or msg.get('Role')
-            text = msg.get('text') or msg.get('Content')
+        # Display History
+        for msg in st.session_state.get('chat_history', []):
+            # Normalize role names
+            role = "assistant" if (msg.get('role') == "model" or msg.get('role') == "assistant") else "user"
+            content = msg.get('text') or msg.get('Content')
             
-            if role == "model" or role == "assistant":
-                with st.chat_message("assistant", avatar="1000592991.png"):
-                    st.write(text)
-            else:
-                user_av = st.session_state.get('user_avatar', "👤")
-                full_path = os.path.join(current_dir, str(user_av))
-                avatar_to_use = full_path if str(user_av).endswith(('.png', '.jpg')) and os.path.exists(full_path) else "👤"
-                with st.chat_message("user", avatar=avatar_to_use):
-                    st.write(text)
+            with st.chat_message(role):
+                st.write(content)
 
-    # --- 5. CHAT INPUT BAR ---
-    if prompt := st.chat_input("Input command parameters..."):
-        process_new_message(prompt)
+    # 2. Input Area
+    if prompt := st.chat_input("Enter mission parameters..."):
+        # A. Show User Message
+        st.session_state['chat_history'].append({"role": "user", "text": prompt})
+        with st.chat_message("user"):
+            st.write(prompt)
+        
+        # Save user msg to cloud (optional)
+        save_chat_to_cloud("user", prompt)
 
-# --- 9. CUSTOM UI STYLING (SIDEBAR & MAIN THEME) ---
+        # B. Generate AI Response
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing tactical data..."):
+                # CALL THE NEW BRAIN FUNCTION HERE
+                response_text, sender = perform_ai_analysis(prompt)
+                
+                st.write(response_text)
+                st.session_state['chat_history'].append({"role": "model", "text": response_text})
+                
+                # Save AI msg to cloud (optional)
+                save_chat_to_cloud("assistant", response_text)
 
 # --- 9. CUSTOM UI STYLING ---
 def inject_custom_css():
