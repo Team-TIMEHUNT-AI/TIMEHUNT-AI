@@ -17,6 +17,10 @@ import base64
 import json 
 import uuid
 import calendar
+from streamlit_mic_recorder import mic_recorder
+from gtts import gTTS
+import tempfile
+
 # --- NEW: LIVE CLOCK & AUDIO ENGINE ---
 def render_live_clock():
     # We use an iframe so the clock is isolated and never gets stuck on "Loading..."
@@ -1299,26 +1303,107 @@ def page_calendar():
 # --- 8. PAGE: AI ASSISTANT ---
 
 def page_ai_assistant():
+    # Import the mic recorder library (ensure you pip installed it)
+    from streamlit_mic_recorder import mic_recorder
+    
     # --- 1. SETUP & HELPER TO SEND MESSAGES ---
     def process_message(prompt_text):
         """Helper to send message, get AI response, and save to history."""
         # A. User Msg
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        # (Optional) save_chat_to_cloud("user", prompt_text)
         
         # B. AI Response (The Brain)
         response_text, _ = perform_ai_analysis(prompt_text)
         
         # C. Save AI Msg
         st.session_state['chat_history'].append({"role": "model", "text": response_text})
-        # (Optional) save_chat_to_cloud("assistant", response_text)
+        
+        # D. TRIGGER VOICE OUTPUT (The "Voice" of the AI)
+        # We use a hidden HTML audio element with Google Translate's TTS API (Free & supports Indian langs)
+        # This handles Hindi/Tamil/English automatically based on the text script detection roughly, 
+        # or defaults to English. 
+        
+        # Clean text for URL (basic cleanup)
+        clean_text = response_text.replace('\n', ' ').replace('#', '').replace('*', '')[:200] # Limit length for TTS
+        tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
+        
+        # Determine language (Basic heuristic: if hindi char found -> 'hi', else 'en')
+        if any("\u0900" <= char <= "\u097F" for char in response_text): # Hindi Block
+            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=hi"
+        
+        # Auto-play audio
+        st.markdown(f"""
+            <audio autoplay="true" style="display:none;">
+                <source src="{tts_url}" type="audio/mpeg">
+            </audio>
+        """, unsafe_allow_html=True)
         
         st.rerun()
 
     # --- 2. HEADER ---
-    st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
+    c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
+    with c_title:
+        st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
     
-    # --- 3. LOGIC: WELCOME SCREEN vs CHAT HISTORY ---
+    with c_mic:
+        # --- NEW: MICROPHONE BUTTON ---
+        # Returns a dictionary with audio bytes if recorded
+        audio_data = mic_recorder(
+            start_prompt="🎤 Speak",
+            stop_prompt="⏹️ Stop",
+            just_once=True,
+            use_container_width=True,
+            format="wav",
+            key="voice_input"
+        )
+
+    # --- 3. VOICE PROCESSING LOGIC ---
+    if audio_data:
+        # If audio was recorded, we need to transcribe it.
+        # Since we want to avoid paid APIs like OpenAI Whisper if possible, 
+        # we can rely on the user typing OR use a simple workaround if you have a key.
+        # FOR NOW: We will assume you want to use Gemini's multimodal capability to "hear" the audio.
+        
+        # Convert audio bytes to Gemini-friendly format
+        import io
+        audio_bytes = audio_data['bytes']
+        
+        # Send Audio directly to Gemini (It can listen!)
+        # Note: This requires the 'perform_ai_analysis' to handle audio, 
+        # or we just simulate it here for simplicity.
+        
+        # 1. Save temp file
+        with open("temp_voice.wav", "wb") as f:
+            f.write(audio_bytes)
+            
+        st.toast("Processing Voice Command...", icon="🎧")
+        
+        # 2. Use Gemini to Transcribe & Reply (Multimodal)
+        # We need to tweak the prompt slightly to say "User sent audio".
+        # For simplicity in this UI, we will just send a text placeholder 
+        # but in a full implementation, you'd pass the audio file to the API.
+        
+        # *Feature Note:* Real-time browser STT (Speech-to-Text) requires JS. 
+        # The 'mic_recorder' saves audio. To keep it simple without heavy STT models,
+        # we will use Gemini's audio capability if your API key supports Gemini 1.5 Flash (which handles audio).
+        
+        # Let's assume text input for now to prevent breaking, 
+        # unless you add SpeechRecognition library: `pip install SpeechRecognition`
+        try:
+            import speech_recognition as sr
+            r = sr.Recognizer()
+            with sr.AudioFile("temp_voice.wav") as source:
+                audio_data_sr = r.record(source)
+                # Supports 'hi-IN' (Hindi), 'ta-IN' (Tamil), etc.
+                # We default to auto or English/Hindi mix
+                text_input = r.recognize_google(audio_data_sr, language="en-IN") # English (India) catches mixed hints
+                process_message(text_input)
+        except ImportError:
+            st.error("Please install `SpeechRecognition`: pip install SpeechRecognition")
+        except Exception as e:
+            st.warning(f"Voice unreadable. Try typing. ({e})")
+
+    # --- 4. LOGIC: WELCOME SCREEN vs CHAT HISTORY ---
     
     # IF HISTORY IS EMPTY -> SHOW WELCOME SCREEN (Gemini Style)
     if not st.session_state.get('chat_history'):
@@ -1409,9 +1494,10 @@ def page_ai_assistant():
                 with st.chat_message(role):
                     st.write(content)
 
-    # --- 4. CHAT INPUT (ALWAYS VISIBLE) ---
+    # --- 5. CHAT INPUT (ALWAYS VISIBLE) ---
     if prompt := st.chat_input("Input command parameters..."):
         process_message(prompt)
+
 
 # --- 9. CUSTOM UI STYLING ---
 def inject_custom_css():
