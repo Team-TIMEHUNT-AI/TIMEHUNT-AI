@@ -1901,6 +1901,25 @@ def page_about():
     st.write("")
     st.caption("🔒 System Status: ONLINE | 🛡️ Developed with ❤️ by TIME HUNT AI TEAM")
 
+def fetch_leaderboard_data():
+    """Fetches all users, sorts by XP, and returns top 10."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Sheet1", ttl=0) # Read all users
+        
+        if not df.empty and 'XP' in df.columns:
+            # Ensure XP is a number
+            df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
+            # Sort Highest -> Lowest
+            df = df.sort_values(by='XP', ascending=False).reset_index(drop=True)
+            # Add Rank
+            df['Rank'] = df.index + 1
+            return df.head(10) # Return top 10
+    except Exception as e:
+        return pd.DataFrame()
+    return pd.DataFrame()
+
 def page_dashboard():
     # --- 1. DASHBOARD STYLING (Cyberpunk/Tactical Look) ---
     st.markdown("""
@@ -1998,6 +2017,32 @@ def page_dashboard():
             st.caption("No sectors defined.")
 
     st.divider()
+
+    # --- GLOBAL LEADERBOARD SECTION ---
+    st.markdown("### 🏆 Global Hunter Rankings")
+    
+    leader_df = fetch_leaderboard_data()
+    
+    if not leader_df.empty:
+        st.dataframe(
+            leader_df[['Rank', 'Name', 'League', 'XP']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Rank": st.column_config.NumberColumn("Rank", format="#%d", width="small"),
+                "Name": st.column_config.TextColumn("Agent", width="medium"),
+                "XP": st.column_config.ProgressColumn("Total XP", format="%d XP", min_value=0, max_value=int(leader_df['XP'].max() + 500))
+            }
+        )
+        
+        # Show User's Personal Rank
+        my_id = str(st.session_state.get('user_id'))
+        my_rank_row = leader_df[leader_df['UserID'].astype(str) == my_id]
+        if not my_rank_row.empty:
+            rank_num = my_rank_row.iloc[0]['Rank']
+            st.info(f"📍 You are currently **Rank #{rank_num}** on the global grid.")
+    else:
+        st.warning("Leaderboard offline. Check connection.")
 
     # --- 5. EXPORT & LOGS ---
     c_log, c_export = st.columns([3, 1])
@@ -2274,40 +2319,92 @@ def main():
 
     # --- LOGIC SWITCH: WHICH SIDEBAR TO SHOW? ---
     
-    # A. CHAT MODE SIDEBAR (For AI Context Retention)
+        # A. CHAT MODE SIDEBAR (For AI Context Retention)
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
-            if st.button("🏠 Back to Main Menu", type="primary", use_container_width=True):
-                st.session_state['page_mode'] = 'main'
-                st.rerun()
+            
+            # 1. Navigation Buttons
+            c_back, c_new = st.columns(2)
+            with c_back:
+                if st.button("🏠 Back", type="secondary", use_container_width=True):
+                    st.session_state['page_mode'] = 'main'
+                    st.rerun()
+            with c_new:
+                if st.button("➕ New", type="primary", use_container_width=True):
+                    st.session_state['current_session_id'] = None
+                    st.session_state['current_session_name'] = "New Chat"
+                    st.session_state['chat_history'] = []
+                    st.rerun()
             
             st.divider()
+
+            # 2. Delete Mode Toggle
+            if 'delete_mode' not in st.session_state: 
+                st.session_state['delete_mode'] = False
             
-            # New Chat Button
-            if st.button("➕ New Chat", use_container_width=True):
-                st.session_state['current_session_id'] = None
-                st.session_state['current_session_name'] = "New Chat"
-                st.session_state['chat_history'] = []
+            # The Toggle Button
+            btn_label = "❌ Cancel Delete" if st.session_state['delete_mode'] else "🗑️ Delete Chats"
+            if st.button(btn_label, use_container_width=True):
+                st.session_state['delete_mode'] = not st.session_state['delete_mode']
                 st.rerun()
-            
+
             st.markdown("---")
             
-            # History List
+            # 3. List Chats (With Logic for Selection)
             sessions = load_chat_sessions()
-            for s in sessions:
-                if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
-                    st.session_state['current_session_id'] = s['SessionID']
-                    st.session_state['current_session_name'] = s['SessionName']
-                    msgs = load_messages_for_session(s['SessionID'])
-                    formatted_msgs = []
-                    for m in msgs:
-                        formatted_msgs.append({"role": m["Role"], "text": m["Content"]})
-                    st.session_state['chat_history'] = formatted_msgs
-                    st.rerun()
+            
+            if st.session_state['delete_mode']:
+                # --- DELETE MODE ACTIVE: SHOW CHECKBOXES ---
+                st.warning("Select chats to remove:")
+                
+                # We use a form so the user can check multiple boxes before submitting
+                with st.form("delete_chat_form"):
+                    selected_ids = []
+                    for s in sessions:
+                        # Checkbox for each session
+                        if st.checkbox(f"📄 {s['SessionName']}", key=f"del_{s['SessionID']}"):
+                            selected_ids.append(s['SessionID'])
+                    
+                    if st.form_submit_button("🗑️ CONFIRM DELETION", type="primary"):
+                        if selected_ids:
+                            for sid in selected_ids:
+                                delete_chat_session(sid)
+                            st.toast(f"Deleted {len(selected_ids)} chats.")
+                            st.session_state['delete_mode'] = False # Exit delete mode
+                            # If current open chat was deleted, reset it
+                            if st.session_state.get('current_session_id') in selected_ids:
+                                st.session_state['current_session_id'] = None
+                                st.session_state['chat_history'] = []
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("No chats selected.")
+                            
+            else:
+                # --- NORMAL MODE: SHOW OPEN BUTTONS ---
+                if not sessions:
+                    st.caption("No history found.")
+                
+                for s in sessions:
+                    # Highlight the active chat
+                    b_type = "primary" if s['SessionID'] == st.session_state.get('current_session_id') else "secondary"
+                    
+                    if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], type=b_type, use_container_width=True):
+                        st.session_state['current_session_id'] = s['SessionID']
+                        st.session_state['current_session_name'] = s['SessionName']
+                        
+                        # Load messages
+                        msgs = load_messages_for_session(s['SessionID'])
+                        formatted_msgs = []
+                        for m in msgs:
+                            formatted_msgs.append({"role": m["Role"], "text": m["Content"]})
+                        st.session_state['chat_history'] = formatted_msgs
+                        st.rerun()
         
-        # Load the AI Page
+        # Load the AI Page Content
         page_ai_assistant()
+            
 
     # B. MAIN MENU SIDEBAR (Default App Mode)
     else:
