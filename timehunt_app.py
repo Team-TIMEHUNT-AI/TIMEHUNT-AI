@@ -1144,45 +1144,113 @@ def page_calendar():
 # --- 8. PAGE: AI ASSISTANT ---
 
 def page_ai_assistant():
+    # --- 1. SETUP & HELPER TO SEND MESSAGES ---
+    def process_message(prompt_text):
+        """Helper to send message, get AI response, and save to history."""
+        # A. User Msg
+        st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        # (Optional) save_chat_to_cloud("user", prompt_text)
+        
+        # B. AI Response (The Brain)
+        response_text, _ = perform_ai_analysis(prompt_text)
+        
+        # C. Save AI Msg
+        st.session_state['chat_history'].append({"role": "model", "text": response_text})
+        # (Optional) save_chat_to_cloud("assistant", response_text)
+        
+        st.rerun()
+
+    # --- 2. HEADER ---
     st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
     
-    # 1. Chat Container (Scrollable area)
-    chat_container = st.container()
+    # --- 3. LOGIC: WELCOME SCREEN vs CHAT HISTORY ---
     
-    with chat_container:
-        if not st.session_state.get('chat_history'):
-            st.info(f"👋 Ready, {st.session_state.get('user_name', 'Agent')}. I have read your Schedule and Profile.")
+    # IF HISTORY IS EMPTY -> SHOW WELCOME SCREEN (Gemini Style)
+    if not st.session_state.get('chat_history'):
         
-        # Display History
-        for msg in st.session_state.get('chat_history', []):
-            # Normalize role names
-            role = "assistant" if (msg.get('role') == "model" or msg.get('role') == "assistant") else "user"
-            content = msg.get('text') or msg.get('Content')
-            
-            with st.chat_message(role):
-                st.write(content)
-
-    # 2. Input Area
-    if prompt := st.chat_input("Enter mission parameters..."):
-        # A. Show User Message
-        st.session_state['chat_history'].append({"role": "user", "text": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
+        # Dynamic Greetings
+        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
         
-        # Save user msg to cloud (optional)
-        save_chat_to_cloud("user", prompt)
+        # CSS for the Welcome Screen
+        st.markdown(f"""
+        <style>
+            .welcome-text {{
+                font-family: 'Inter', sans-serif;
+                font-size: 45px;
+                font-weight: 600;
+                background: -webkit-linear-gradient(0deg, #B5FF5F, #00E5FF);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin-top: 20px;
+                line-height: 1.2;
+            }}
+            .sub-text {{
+                font-family: 'Inter', sans-serif;
+                font-size: 45px;
+                font-weight: 600;
+                color: #555; /* Dark grey for "Where should we start?" */
+                margin-bottom: 40px;
+                line-height: 1.2;
+            }}
+            /* Suggestion Chips */
+            div.stButton > button {{
+                border-radius: 20px;
+                background-color: #f0f2f6;
+                color: #31333F;
+                border: none;
+                padding: 10px 20px;
+                font-weight: 500;
+                transition: 0.2s;
+            }}
+            div.stButton > button:hover {{
+                background-color: #e0e2e6;
+                color: #000;
+            }}
+        </style>
+        
+        <div>
+            <div class="welcome-text">Hi, {user_name}</div>
+            <div class="sub-text">Where should we start?</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # B. Generate AI Response
-        with st.chat_message("assistant"):
-            with st.spinner("Analyzing tactical data..."):
-                # CALL THE NEW BRAIN FUNCTION HERE
-                response_text, sender = perform_ai_analysis(prompt)
+        # Suggestion Buttons (The "Chips")
+        c1, c2, c3, c4 = st.columns(4)
+        
+        with c1:
+            if st.button("📅 Plan Day", use_container_width=True):
+                process_message("Create a strict hourly schedule for me today based on my tasks.")
+        with c2:
+            if st.button("🧠 Learn", use_container_width=True):
+                process_message("Explain a complex topic simply.")
+        with c3:
+            if st.button("🔥 Motivate", use_container_width=True):
+                process_message("I am tired. Give me elite military-style motivation.")
+        with c4:
+            if st.button("📝 Study Tips", use_container_width=True):
+                process_message("Give me the best scientific study techniques.")
+
+    # ELSE -> SHOW CHAT HISTORY
+    else:
+        chat_container = st.container()
+        with chat_container:
+            for msg in st.session_state['chat_history']:
+                # Determine role for UI
+                role = "assistant" if (msg.get('role') == "model" or msg.get('role') == "assistant") else "user"
+                content = msg.get('text') or msg.get('Content')
                 
-                st.write(response_text)
-                st.session_state['chat_history'].append({"role": "model", "text": response_text})
-                
-                # Save AI msg to cloud (optional)
-                save_chat_to_cloud("assistant", response_text)
+                # Render
+                with st.chat_message(role):
+                    st.write(content)
+
+    # --- 4. CHAT INPUT (ALWAYS VISIBLE) ---
+    if prompt := st.chat_input("Input command parameters..."):
+        # If we are on the welcome screen, this handles the first message
+        # If we are in history, this handles the next message
+        
+        # We manually append user msg first so the spinner shows up correctly in the "else" block logic above
+        # But since we are using reruns, we can just call the helper.
+        process_message(prompt)
 
 # --- 9. CUSTOM UI STYLING ---
 def inject_custom_css():
@@ -1593,7 +1661,7 @@ def main():
     # 2. MAIN MENU SIDEBAR (Default)
     else:
         with st.sidebar:
-            st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
+            st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
             
             # --- RESTORED AUDIO PLAYER ---
