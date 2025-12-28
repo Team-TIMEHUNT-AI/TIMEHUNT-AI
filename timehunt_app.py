@@ -1348,36 +1348,36 @@ def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     
     # --- 1. SETUP & HELPER TO SEND MESSAGES ---
-    def process_message(prompt_text):
+        def process_message(prompt_text):
         """Helper to send message, get AI response, and save to history."""
-        # A. User Msg
+        # 1. HANDLE NEW CHAT SESSION (Critical for Saving)
+        if not st.session_state.get('current_session_id'):
+            import uuid
+            new_id = str(uuid.uuid4())
+            st.session_state['current_session_id'] = new_id
+            # Create a name from the first 5 words
+            short_name = " ".join(prompt_text.split()[:5])
+            st.session_state['current_session_name'] = short_name
+
+        # 2. USER MESSAGE
+        # A. Save to Screen
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        # B. Save to Cloud (The Missing Link)
+        save_chat_to_cloud("user", prompt_text)
         
-        # B. AI Response (The Brain)
+        # 3. AI RESPONSE
         response_text, _ = perform_ai_analysis(prompt_text)
         
-        # C. Save AI Msg
+        # A. Save to Screen
         st.session_state['chat_history'].append({"role": "model", "text": response_text})
+        # B. Save to Cloud
+        save_chat_to_cloud("model", response_text)
         
-        # D. TRIGGER VOICE OUTPUT (The "Voice" of the AI)
-        # We use a hidden HTML audio element with Google Translate's TTS API (Free & supports Indian langs)
-        # This handles Hindi/Tamil/English automatically based on the text script detection roughly, 
-        # or defaults to English. 
-        
-        # Clean text for URL (basic cleanup)
-        clean_text = response_text.replace('\n', ' ').replace('#', '').replace('*', '')[:200] # Limit length for TTS
+        # 4. AUDIO & RERUN
+        # (Your existing audio logic here - simplified for brevity)
+        clean_text = response_text.replace('\n', ' ').replace('#', '')[:200]
         tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
-        
-        # Determine language (Basic heuristic: if hindi char found -> 'hi', else 'en')
-        if any("\u0900" <= char <= "\u097F" for char in response_text): # Hindi Block
-            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=hi"
-        
-        # Auto-play audio
-        st.markdown(f"""
-            <audio autoplay="true" style="display:none;">
-                <source src="{tts_url}" type="audio/mpeg">
-            </audio>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
         
         st.rerun()
 
@@ -1522,35 +1522,39 @@ def page_ai_assistant():
             if st.button("📝 Study Tips", use_container_width=True):
                 process_message("Give me the best scientific study techniques.")
 
-            # ELSE -> SHOW CHAT HISTORY
+               # ELSE -> SHOW CHAT HISTORY
     else:
         chat_container = st.container()
         with chat_container:
             for msg in st.session_state['chat_history']:
-                # 1. Get Content and Raw Role
+                # 1. Normalize Data
                 content = msg.get('text') or msg.get('Content')
-                # We convert to lowercase (.lower()) to handle "Model", "model", "User", "user" safely
                 raw_role = str(msg.get('role') or msg.get('Role')).lower()
                 
-                # 2. Determine Avatar based on Role
+                # 2. DETERMINE AVATAR & ROLE
                 if raw_role in ["model", "assistant", "ai"]:
                     ui_role = "assistant"
-                    # AI Logo (TimeHunt Image)
-                    avatar_icon = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
-                    
+                    # Force check for the TimeHunt Logo
+                    if os.path.exists("1000592991.png"):
+                        avatar_icon = "1000592991.png"
+                    else:
+                        avatar_icon = "🤖" # Fallback if file missing
+                        
                 else:
                     ui_role = "user"
-                    # User Avatar (From Profile)
+                    # User Avatar Logic
                     user_av = st.session_state.get('user_avatar', "👤")
                     
-                    # Check if it's a valid image file path
-                    if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')) and os.path.exists(user_av):
-                        avatar_icon = user_av
+                    # If it's a file path (like from onboarding), check if it exists
+                    if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')):
+                        if os.path.exists(user_av):
+                            avatar_icon = user_av
+                        else:
+                            avatar_icon = "👤" # File missing
                     else:
-                        # Fallback if no image found
-                        avatar_icon = user_av if user_av else "👤"
+                        avatar_icon = "👤" # Default
 
-                # 3. Render the Message
+                # 3. RENDER
                 with st.chat_message(ui_role, avatar=avatar_icon):
                     st.write(content)
 
