@@ -391,9 +391,12 @@ def get_system_context():
     xp = st.session_state.get('user_xp', 0)
     
     # 2. Time & Date
-    now = datetime.datetime.now()
-    current_time = now.strftime("%H:%M")
-    current_date = now.strftime("%Y-%m-%d")
+    # Calculate IST (UTC + 5:30)
+    utc_now = datetime.datetime.utcnow()
+    ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
+    
+    current_time = ist_now.strftime("%H:%M")
+    current_date = ist_now.strftime("%Y-%m-%d")
     
     # 3. The Schedule (The AI "sees" this)
     schedule_txt = "NO ACTIVE MISSIONS."
@@ -461,10 +464,11 @@ def perform_ai_analysis(user_query):
 
     # 3. Model Priority List (UPDATED TO MATCH YOUR KEYS)
     models_to_try = [
-        "gemini-2.0-flash",          # Best standard option right now
-        "gemini-2.5-flash",          # Newest version
-        "gemini-2.0-flash-lite",     # Very fast, good for quick chats
-        "gemini-2.0-flash-exp",      # Experimental
+        "gemini-2.0-flash",          # Current standard (Fast & Smart)
+        "gemini-2.5-flash",          # Newest experimental flash
+        "gemini-2.0-flash-lite",     # Extremely fast/cheap fallback
+        "gemini-2.0-pro-exp-02-05",  # If you need high intelligence (check exact name in your list)
+        "gemini-2.0-flash-exp",      # Older experimental
     ]
 
     current_system_context = get_system_context()
