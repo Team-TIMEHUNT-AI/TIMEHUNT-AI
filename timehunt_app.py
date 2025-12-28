@@ -58,90 +58,6 @@ def render_live_clock():
     # Render it with a fixed height so it fits in the sidebar
     components.html(clock_html, height=80)
 
-def render_alarm_ui():
-    # Only show if an alarm is currently ringing
-    if st.session_state.get('active_alarm'):
-        alarm_data = st.session_state['active_alarm']
-        task_name = alarm_data['task']
-        idx = alarm_data['index']
-        
-        # 1. PLAY SOUND (With Loop)
-        sound_file = "alarm.mp3"
-        if os.path.exists(sound_file):
-            with open(sound_file, "rb") as f:
-                audio_bytes = f.read()
-            b64 = base64.b64encode(audio_bytes).decode()
-            st.markdown(f'<audio src="data:audio/mp3;base64,{b64}" autoplay loop></audio>', unsafe_allow_html=True)
-        else:
-            # Fallback beep
-            st.markdown('<audio src="https://www.soundjay.com/buttons/beep-01a.mp3" autoplay loop></audio>', unsafe_allow_html=True)
-        
-        # 2. THE POPUP INTERFACE
-        with st.container():
-            st.error(f"🚨 **ALARM TRIGGERED:** {task_name}")
-            
-            c1, c2, c3 = st.columns(3)
-            
-            # Button 1: STOP (Dismiss)
-            with c1:
-                if st.button("🛑 STOP", use_container_width=True, type="primary"):
-                    st.session_state['active_alarm'] = None
-                    st.rerun()
-            
-            # Button 2: SNOOZE (Add 5 mins)
-            with c2:
-                if st.button("💤 SNOOZE (5m)", use_container_width=True):
-                    # Add 5 minutes to the reminder
-                    new_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
-                    st.session_state['reminders'][idx]['time'] = new_time
-                    st.session_state['reminders'][idx]['notified'] = False
-                    st.session_state['active_alarm'] = None
-                    
-                    sync_data()  # <--- CHANGED THIS LINE (Old: save_data())
-                    
-                    st.toast("Alarm Snoozed for 5 minutes.")
-                    st.rerun()
-
-            # Button 3: DONE (Mark Complete)
-            with c3:
-                if st.button("✅ DONE", use_container_width=True):
-                    # Remove the reminder entirely
-                    st.session_state['reminders'].pop(idx)
-                    st.session_state['active_alarm'] = None
-                    
-                    sync_data()  # <--- CHANGED THIS LINE (Old: save_data())
-                    
-                    st.toast("Task marked as complete.")
-                    st.rerun()
-
-def play_alarm_sound():
-    sound_file = "alarm.mp3"
-    
-    # Method 1: Play Local File (Preferred)
-    if os.path.exists(sound_file):
-        try:
-            with open(sound_file, "rb") as f:
-                audio_bytes = f.read()
-            # Convert audio to base64 string
-            audio_base64 = base64.b64encode(audio_bytes).decode()
-            # Inject hidden HTML audio tag with autoplay
-            audio_html = f"""
-                <audio autoplay="true">
-                <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
-                </audio>
-            """
-            st.markdown(audio_html, unsafe_allow_html=True)
-        except Exception as e:
-            st.toast(f"Audio Error: {e}")
-    
-    # Method 2: Fallback Web Sound (If local file missing)
-    else:
-        st.markdown("""
-            <audio autoplay="true">
-            <source src="https://www.soundjay.com/buttons/beep-01a.mp3" type="audio/mp3">
-            </audio>
-            """, unsafe_allow_html=True)
-
 # --- DATA PERSISTENCE FUNCTIONS (NEW) ---
 def sync_data():
     """Syncs data. MERGES Date+Time into 'Time' column for Sheets compatibility."""
@@ -809,233 +725,472 @@ def page_onboarding():
 # --- 7. PAGE: SCHEDULER ---
 
 def page_scheduler():
-    # Data Repair
+    # --- 1. SETUP & XP LOGIC ---
+    def calculate_streak_multiplier(streak_days):
+        if streak_days >= 30: return 2.5  # TITAN
+        elif streak_days >= 14: return 2.0  # ELITE
+        elif streak_days >= 7: return 1.5   # VETERAN
+        elif streak_days >= 3: return 1.2   # ROOKIE
+        return 1.0
+
+    # Ensure data integrity
     if 'timetable_slots' in st.session_state:
         for slot in st.session_state['timetable_slots']:
             if 'Done' not in slot: slot['Done'] = False
-            if 'Activity' not in slot: slot['Activity'] = "Unknown Mission"
-            if 'Category' not in slot: slot['Category'] = "Study"
-            if 'Difficulty' not in slot: slot['Difficulty'] = "Medium"
             if 'XP' not in slot: slot['XP'] = 50
+            if 'Difficulty' not in slot: slot['Difficulty'] = 'Medium'
 
-    col_header, col_av = st.columns([4,1])
-    with col_header:
-        st.markdown('<div class="big-title">Mission Control ⚙️</div>', unsafe_allow_html=True)
-        streak = st.session_state.get('streak', 1)
-        st.markdown(f'<div class="sub-title">Current Streak: <span style="color:#B5FF5F; font-weight:bold;">🔥 {streak} Days</span> (XP x{1 + (streak*0.1):.1f})</div>', unsafe_allow_html=True)
+    # --- 2. HEADER & STATS ---
+    st.markdown('<div class="big-title">Mission Control ⚙️</div>', unsafe_allow_html=True)
     
-    c1, c2 = st.columns([2, 1])
-
-    with c1:
-        st.markdown("### 🚁 Deploy New Mission")
-        with st.form("mission_form", clear_on_submit=True):
-            cols_form = st.columns([3, 1, 1])
-            with cols_form[0]:
-                task = st.text_input("Mission Objective", placeholder="e.g. Finish Chapter 3")
-            with cols_form[1]:
-                m_type = st.selectbox("Type", ["Study", "Project", "Health", "Errand"])
-            with cols_form[2]:
-                diff = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
-            
-            submitted = st.form_submit_button("Add to Schedule ➔")
-            
-            if submitted and task:
-                base_xp = 30 if diff == "Easy" else 50 if diff == "Medium" else 100
-                
-                # --- TIMEZONE FIX: SHIFT UTC TO IST (+5:30) ---
-                ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
-                current_time_str = ist_now.strftime("%H:%M")
-                
-                st.session_state['timetable_slots'].append({
-                    "Time": current_time_str, # <--- USES CORRECTED TIME
-                    "Activity": task, 
-                    "Category": m_type, 
-                    "Difficulty": diff,
-                    "Done": False, 
-                    "XP": base_xp
-                })
-                sync_data() 
-                st.toast(f"Mission Deployed at {current_time_str}", icon="🦅")
-                st.rerun()
-
-    with c2:
-        total_tasks = len(st.session_state['timetable_slots'])
-        pending_tasks = len([t for t in st.session_state['timetable_slots'] if not t['Done']])
-        completed_tasks = total_tasks - pending_tasks
-        
+    # Calculate Stats
+    total_missions = len(st.session_state['timetable_slots'])
+    completed_missions = len([t for t in st.session_state['timetable_slots'] if t['Done']])
+    pending_missions = total_missions - completed_missions
+    progress = completed_missions / total_missions if total_missions > 0 else 0
+    
+    streak = st.session_state.get('streak', 1)
+    multiplier = calculate_streak_multiplier(streak)
+    
+    # Visual Header with Progress
+    c_stats, c_add = st.columns([2, 1])
+    
+    with c_stats:
         st.markdown(f"""
-        <div class="css-card" style="text-align: center;">
-            <div class="card-title" style="margin-bottom: 15px;">Mission Status</div>
-            <div style="display: flex; justify-content: space-around; align-items: center;">
-                <div>
-                    <div class="stat-num">{pending_tasks}</div>
-                    <div class="card-sub">Pending</div>
-                </div>
-                <div style="height: 30px; width: 1px; background: var(--text); opacity: 0.2;"></div>
-                <div>
-                    <div class="stat-num" style="color:var(--accent) !important;">{completed_tasks}</div>
-                    <div class="card-sub">Done</div>
-                </div>
+        <div style="background: rgba(255,255,255,0.05); border-radius: 15px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:18px; font-weight:bold; color:#B5FF5F;">Daily Progress</span>
+                <span style="font-size:14px; color:#aaa;">{int(progress*100)}% Clear</span>
+            </div>
+            <div style="width:100%; background:#333; height:8px; border-radius:4px; overflow:hidden;">
+                <div style="width:{progress*100}%; background: linear-gradient(90deg, #B5FF5F, #00E5FF); height:100%;"></div>
+            </div>
+            <div style="margin-top:15px; font-size:14px; color:#ccc;">
+                🔥 <b>Streak:</b> {streak} Days <span style="color:#00E5FF; margin-left:10px;">(x{multiplier} Multiplier Active)</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
-    st.write("") 
-    st.markdown("### 📋 Active Protocols")
 
-    if st.button("🗑️ Reset Schedule"):
+    with c_add:
+        # Mini Card for Quick Status
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1A1A1A, #252525); border-radius: 15px; padding: 20px; text-align:center; border: 1px solid #333;">
+            <div style="font-size: 32px; font-weight:bold; color:white;">{pending_missions}</div>
+            <div style="font-size: 12px; color:#888; text-transform:uppercase; letter-spacing:1px;">Pending Missions</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.write("") # Spacer
+
+    # --- 3. MISSION DEPLOYMENT INTERFACE ---
+    with st.expander("🚁 DEPLOY NEW MISSION", expanded=True):
+        with st.form("mission_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns([3, 1.5, 1.5])
+            with c1:
+                task_input = st.text_input("Objective", placeholder="Enter mission details...")
+            with c2:
+                cat_input = st.selectbox("Sector", ["Study", "Project", "Health", "Errand", "Drill"])
+            with c3:
+                # Updated Difficulty Logic
+                diff_input = st.selectbox("Class", ["Easy (20 XP)", "Medium (50 XP)", "Hard (150 XP)", "BOSS (300 XP)"])
+            
+            c_sub, c_clear = st.columns([1, 4])
+            with c_sub:
+                submitted = st.form_submit_button("Deploy ➔", type="primary", use_container_width=True)
+            
+            if submitted and task_input:
+                # Map Selection to XP
+                xp_map = {"Easy (20 XP)": 20, "Medium (50 XP)": 50, "Hard (150 XP)": 150, "BOSS (300 XP)": 300}
+                clean_diff = diff_input.split(" ")[0] # Extracts "Easy", "Hard" etc.
+                
+                # Timezone Fix
+                ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+                
+                new_mission = {
+                    "Time": ist_now.strftime("%H:%M"),
+                    "Activity": task_input,
+                    "Category": cat_input,
+                    "Difficulty": clean_diff,
+                    "Done": False,
+                    "XP": xp_map.get(diff_input, 50),
+                    "Date": ist_now.strftime("%Y-%m-%d")
+                }
+                
+                st.session_state['timetable_slots'].append(new_mission)
+                sync_data()
+                st.rerun()
+
+    st.divider()
+
+    # --- 4. ACTIVE MISSIONS (CUSTOM CARD UI) ---
+    st.markdown("### 📋 Active Protocols")
+    
+    if not st.session_state['timetable_slots']:
+        st.info("System Idle. No active protocols found.")
+    else:
+        # Separate Pending and Done for cleaner UI
+        pending = [t for t in st.session_state['timetable_slots'] if not t['Done']]
+        done_list = [t for t in st.session_state['timetable_slots'] if t['Done']]
+
+        # A. RENDER PENDING MISSIONS
+        if pending:
+            for i, mission in enumerate(st.session_state['timetable_slots']):
+                if not mission['Done']:
+                    # Difficulty Color Coding
+                    d_color = "#B5FF5F" # Easy/Green
+                    if mission['Difficulty'] == "Medium": d_color = "#FFD700" # Gold
+                    elif mission['Difficulty'] == "Hard": d_color = "#FF4B4B" # Red
+                    elif mission['Difficulty'] == "BOSS": d_color = "#9D00FF" # Purple
+                    
+                    # Custom Card Container
+                    with st.container():
+                        # Create a layout: Checkbox | Details | XP Badge
+                        c_chk, c_det, c_xp = st.columns([1, 6, 2], vertical_alignment="center")
+                        
+                        with c_chk:
+                            # The actual interactive element
+                            if st.button("⬜", key=f"btn_done_{i}", help="Mark Complete"):
+                                st.session_state['timetable_slots'][i]['Done'] = True
+                                sync_data()
+                                st.rerun()
+                        
+                        with c_det:
+                            st.markdown(f"""
+                            <div style="font-weight:600; font-size:16px;">{mission['Activity']}</div>
+                            <div style="font-size:12px; color:#888;">
+                                <span style="color:{d_color}; font-weight:bold;">● {mission['Difficulty']}</span> 
+                                | {mission['Category']} | 🕒 {mission['Time']}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        with c_xp:
+                            st.markdown(f"""
+                            <div style="background:{d_color}20; color:{d_color}; border:1px solid {d_color}; 
+                            border-radius:8px; padding:5px 10px; text-align:center; font-weight:bold; font-size:12px;">
+                            +{mission['XP']} XP
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("<hr style='margin:5px 0; border:0; border-top:1px solid #333;'>", unsafe_allow_html=True)
+
+        else:
+            st.caption("All systems clear. Good job, Hunter.")
+
+        # B. RENDER COMPLETED SECTION (Collapsible)
+        if done_list:
+            with st.expander(f"✅ Completed Missions ({len(done_list)})"):
+                for t in done_list:
+                     st.markdown(f"~~{t['Activity']}~~ <span style='color:#666; font-size:12px;'>({t['XP']} XP)</span>", unsafe_allow_html=True)
+                
+                # CLAIM REWARDS BUTTON
+                if st.button("🎁 CLAIM REWARDS & ARCHIVE", type="primary", use_container_width=True):
+                    # Calculate Total XP Gain
+                    raw_xp = sum([t['XP'] for t in done_list])
+                    final_xp = int(raw_xp * multiplier)
+                    
+                    # Update Session
+                    st.session_state['user_xp'] += final_xp
+                    st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
+                    
+                    # Archive (Remove from active list)
+                    st.session_state['timetable_slots'] = [t for t in st.session_state['timetable_slots'] if not t['Done']]
+                    
+                    # Log History
+                    today_str = datetime.date.today().strftime("%Y-%m-%d")
+                    st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
+                    
+                    sync_data()
+                    
+                    # Celebration
+                    st.balloons()
+                    msg = f"**MISSION SUCCESS!**\n\nBase XP: {raw_xp}\nStreak Bonus: x{multiplier}\n**TOTAL GAIN: +{final_xp} XP**"
+                    st.toast(msg, icon="🚀")
+                    time.sleep(2)
+                    st.rerun()
+
+    # Reset Option (Subtle)
+    st.write("")
+    if st.button("🗑️ Clear All Data", help="Deletes all active and completed tasks"):
         st.session_state['timetable_slots'] = []
         sync_data()
         st.rerun()
-    
-    if st.session_state['timetable_slots']:
-        with st.container():
-            df = pd.DataFrame(st.session_state['timetable_slots'])
-            
-            edited_df = st.data_editor(
-                df,
-                use_container_width=True,
-                key="m_editor",
-                column_config={
-                    "Done": st.column_config.CheckboxColumn("Status", default=False),
-                    "Activity": st.column_config.TextColumn("Mission", width="large", required=True),
-                    "Category": st.column_config.SelectboxColumn("Type", width="small", options=["Study", "Project", "Health", "Errand"]),
-                    "Difficulty": st.column_config.SelectboxColumn("Diff", width="small", options=["Easy", "Medium", "Hard"]),
-                    "XP": st.column_config.NumberColumn("Base XP", format="%d XP")
-                },
-                hide_index=True,
-                num_rows="dynamic"
-            )
-
-            st.session_state['timetable_slots'] = edited_df.to_dict('records')
-            
-            st.write("")
-            col_claim, col_empty = st.columns([1, 4])
-            with col_claim:
-                if st.button("Claim XP for Completed ✅"):
-                    current_slots = st.session_state['timetable_slots']
-                    completed_now = [t for t in current_slots if t['Done']]
-                    
-                    if completed_now:
-                        streak = st.session_state.get('streak', 1)
-                        multiplier = 1 + (streak * 0.1)
-                        raw_xp = sum([t['XP'] for t in completed_now])
-                        final_xp = int(raw_xp * multiplier)
-                        
-                        st.session_state['user_xp'] += final_xp
-                        st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
-                        st.session_state['timetable_slots'] = [t for t in current_slots if not t['Done']]
-                        
-                        today_str = datetime.date.today().strftime("%Y-%m-%d")
-                        st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
-                        sync_data() 
-                        
-                        st.balloons()
-                        st.toast(f"Reward: {raw_xp} x {multiplier:.1f} Streak = +{final_xp} XP!", icon="🎉")
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.toast("Mark tasks as done first.", icon="🚫")
-    else:
-        st.info("No active protocols. Deploy a mission above.")
 
 # --- NEW PAGE: FOCUS TIMER ---
 def page_timer():
-    st.markdown('<div class="big-title" style="text-align:center;">⏱️ Deep Focus Protocol</div>', unsafe_allow_html=True)
-    
-    # We use a larger, centered layout for the timer page
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.markdown("""
-        <div class="css-card" style="text-align: center; padding: 40px;">
-            <h3 style="margin-bottom: 20px;">Pomodoro Cycle</h3>
-            <div id="timer-container">
-                </div>
-        </div>
-        """, unsafe_allow_html=True)
+    # --- 1. SESSION STATE FOR TIMER CONFIG ---
+    if 'timer_duration' not in st.session_state: st.session_state['timer_duration'] = 25
+    if 'timer_mode' not in st.session_state: st.session_state['timer_mode'] = "Focus"
 
-        # The Timer HTML/JS Logic (Enhanced for Full Page)
-        timer_html = """
-        <style>
-            .timer-display { 
-                font-family: 'Courier New', monospace; 
-                font-size: 80px; 
-                font-weight: bold; 
-                color: #B5FF5F; 
-                text-shadow: 0 0 20px rgba(181, 255, 95, 0.4);
-                margin: 20px 0;
-            }
-            .btn-grid { display: flex; gap: 15px; justify-content: center; }
-            .btn-timer { 
-                padding: 15px 30px; 
-                border-radius: 30px; 
-                border: none; 
-                font-size: 18px; 
-                font-weight: bold; 
-                cursor: pointer; 
-                transition: transform 0.1s;
-            }
-            .btn-start { background: #B5FF5F; color: black; box-shadow: 0 0 15px rgba(181, 255, 95, 0.3); }
-            .btn-reset { background: #333; color: white; border: 1px solid #555; }
-            .btn-timer:active { transform: scale(0.95); }
-        </style>
+    st.markdown('<div class="big-title" style="text-align:center;">⏱️ Tactical Chronometer</div>', unsafe_allow_html=True)
+
+    # --- 2. MODE SELECTION (PYTHON SIDE) ---
+    c_mode1, c_mode2, c_mode3 = st.columns(3)
+    
+    # Helper to style buttons based on active state
+    def get_type(mode): return "primary" if st.session_state['timer_mode'] == mode else "secondary"
+
+    with c_mode1:
+        if st.button("🎯 FOCUS (25m)", type=get_type("Focus"), use_container_width=True):
+            st.session_state['timer_duration'] = 25
+            st.session_state['timer_mode'] = "Focus"
+            st.rerun()
+    with c_mode2:
+        if st.button("☕ SHORT (5m)", type=get_type("Short"), use_container_width=True):
+            st.session_state['timer_duration'] = 5
+            st.session_state['timer_mode'] = "Short"
+            st.rerun()
+    with c_mode3:
+        if st.button("🔋 LONG (15m)", type=get_type("Long"), use_container_width=True):
+            st.session_state['timer_duration'] = 15
+            st.session_state['timer_mode'] = "Long"
+            st.rerun()
+
+    # --- 3. TASK DEFINITION ---
+    # User types what they are doing. We pass this to the JS notification.
+    current_focus = st.text_input("Current Mission Objective", placeholder="What are you hunting?", label_visibility="collapsed")
+    if not current_focus: current_focus = "Deep Work Protocol"
+
+    # --- 4. THE ADVANCED TIMER COMPONENT ---
+    # We inject the python variable `st.session_state['timer_duration']` into the HTML
+    duration_min = st.session_state['timer_duration']
+    
+    # Colors based on mode
+    ring_color = "#B5FF5F" if st.session_state['timer_mode'] == "Focus" else "#00E5FF"
+    
+    timer_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+        body {{ background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; }}
         
-        <div style="text-align:center;">
-            <div class="timer-display" id="display">25:00</div>
-            <div class="btn-grid">
-                <button class="btn-timer btn-start" onclick="startTimer()">START MISSION</button>
-                <button class="btn-timer btn-reset" onclick="resetTimer()">ABORT</button>
-            </div>
+        /* The Circular Progress Container */
+        .base-timer {{
+            position: relative;
+            width: 300px;
+            height: 300px;
+        }}
+
+        .base-timer__svg {{
+            transform: scaleX(-1);
+        }}
+
+        .base-timer__circle {{
+            fill: none;
+            stroke: none;
+        }}
+
+        .base-timer__path-elapsed {{
+            stroke-width: 10px;
+            stroke: rgba(255, 255, 255, 0.1);
+        }}
+
+        .base-timer__path-remaining {{
+            stroke-width: 10px;
+            stroke-linecap: round;
+            transform: rotate(90deg);
+            transform-origin: center;
+            transition: 1s linear all;
+            fill-rule: nonzero;
+            stroke: {ring_color}; 
+            filter: drop-shadow(0 0 10px {ring_color});
+        }}
+
+        .base-timer__label {{
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            top: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 55px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }}
+
+        /* Buttons */
+        .controls {{
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+        }}
+        
+        .btn {{
+            border: none;
+            padding: 12px 30px;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+        
+        .btn-start {{ background: {ring_color}; color: #000; box-shadow: 0 0 15px {ring_color}40; }}
+        .btn-start:hover {{ transform: scale(1.05); box-shadow: 0 0 25px {ring_color}60; }}
+        
+        .btn-stop {{ background: #333; color: #fff; border: 1px solid #555; }}
+        .btn-stop:hover {{ background: #FF2A2A; border-color: #FF2A2A; }}
+
+    </style>
+    </head>
+    <body>
+        
+        <div class="base-timer">
+            <svg class="base-timer__svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g class="base-timer__circle">
+                    <circle class="base-timer__path-elapsed" cx="50" cy="50" r="45"></circle>
+                    <path
+                        id="base-timer-path-remaining"
+                        stroke-dasharray="283"
+                        class="base-timer__path-remaining"
+                        d="
+                          M 50, 50
+                          m -45, 0
+                          a 45,45 0 1,0 90,0
+                          a 45,45 0 1,0 -90,0
+                        "
+                    ></path>
+                </g>
+            </svg>
+            <span id="base-timer-label" class="base-timer__label">
+                {duration_min}:00
+            </span>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-start" onclick="startTimer()">Initiate</button>
+            <button class="btn btn-stop" onclick="resetTimer()">Abort</button>
         </div>
 
         <script>
-            let timeLeft = 25 * 60; 
-            let timerId = null; 
-            
-            function updateDisplay() { 
-                let mins = Math.floor(timeLeft / 60); 
-                let secs = timeLeft % 60; 
-                document.getElementById('display').innerText = 
-                    (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; 
-            }
-            
-            function startTimer() { 
-                if (timerId) return; 
+            // CONFIGURATION
+            const FULL_DASH_ARRAY = 283;
+            const TIME_LIMIT = {duration_min} * 60;
+            let timePassed = 0;
+            let timeLeft = TIME_LIMIT;
+            let timerInterval = null;
+            const COLOR_CODES = {{ info: {{ color: "green" }} }};
+
+            // NOTIFICATION PERMISSION
+            if ("Notification" in window) {{
+                Notification.requestPermission();
+            }}
+
+            function onTimesUp() {{
+                clearInterval(timerInterval);
+                timerInterval = null;
                 
-                // Audio Context for Beep
+                // Audio Beep
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.type = "square";
+                oscillator.frequency.value = 440; 
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 1);
                 
-                timerId = setInterval(() => { 
-                    if (timeLeft > 0) { 
-                        timeLeft--; 
-                        updateDisplay(); 
-                    } else { 
-                        clearInterval(timerId); 
-                        timerId = null;
-                        // Play Beep
-                        const oscillator = audioCtx.createOscillator();
-                        oscillator.connect(audioCtx.destination);
-                        oscillator.start();
-                        setTimeout(() => oscillator.stop(), 200);
-                        alert("MISSION COMPLETE! Take a break."); 
-                    } 
-                }, 1000); 
-            }
+                // Browser Notification
+                if (Notification.permission === "granted") {{
+                    new Notification("TIME HUNT AI", {{
+                        body: "Protocol Complete: {current_focus}",
+                        icon: "https://cdn-icons-png.flaticon.com/512/2921/2921226.png"
+                    }});
+                }}
+            }}
+
+            function startTimer() {{
+                if (timerInterval) return; // Prevent multiple clicks
+                
+                timerInterval = setInterval(() => {{
+                    timePassed = timePassed += 1;
+                    timeLeft = TIME_LIMIT - timePassed;
+                    
+                    document.getElementById("base-timer-label").innerHTML = formatTime(timeLeft);
+                    setCircleDasharray();
+        
+                    if (timeLeft <= 0) {{
+                        onTimesUp();
+                    }}
+                }}, 1000);
+            }}
             
-            function resetTimer() { 
-                clearInterval(timerId); 
-                timerId = null; 
-                timeLeft = 25 * 60; 
-                updateDisplay(); 
-            }
+            function resetTimer() {{
+                clearInterval(timerInterval);
+                timerInterval = null;
+                timePassed = 0;
+                timeLeft = TIME_LIMIT;
+                document.getElementById("base-timer-label").innerHTML = formatTime(timeLeft);
+                setCircleDasharray();
+            }}
+
+            function formatTime(time) {{
+                const minutes = Math.floor(time / 60);
+                let seconds = time % 60;
+                if (seconds < 10) {{ seconds = `0${{seconds}}`; }}
+                return `${{minutes}}:${{seconds}}`;
+            }}
+
+            function calculateTimeFraction() {{
+                const rawTimeFraction = timeLeft / TIME_LIMIT;
+                return rawTimeFraction - (1 / TIME_LIMIT) * (1 - rawTimeFraction);
+            }}
+
+            function setCircleDasharray() {{
+                const circleDasharray = `${{(
+                    calculateTimeFraction() * FULL_DASH_ARRAY
+                ).toFixed(0)}} 283`;
+                document
+                    .getElementById("base-timer-path-remaining")
+                    .setAttribute("stroke-dasharray", circleDasharray);
+            }}
         </script>
-        """
-        components.html(timer_html, height=300)
+    </body>
+    </html>
+    """
+    
+    # We use a container to center the iframe horizontally
+    with st.container():
+        components.html(timer_html, height=450)
+
+    # --- 5. REWARD SECTION (GAMIFICATION) ---
+    st.markdown("---")
+    c_reward, c_info = st.columns([2, 1])
+    
+    with c_reward:
+        st.markdown("### 🎁 Claim Session Rewards")
+        st.caption("Upon timer completion, verify your work to claim XP.")
+        
+        # Reward Logic based on Duration
+        possible_xp = 50 if st.session_state['timer_duration'] == 25 else 100 if st.session_state['timer_duration'] == 15 else 10
+        
+        if st.button(f"Verify & Claim +{possible_xp} XP", use_container_width=True):
+            st.session_state['user_xp'] += possible_xp
+            # Update Level
+            st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
+            
+            # Log History
+            today_str = datetime.date.today().strftime("%Y-%m-%d")
+            st.session_state['xp_history'].append({"Date": today_str, "XP": possible_xp})
+            
+            sync_data()
+            st.balloons()
+            st.toast(f"Session Recorded! +{possible_xp} XP", icon="🧠")
+            time.sleep(1)
+            st.rerun()
+
+    with c_info:
+        st.info(f"**Current Mode:** {st.session_state['timer_mode']}\n\nMaintain focus on '{current_focus}'. Do not switch tabs if possible.")
 
 # --- NEW: CALENDAR PAGE ---
+
 def page_calendar():
-    import calendar
-    
     # --- 📱 CRITICAL CSS FIX FOR CALENDAR GRID 📱 ---
     # This forces the columns (days) to stay side-by-side on mobile
     st.markdown("""
@@ -1168,10 +1323,21 @@ def page_ai_assistant():
     # IF HISTORY IS EMPTY -> SHOW WELCOME SCREEN (Gemini Style)
     if not st.session_state.get('chat_history'):
         
-        # Dynamic Greetings
+        # A. Get User Name
         user_name = st.session_state.get('user_name', 'Hunter').split()[0]
         
-        # CSS for the Welcome Screen
+        # B. Randomize the Greeting Message
+        greetings = [
+            "Where should we start?",
+            "What is the mission?",
+            "Ready to optimize?",
+            "Awaiting instructions.",
+            "Let's hunt some goals.",
+            "Systems operational."
+        ]
+        random_greet = random.choice(greetings)
+
+        # C. CSS for the Welcome Screen
         st.markdown(f"""
         <style>
             .welcome-text {{
@@ -1188,7 +1354,7 @@ def page_ai_assistant():
                 font-family: 'Inter', sans-serif;
                 font-size: 45px;
                 font-weight: 600;
-                color: #555; /* Dark grey for "Where should we start?" */
+                color: #555; /* Dark grey for visibility */
                 margin-bottom: 40px;
                 line-height: 1.2;
             }}
@@ -1210,7 +1376,7 @@ def page_ai_assistant():
         
         <div>
             <div class="welcome-text">Hi, {user_name}</div>
-            <div class="sub-text">Where should we start?</div>
+            <div class="sub-text">{random_greet}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1245,11 +1411,6 @@ def page_ai_assistant():
 
     # --- 4. CHAT INPUT (ALWAYS VISIBLE) ---
     if prompt := st.chat_input("Input command parameters..."):
-        # If we are on the welcome screen, this handles the first message
-        # If we are in history, this handles the next message
-        
-        # We manually append user msg first so the spinner shows up correctly in the "else" block logic above
-        # But since we are using reruns, we can just call the helper.
         process_message(prompt)
 
 # --- 9. CUSTOM UI STYLING ---
@@ -1345,101 +1506,207 @@ def create_mission_report(user_name, level, xp, history):
 
 # --- 10. MAIN ROUTER ---
 def page_home():
-    # --- TIMEZONE FIX: CALCULATE IST (UTC + 5:30) ---
+    # --- 1. TIME & GREETING LOGIC ---
     ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
     current_hour = ist_now.hour
     
-    # Dynamic Greeting Logic based on IST
-    if 5 <= current_hour < 12:
-        greeting = "Good Morning"
-    elif 12 <= current_hour < 17:
-        greeting = "Good Afternoon"
-    elif 17 <= current_hour < 22:
-        greeting = "Good Evening"
-    else:
-        greeting = "Success doesn't come, until you cover it up"
+    if 5 <= current_hour < 12: greeting = "Good Morning"
+    elif 12 <= current_hour < 17: greeting = "Good Afternoon"
+    elif 17 <= current_hour < 22: greeting = "Good Evening"
+    else: greeting = "Night Operations"
 
-    # Quotes
-    quotes = ["Be Productive Today 🙌", "Hunt Down Your Goals 🏹", "Focus. Execute. Win. 🏆", "Discipline equals Freedom ⚔️"]
+    # Dynamic Quotes
+    quotes = [
+        "Discipline is the bridge between goals and accomplishment.", 
+        "The only bad workout is the one that didn't happen.", 
+        "Focus on the mission, not the noise.", 
+        "Your future self is watching you right now."
+    ]
     random_sub = random.choice(quotes)
 
-    # Render Header
-    st.markdown(f'<div class="big-title">{greeting}, {st.session_state["user_name"]}!</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sub-title">{random_sub}</div>', unsafe_allow_html=True)
+    # --- 2. HEADER SECTION (PREMIUM LOOK) ---
+    # Custom CSS for this page only
+    st.markdown("""
+    <style>
+        .hero-container {
+            padding: 20px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .glass-card {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 20px;
+            transition: transform 0.2s;
+        }
+        .glass-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+        .progress-bg {
+            width: 100%;
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), #00E5FF);
+            border-radius: 4px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
-    with st.expander("🖊️ Update Dashboard Status"):
-        new_obj = st.text_input("Current Objective", value=st.session_state.get('current_objective', 'Clear Backlog'))
-        if st.button("Update"):
-            st.session_state['current_objective'] = new_obj
+    # Hero Banner
+    col_hero_text, col_hero_weather = st.columns([3, 1])
+    with col_hero_text:
+        st.markdown(f'<div class="big-title">{greeting}, {st.session_state["user_name"]}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="color:#aaa; font-size:16px;">{random_sub}</div>', unsafe_allow_html=True)
+    
+    with col_hero_weather:
+        # Simulated "Tactical Weather"
+        st.markdown(f"""
+        <div style="text-align:right; color:#888; font-family:monospace;">
+            <div style="font-size:24px; color:var(--accent);">24°C</div>
+            <div>JAIPUR, IN</div>
+            <div>{ist_now.strftime('%H:%M')} IST</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.write("")
+
+    # --- 3. LEVEL & XP SYSTEM (VISUALIZED) ---
+    # Logic: Level 1 clears at 1000 XP.
+    current_xp = st.session_state.get('user_xp', 0)
+    current_lvl = st.session_state.get('user_level', 1)
+    
+    # Calculate progress to next level
+    xp_for_next_lvl = current_lvl * 1000
+    xp_in_current_lvl = current_xp - ((current_lvl - 1) * 1000)
+    progress_percent = min(100, max(0, (xp_in_current_lvl / 1000) * 100))
+    
+    col_level, col_obj = st.columns([2, 1])
+    
+    with col_level:
+        st.markdown(f"""
+        <div class="glass-card">
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                <span style="font-weight:bold; font-size:18px;">Hunter Rank: {current_lvl}</span>
+                <span style="color:var(--accent);">{int(xp_in_current_lvl)} / 1000 XP</span>
+            </div>
+            <div class="progress-bg">
+                <div class="progress-fill" style="width: {progress_percent}%;"></div>
+            </div>
+            <div style="margin-top:8px; font-size:12px; color:#888;">
+                Next Rank Unlocks: <b>Elite Status</b> (at {xp_for_next_lvl} XP)
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_obj:
+        # Quick Objective Editor
+        current_obj = st.session_state.get('current_objective', 'Clear Backlog')
+        with st.container(border=True):
+            st.caption("🎯 CURRENT OBJECTIVE")
+            st.markdown(f"**{current_obj}**")
+            if st.button("Edit", key="edit_obj_btn", help="Update your main focus"):
+                 # Using session state to toggle an input box would be complex here, 
+                 # so we use a popover for cleanliness
+                 with st.popover("Update Objective"):
+                     new_obj = st.text_input("New Focus", value=current_obj)
+                     if st.button("Save Focus"):
+                         st.session_state['current_objective'] = new_obj
+                         st.rerun()
+
+    # --- 4. DASHBOARD GRID ---
+    c1, c2, c3 = st.columns(3)
+    
+    # CARD 1: NEXT MISSION (Intelligence)
+    next_mission = "No Active Missions"
+    mission_time = "--:--"
+    
+    # Find the nearest future task
+    sorted_slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
+    pending_slots = [s for s in sorted_slots if not s['Done']]
+    
+    if pending_slots:
+        next_mission = pending_slots[0]['Activity']
+        mission_time = pending_slots[0]['Time']
+    
+    with c1:
+        st.markdown(f"""
+        <div class="glass-card" style="height: 180px; position:relative;">
+            <div style="color:#888; font-size:12px; letter-spacing:1px;">NEXT PROTOCOL</div>
+            <div style="font-size:22px; font-weight:bold; margin-top:5px; line-height:1.2;">{next_mission}</div>
+            <div style="position:absolute; bottom:20px; left:20px; font-family:monospace; color:var(--accent); font-size:28px;">
+                {mission_time}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # CARD 2: QUICK ACTIONS
+    with c2:
+        with st.container(border=True):
+            st.markdown("**⚡ Quick Actions**")
+            if st.button("➕ New Task", use_container_width=True):
+                # Redirect logic (simulated by setting a session flag if we had a router, 
+                # but for now we just open the expander in scheduler manually or just show a toast)
+                st.toast("Go to Scheduler Tab to add detailed tasks.", icon="ℹ️")
+            
+            if st.button("🧘 Decompress", use_container_width=True):
+                st.session_state['show_breathing'] = not st.session_state.get('show_breathing', False)
+                st.rerun()
+                
+            if st.button("🤖 Ask AI", use_container_width=True):
+                st.toast("Switching to AI Assistant...", icon="🧠")
+                # In a real multi-page app, we'd switch the page index here.
+
+    # CARD 3: STREAK STATUS
+    streak = st.session_state.get('streak', 1)
+    with c3:
+        st.markdown(f"""
+        <div class="glass-card" style="height: 180px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
+            <div style="font-size:40px;">🔥</div>
+            <div style="font-size:30px; font-weight:bold; color:#fff;">{streak} Day</div>
+            <div style="color:#888; font-size:12px;">ACTIVE STREAK</div>
+            <div style="margin-top:5px; color:var(--accent); font-size:12px;">XP Multiplier: {1 + (streak*0.1):.1f}x</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- 5. BREATHING OVERLAY (CONDITIONAL) ---
+    if st.session_state.get('show_breathing', False):
+        st.markdown("---")
+        st.markdown("### 🧘 Tactical Decompression")
+        st.markdown("""
+        <div style="display:flex; justify-content:center; margin: 20px 0;">
+            <div style="
+                width: 80px; height: 80px; 
+                background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+                border-radius: 50%;
+                animation: pulse 4s infinite ease-in-out;
+            "></div>
+        </div>
+        <div style="text-align:center; font-family:monospace; color:#aaa;">INHALE... HOLD... EXHALE...</div>
+        <style>
+            @keyframes pulse {
+                0% { transform: scale(0.8); opacity: 0.3; }
+                50% { transform: scale(1.5); opacity: 0.8; }
+                100% { transform: scale(0.8); opacity: 0.3; }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        if st.button("Close Exercise"):
+            st.session_state['show_breathing'] = False
             st.rerun()
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        # XP CARD
-        st.markdown(f"""
-        <div class="css-card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="card-title">Current Objective</span>
-                <span style="background:rgba(181, 255, 95, 0.2); padding:5px 10px; border-radius:15px; font-size:12px; color:var(--text);">Protocol Active</span>
-            </div>
-            <br>
-            <div class="card-sub" style="font-size:18px; margin-bottom:15px;">{st.session_state.get('current_objective', 'Clear Backlog')}</div>
-            <div style="display:flex; justify-content:space-between; margin-top:15px;">
-                <div><div class="stat-num">{st.session_state['user_xp']}</div><div class="card-sub">Total XP</div></div>
-                <div><div class="stat-num">{st.session_state['user_level']}</div><div class="card-sub">Level</div></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # BREATHING EXERCISE
-        with st.expander("🧘 Tactical Decompression"):
-            st.markdown("""
-            <style>
-                @keyframes breathe {
-                    0% { transform: scale(1); opacity: 0.5; box-shadow: 0 0 5px var(--accent); }
-                    50% { transform: scale(1.6); opacity: 1; box-shadow: 0 0 25px var(--accent); }
-                    100% { transform: scale(1); opacity: 0.5; box-shadow: 0 0 5px var(--accent); }
-                }
-                .breath-container { display: flex; flex-direction: column; align-items: center; padding: 20px; }
-                .breath-circle {
-                    width: 60px; height: 60px; border-radius: 50%;
-                    background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
-                    border: 2px solid var(--accent); animation: breathe 5s infinite ease-in-out;
-                    margin-bottom: 15px;
-                }
-                .breath-text { font-family: monospace; color: var(--text); opacity: 0.8; letter-spacing: 2px; }
-            </style>
-            <div class="breath-container">
-                <div class="breath-circle"></div>
-                <div class="breath-text">INHALE ... HOLD ... EXHALE</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    with col2:
-        # DAILY FOCUS CARD
-        st.markdown(f"""
-        <div class="css-card" style="background-color: var(--accent) !important;">
-            <div class="card-title" style="color:#000 !important;">Daily Focus</div>
-            <div style="color:#000; opacity:0.8;">No active missions</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # NEXT TASK CARD
-        next_task = st.session_state['reminders'][-1]['task'] if st.session_state['reminders'] else "No alerts"
-        # We also format the date using IST
-        date_str = ist_now.strftime("%b %d")
-        
-        st.markdown(f"""
-        <div class="black-card">
-            <div style="font-weight:bold; margin-bottom:10px; font-size:18px;">Scheduled</div>
-            <div style="background:#333; padding:10px; border-radius:10px; text-align:center; margin-bottom:15px;">
-                <div style="font-size:20px; font-weight:bold;">{date_str}</div>
-            </div>
-            <div style="color:#aaa; font-size:12px;">NEXT REMINDER:</div>
-            <div style="color:white; font-size:14px;">{next_task}</div>
-        </div>
-        """, unsafe_allow_html=True)
 
 # --- 11. PAGE: ABOUT (REDESIGNED "BEST IN CLASS") ---
 def page_about():
@@ -1507,7 +1774,129 @@ def page_about():
     st.write("")
     st.caption("🔒 System Status: ONLINE | 🛡️ Developed with ❤️ by TIME HUNT AI TEAM")
 
+def page_dashboard():
+    # --- 1. DASHBOARD STYLING (Cyberpunk/Tactical Look) ---
+    st.markdown("""
+    <style>
+        .dash-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .stat-value { font-size: 32px; font-weight: 800; color: #B5FF5F; }
+        .stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #aaa; }
+        .rank-badge {
+            font-size: 50px;
+            animation: float 3s ease-in-out infinite;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
+    st.markdown('<div class="big-title">📊 Intelligence Report</div>', unsafe_allow_html=True)
+
+    # --- 2. DATA PROCESSING ---
+    slots = st.session_state.get('timetable_slots', [])
+    xp = st.session_state.get('user_xp', 0)
+    level = st.session_state.get('user_level', 1)
+    
+    # Calculate Metrics
+    total_tasks = len(slots)
+    completed = len([t for t in slots if t.get('Done')])
+    pending = total_tasks - completed
+    success_rate = int((completed / total_tasks * 100)) if total_tasks > 0 else 0
+    
+    # Calculate Rank Title
+    rank_titles = {1: "Scout", 5: "Ranger", 10: "Veteran", 20: "Commander", 50: "Titan"}
+    # Find closest rank without going over
+    current_title = "Rookie"
+    for lvl, title in rank_titles.items():
+        if level >= lvl: current_title = title
+    
+    # --- 3. TOP ROW: HUD STATS ---
+    c_rank, c_stats = st.columns([1, 3])
+    
+    with c_rank:
+        # Animated Rank Badge
+        st.markdown(f"""
+        <div class="dash-card">
+            <div class="rank-badge">🛡️</div>
+            <div style="font-size:18px; font-weight:bold; color:white; margin-top:5px;">{current_title}</div>
+            <div style="font-size:12px; color:#B5FF5F;">Level {level}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c_stats:
+        # 3-Column Metrics
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(f"""<div class="dash-card"><div class="stat-value">{xp}</div><div class="stat-label">Total XP</div></div>""", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"""<div class="dash-card"><div class="stat-value">{completed}</div><div class="stat-label">Missions Done</div></div>""", unsafe_allow_html=True)
+        with c3:
+            color = "#00E5FF" if success_rate > 80 else "#FF2A2A"
+            st.markdown(f"""<div class="dash-card"><div class="stat-value" style="color:{color} !important;">{success_rate}%</div><div class="stat-label">Success Rate</div></div>""", unsafe_allow_html=True)
+
+    st.write("")
+    
+    # --- 4. MIDDLE ROW: CHARTS & SECTOR ANALYSIS ---
+    col_chart, col_breakdown = st.columns([2, 1])
+    
+    with col_chart:
+        st.markdown("### 📈 XP Velocity (Growth)")
+        if st.session_state.get('xp_history'):
+            history_df = pd.DataFrame(st.session_state['xp_history'])
+            # Create a clean line chart
+            st.line_chart(history_df.set_index('Date')['XP'], color="#B5FF5F")
+        else:
+            st.info("Awaiting mission data to generate tactical graph.")
+            
+    with col_breakdown:
+        st.markdown("### 🧩 Sector Split")
+        if slots:
+            # Pandas magic to count categories
+            df_slots = pd.DataFrame(slots)
+            if 'Category' in df_slots.columns:
+                cat_counts = df_slots['Category'].value_counts()
+                st.dataframe(cat_counts, use_container_width=True, column_config={"count": st.column_config.ProgressColumn("Volume", format="%d", min_value=0, max_value=int(cat_counts.max()))})
+        else:
+            st.caption("No sectors defined.")
+
+    st.divider()
+
+    # --- 5. EXPORT & LOGS ---
+    c_log, c_export = st.columns([3, 1])
+    
+    with c_log:
+        with st.expander("📜 Mission Log (Recent History)"):
+            if st.session_state.get('xp_history'):
+                st.dataframe(pd.DataFrame(st.session_state['xp_history']).tail(10), use_container_width=True)
+            else:
+                st.caption("Log is empty.")
+
+    with c_export:
+        st.markdown("### 🗂️ Archive")
+        if st.button("📄 Export Dossier (PDF)", type="primary", use_container_width=True):
+            try:
+                pdf_bytes = create_mission_report(
+                    st.session_state.get('user_name', 'Agent'),
+                    level,
+                    xp,
+                    st.session_state.get('xp_history', [])
+                )
+                b64 = base64.b64encode(pdf_bytes).decode()
+                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Mission_Report.pdf" style="text-decoration:none; color:#B5FF5F; font-weight:bold; border:1px solid #B5FF5F; padding:10px; border-radius:10px; display:block; text-align:center;">📥 Download Now</a>'
+                st.markdown(href, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Generation Failed: {e}")
 
     
 # ------ SETTINGS PAGE --------
@@ -1607,27 +1996,32 @@ def page_settings():
         st.warning("This action cannot be undone.")
         if st.button("🔥 Factory Reset (Delete All Data)", type="primary"):
             st.session_state.clear()
-            if os.path.exists(DATA_FILE):
-                os.remove(DATA_FILE)
             st.rerun()
 
 # --- MAIN APP FUNCTION ---
-# --- MAIN CONTROLLER ---
+
 def main():
+    # 1. Initialize System
     initialize_session_state()
-    alarm_container = st.container()
+    
+    # 2. GLOBAL ALARM SYSTEM (The "Code Red" Overlay)
+    # We check reminders first. If one triggers, render_alarm_ui() 
+    # will launch the full-screen overlay and stop the rest of the app from loading.
     check_reminders()
-    with alarm_container: render_alarm_ui()
+    render_alarm_ui()
+
+    # 3. Load Styles & Visuals
     inject_custom_css()
     show_comet_splash()
 
+    # 4. Onboarding Gate
     if not st.session_state['onboarding_complete']:
         page_onboarding()
         return 
 
     # --- LOGIC SWITCH: WHICH SIDEBAR TO SHOW? ---
     
-    # 1. CHAT MODE SIDEBAR
+    # A. CHAT MODE SIDEBAR (For AI Context Retention)
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
@@ -1637,6 +2031,7 @@ def main():
             
             st.divider()
             
+            # New Chat Button
             if st.button("➕ New Chat", use_container_width=True):
                 st.session_state['current_session_id'] = None
                 st.session_state['current_session_name'] = "New Chat"
@@ -1644,6 +2039,8 @@ def main():
                 st.rerun()
             
             st.markdown("---")
+            
+            # History List
             sessions = load_chat_sessions()
             for s in sessions:
                 if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
@@ -1656,15 +2053,16 @@ def main():
                     st.session_state['chat_history'] = formatted_msgs
                     st.rerun()
         
+        # Load the AI Page
         page_ai_assistant()
 
-    # 2. MAIN MENU SIDEBAR (Default)
+    # B. MAIN MENU SIDEBAR (Default App Mode)
     else:
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
             
-            # --- RESTORED AUDIO PLAYER ---
+            # --- AUDIO ENGINE ---
             st.markdown("### 🎧 Sonic Intel")
             with st.container():
                 music_mode = st.selectbox("Frequency", 
@@ -1686,10 +2084,9 @@ def main():
             
             st.markdown("---")
             
-                        # --- UPDATED NAVIGATION ---
+            # --- MAIN NAVIGATION ---
             nav = option_menu(
                 menu_title=None,
-                # ADD "Calendar" HERE 👇
                 options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "About", "Settings"], 
                 icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "info-circle", "gear"], 
                 default_index=0
@@ -1697,13 +2094,13 @@ def main():
 
             st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
 
-        # Router Logic
-        if nav == "AI Assistant":
-            st.session_state['page_mode'] = 'chat'
-            st.rerun()
-        elif nav == "Home": page_home()
+        # --- ROUTER LOGIC ---
+        if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
+        elif nav == "AI Assistant": 
+            st.session_state['page_mode'] = 'chat'
+            st.rerun()
         elif nav == "Timer": page_timer()  
         elif nav == "Dashboard": page_dashboard()
         elif nav == "About": page_about()
