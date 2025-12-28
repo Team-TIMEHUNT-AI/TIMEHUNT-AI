@@ -461,11 +461,10 @@ def perform_ai_analysis(user_query):
 
     # 3. Model Priority List (UPDATED TO MATCH YOUR KEYS)
     models_to_try = [
-        "gemini-2.0-flash",          # Current standard (Fast & Smart)
-        "gemini-2.5-flash",          # Newest experimental flash
-        "gemini-2.0-flash-lite",     # Extremely fast/cheap fallback
-        "gemini-2.0-pro-exp-02-05",  # If you need high intelligence (check exact name in your list)
-        "gemini-2.0-flash-exp",      # Older experimental
+        "gemini-2.0-flash",          # Best standard option right now
+        "gemini-2.5-flash",          # Newest version
+        "gemini-2.0-flash-lite",     # Very fast, good for quick chats
+        "gemini-2.0-flash-exp",      # Experimental
     ]
 
     current_system_context = get_system_context()
