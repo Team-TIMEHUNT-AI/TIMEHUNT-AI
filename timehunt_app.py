@@ -1522,31 +1522,36 @@ def page_ai_assistant():
             if st.button("📝 Study Tips", use_container_width=True):
                 process_message("Give me the best scientific study techniques.")
 
-        # ELSE -> SHOW CHAT HISTORY
+            # ELSE -> SHOW CHAT HISTORY
     else:
         chat_container = st.container()
         with chat_container:
             for msg in st.session_state['chat_history']:
-                # Determine role for UI
-                role = "assistant" if (msg.get('role') == "model" or msg.get('role') == "assistant") else "user"
+                # 1. Get Content and Raw Role
                 content = msg.get('text') or msg.get('Content')
+                # We convert to lowercase (.lower()) to handle "Model", "model", "User", "user" safely
+                raw_role = str(msg.get('role') or msg.get('Role')).lower()
                 
-                # --- AVATAR LOGIC ---
-                if role == "assistant":
-                    # Use the TimeHunt Logo (Splash image)
-                    # Ensure this file is in your folder, otherwise it falls back to '🤖'
+                # 2. Determine Avatar based on Role
+                if raw_role in ["model", "assistant", "ai"]:
+                    ui_role = "assistant"
+                    # AI Logo (TimeHunt Image)
                     avatar_icon = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
+                    
                 else:
-                    # Use the User's selected Avatar or default to '👤'
+                    ui_role = "user"
+                    # User Avatar (From Profile)
                     user_av = st.session_state.get('user_avatar', "👤")
-                    # If it's a file path and exists, use it. If it's an emoji/text, use it directly.
+                    
+                    # Check if it's a valid image file path
                     if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')) and os.path.exists(user_av):
                         avatar_icon = user_av
                     else:
+                        # Fallback if no image found
                         avatar_icon = user_av if user_av else "👤"
 
-                # Render with Custom Avatar
-                with st.chat_message(role, avatar=avatar_icon):
+                # 3. Render the Message
+                with st.chat_message(ui_role, avatar=avatar_icon):
                     st.write(content)
 
     # --- 5. CHAT INPUT (ALWAYS VISIBLE) ---
