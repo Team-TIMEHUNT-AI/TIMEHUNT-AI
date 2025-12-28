@@ -6,3 +6,4 @@ st-gsheets-connection
 google-genai
 streamlit-mic-recorder
 SpeechRecognition
+gTTS
