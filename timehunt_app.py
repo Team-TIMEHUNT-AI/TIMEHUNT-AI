@@ -1522,7 +1522,7 @@ def page_ai_assistant():
             if st.button("📝 Study Tips", use_container_width=True):
                 process_message("Give me the best scientific study techniques.")
 
-    # ELSE -> SHOW CHAT HISTORY
+        # ELSE -> SHOW CHAT HISTORY
     else:
         chat_container = st.container()
         with chat_container:
@@ -1531,8 +1531,22 @@ def page_ai_assistant():
                 role = "assistant" if (msg.get('role') == "model" or msg.get('role') == "assistant") else "user"
                 content = msg.get('text') or msg.get('Content')
                 
-                # Render
-                with st.chat_message(role):
+                # --- AVATAR LOGIC ---
+                if role == "assistant":
+                    # Use the TimeHunt Logo (Splash image)
+                    # Ensure this file is in your folder, otherwise it falls back to '🤖'
+                    avatar_icon = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
+                else:
+                    # Use the User's selected Avatar or default to '👤'
+                    user_av = st.session_state.get('user_avatar', "👤")
+                    # If it's a file path and exists, use it. If it's an emoji/text, use it directly.
+                    if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')) and os.path.exists(user_av):
+                        avatar_icon = user_av
+                    else:
+                        avatar_icon = user_av if user_av else "👤"
+
+                # Render with Custom Avatar
+                with st.chat_message(role, avatar=avatar_icon):
                     st.write(content)
 
     # --- 5. CHAT INPUT (ALWAYS VISIBLE) ---
