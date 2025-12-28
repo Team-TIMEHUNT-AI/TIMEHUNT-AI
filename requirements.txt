@@ -1,6 +1,8 @@
 streamlit
-google-genai
 pandas
 fpdf
 streamlit-option-menu
-st-gsheets-connection
+streamlit-gsheets
+google-genai
+streamlit-mic-recorder
+SpeechRecognition
