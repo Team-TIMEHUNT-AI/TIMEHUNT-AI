@@ -271,15 +271,21 @@ def initialize_session_state():
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
+    # --- API KEY LOADING (CORRECTED) ---
     if 'gemini_api_keys' not in st.session_state:
         st.session_state['gemini_api_keys'] = []
-        if "GEMINI_API_KEY" in st.secrets: st.session_state['gemini_api_keys'].append(st.secrets["GEMINI_API_KEY"])
-        if "GOOGLE_API_KEY" in st.secrets: st.session_state['gemini_api_keys'].append(st.secrets["GOOGLE_API_KEY"])
-
-    # Update session state with unique valid keys
-    for k in potential_keys:
-        if k and k not in st.session_state['gemini_api_keys']:
-            st.session_state['gemini_api_keys'].append(k)
+        
+        # 1. Check individual secrets
+        if "GEMINI_API_KEY" in st.secrets: 
+            st.session_state['gemini_api_keys'].append(st.secrets["GEMINI_API_KEY"])
+        if "GOOGLE_API_KEY" in st.secrets: 
+            st.session_state['gemini_api_keys'].append(st.secrets["GOOGLE_API_KEY"])
+            
+        # 2. Check for a list of keys (Optional)
+        if "KEYS_LIST" in st.secrets:
+            for k in st.secrets["KEYS_LIST"]:
+                if k and k not in st.session_state['gemini_api_keys']:
+                    st.session_state['gemini_api_keys'].append(k)
            
 # --- 4. WORLD-CLASS CINEMATIC SPLASH ---
 def show_comet_splash():
