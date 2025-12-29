@@ -1102,9 +1102,9 @@ def page_ai_assistant():
     # --- CUSTOM INPUT BAR (Bottom Layout) ---
     # Logic to load your specific mic image
     mic_icon_html = "🎤" # Default fallback
-    if os.path.exists("1767016884959.jpeg"):
+    if os.path.exists("1767016884959.jpg"):
         try:
-            with open("1767016884959.jpeg", "rb") as f:
+            with open("1767016884959.jpg", "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode()
             # We wrap the image in HTML for the button label
             mic_icon_html = f'<img src="data:image/jpeg;base64,{img_b64}" width="30" style="vertical-align:middle;">'
