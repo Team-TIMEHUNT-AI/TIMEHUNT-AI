@@ -322,7 +322,7 @@ def rename_chat_session(session_id, new_name):
 st.set_page_config(
     page_title="Time Hunt AI", 
     layout="wide", 
-    page_icon="⚡",
+    page_icon="1000592991.png",
     initial_sidebar_state="collapsed"
 )
 
