@@ -2564,13 +2564,22 @@ def main():
             st.markdown("---")
             
             # --- MAIN NAVIGATION ---
-options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "Help", "About", "Settings"], 
-icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "life-preserver", "info-circle", "gear"], 
-
-                default_index=0
+            # 1. Define the menu options and icons
+            # We added "Help" to options and "life-preserver" to icons
+            nav = option_menu(
+                menu_title=None,
+                options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "Help", "About", "Settings"], 
+                icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "life-preserver", "info-circle", "gear"], 
+                default_index=0,
+                styles={
+                    "container": {"padding": "0!important", "background-color": "transparent"},
+                    "icon": {"color": "#B5FF5F", "font-size": "16px"}, 
+                    "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#333"},
+                    "nav-link-selected": {"background-color": "#00E5FF", "color": "black"},
+                }
             )
 
-            st.caption(f"🆔 **Agent:** {st.session_state['user_name']}")
+            st.caption(f"🆔 **Agent:** {st.session_state.get('user_name', 'Hunter')}")
 
         # --- ROUTER LOGIC ---
         if nav == "Home": page_home()
@@ -2584,6 +2593,6 @@ icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "grap
         elif nav == "Help": page_help()
         elif nav == "About": page_about()
         elif nav == "Settings": page_settings()
-        
+
 if __name__ == "__main__":
     main()
