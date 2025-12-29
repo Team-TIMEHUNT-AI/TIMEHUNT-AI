@@ -284,21 +284,22 @@ def initialize_session_state():
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
-    # 2. Load API Keys Correctly
+    # 2. Load API Keys (Supports List from Secrets)
     if 'gemini_api_keys' not in st.session_state:
         st.session_state['gemini_api_keys'] = []
         
-        # Check standard secrets
-        if "GEMINI_API_KEY" in st.secrets: 
-            st.session_state['gemini_api_keys'].append(st.secrets["GEMINI_API_KEY"])
+        # Check if GEMINI_API_KEY is a list (as per your secrets) or string
+        if "GEMINI_API_KEY" in st.secrets:
+            keys = st.secrets["GEMINI_API_KEY"]
+            if isinstance(keys, list):
+                st.session_state['gemini_api_keys'].extend(keys)
+            else:
+                st.session_state['gemini_api_keys'].append(keys)
+        
+        # Add Google Key if it exists
         if "GOOGLE_API_KEY" in st.secrets: 
             st.session_state['gemini_api_keys'].append(st.secrets["GOOGLE_API_KEY"])
-            
-        # Check for a list if you have one
-        if "KEYS_LIST" in st.secrets:
-            for k in st.secrets["KEYS_LIST"]:
-                if k not in st.session_state['gemini_api_keys']:
-                    st.session_state['gemini_api_keys'].append(k)
+
            
 # --- 4. WORLD-CLASS CINEMATIC SPLASH ---
 def show_comet_splash():
@@ -1036,8 +1037,6 @@ def page_calendar():
 
 # --- 8. PAGE: AI ASSISTANT ---
 
-# --- 8. PAGE: AI ASSISTANT (OPTIMIZED & CUSTOM MIC) ---
-
 def page_ai_assistant():
     """
     Advanced Chat Interface with Side-by-Side Custom Mic & Text Input.
@@ -1076,7 +1075,6 @@ def page_ai_assistant():
     st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
 
     # --- CHAT HISTORY AREA ---
-    # Create a container that pushes the input bar to the bottom
     chat_container = st.container()
     
     with chat_container:
@@ -1111,21 +1109,27 @@ def page_ai_assistant():
     st.write("---") # Visual separator before input
 
     # --- CUSTOM INPUT BAR (Bottom Layout) ---
-    # Logic to load your specific mic image
-    mic_icon_html = "🎤" # Default fallback
-    if os.path.exists("1767016884959.jpg"):
+    
+    # 1. Determine Mic Label (Image vs Emoji)
+    # Default to Emoji
+    mic_label = "🎙️" 
+    
+    # Check if custom image exists
+    mic_img_path = "1767016884959.jpeg"
+    if os.path.exists(mic_img_path):
         try:
-            with open("1767016884959.jpg", "rb") as f:
+            with open(mic_img_path, "rb") as f:
                 img_b64 = base64.b64encode(f.read()).decode()
-            # We wrap the image in HTML for the button label
-            mic_icon_html = f'<img src="data:image/jpeg;base64,{img_b64}" width="30" style="vertical-align:middle;">'
-        except: pass
+            # If successful, use the image HTML
+            mic_label = f'<img src="data:image/jpeg;base64,{img_b64}" width="25" style="vertical-align:middle;">'
+        except:
+            # If file read fails, keep default "🎙️"
+            pass
 
-    # Layout: Text Input (Wide) + Mic Button (Narrow)
+    # 2. Layout: Text Input (Wide) + Mic Button (Narrow)
     col_input, col_mic = st.columns([8, 1], vertical_alignment="bottom")
     
     with col_input:
-        # We use a form to allow "Enter" key submission
         with st.form(key="chat_input_form", clear_on_submit=True):
             user_input = st.text_input("Message", placeholder="Input command parameters...", label_visibility="collapsed")
             # Hidden submit button to enable "Enter" key
@@ -1133,9 +1137,8 @@ def page_ai_assistant():
 
     with col_mic:
         # The Mic Recorder acts as a button itself
-        # We disable the 'stop_prompt' to make it feel faster (one-click toggle)
         voice_data = mic_recorder(
-            start_prompt=mic_icon_html, 
+            start_prompt=mic_label, 
             stop_prompt="⏹️", 
             just_once=True,
             use_container_width=True,
@@ -1143,15 +1146,10 @@ def page_ai_assistant():
         )
 
     # --- INPUT PROCESSING LOGIC ---
-    # 1. Text Input Handling
     if user_input:
         process_message(user_input)
     
-    # 2. Voice Input Handling
     if voice_data:
-        # Note: Streamlit mic recorder returns raw bytes. 
-        # For a truly "Fast" experience like Google, we rely on the visual speed here.
-        # Actual transcription requires an STT API (like Whisper).
         st.toast("Audio captured. Processing...", icon="⚡")
         # Placeholder for STT logic:
         # text = speech_to_text(voice_data['bytes']) 
@@ -1901,43 +1899,56 @@ def main():
         return 
 
     # --- CHAT MODE SIDEBAR ---
+    # --- CHAT MODE SIDEBAR ---
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
             c1, c2 = st.columns(2)
-            if c1.button("🏠 Back", use_container_width=True): st.session_state['page_mode']='main'; st.rerun()
-            if c2.button("➕ New", use_container_width=True): st.session_state['current_session_id']=None; st.session_state['chat_history']=[]; st.rerun()
+            if c1.button("🏠 Back", use_container_width=True): 
+                st.session_state['page_mode'] = 'main'
+                st.rerun()
+            if c2.button("➕ New", use_container_width=True): 
+                st.session_state['current_session_id'] = None
+                st.session_state['chat_history'] = []
+                st.rerun()
             
             st.divider()
+            
+            # Delete Toggle
             if 'delete_mode' not in st.session_state: st.session_state['delete_mode'] = False
-            if st.button("❌ Cancel" if st.session_state['delete_mode'] else "🗑️ Delete Chats", use_container_width=True):
+            label = "❌ Cancel" if st.session_state['delete_mode'] else "🗑️ Delete Chats"
+            if st.button(label, use_container_width=True):
                 st.session_state['delete_mode'] = not st.session_state['delete_mode']
                 st.rerun()
 
             sessions = load_chat_sessions()
             
             if st.session_state['delete_mode']:
+                # DELETE MODE
                 with st.form("del_form"):
-                    sids = []
-                    # Use enumerate to guarantee unique keys for checkboxes
+                    selected_ids = []
                     for i, s in enumerate(sessions):
+                        # Unique Key using Index
                         if st.checkbox(s['SessionName'], key=f"del_{s['SessionID']}_{i}"):
-                            sids.append(s['SessionID'])
+                            selected_ids.append(s['SessionID'])
                             
-                    if st.form_submit_button("🔥 DELETE", type="primary", use_container_width=True):
-                        for sid in sids: delete_chat_session(sid)
+                    if st.form_submit_button("🔥 DELETE SELECTED", type="primary", use_container_width=True):
+                        for sid in selected_ids: delete_chat_session(sid)
                         st.session_state['delete_mode'] = False
                         st.rerun()
             else:
-                # Normal Mode
+                # NORMAL MODE
                 for i, s in enumerate(sessions):
-                    # SAFETY FIX: Ensure key is unique even if DB has issues
-                    btn_key = f"sess_{s['SessionID']}_{i}"
+                    # UNIQUE KEY FIX: We append _{i} to ensure every button is unique
+                    btn_key = f"btn_{s['SessionID']}_{i}"
                     
                     if st.button(f"📄 {s['SessionName']}", key=btn_key, use_container_width=True):
                         st.session_state['current_session_id'] = s['SessionID']
-                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in load_messages_for_session(s['SessionID'])]
+                        # Load messages
+                        raw_msgs = load_messages_for_session(s['SessionID'])
+                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in raw_msgs]
                         st.rerun()
+        
         page_ai_assistant()
 
     # --- MAIN MENU SIDEBAR ---
