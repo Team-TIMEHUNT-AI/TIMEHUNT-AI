@@ -1,30 +1,28 @@
-from fpdf import FPDF
-import textwrap
-import streamlit.components.v1 as components 
-import re
-import streamlit as st
 import os
-from streamlit_option_menu import option_menu
-# --- PATH CONFIGURATION (FIXES IMAGE LOADING) ---
-# This tells Python: "The images are in the same folder as THIS script file"
-current_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(current_dir)
 import datetime
-import random
+import textwrap
 import pandas as pd
-import time
-import base64
-import json 
-import uuid
-import calendar
-from streamlit_mic_recorder import mic_recorder
-from gtts import gTTS
-import tempfile
+import streamlit as st
+import streamlit.components.v1 as components
 
-# --- NEW: LIVE CLOCK & AUDIO ENGINE ---
+# --- OPTIONAL DEPENDENCIES ---
+# Handled gracefully to prevent app crashes if libraries are missing
+try:
+    from fpdf import FPDF
+    from gtts import gTTS
+    from streamlit_mic_recorder import mic_recorder
+    from streamlit_gsheets import GSheetsConnection
+except ImportError:
+    pass
+
+# --- CONFIGURATION ---
+# Set working directory to script location for reliable asset loading
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+# --- COMPONENT: LIVE TACTICAL CLOCK ---
 def render_live_clock():
-    # We use an iframe so the clock is isolated and never gets stuck on "Loading..."
-    clock_html = """
+    """Renders a simplified, cyber-aesthetic digital clock."""
+    clock_html = textwrap.dedent("""
     <!DOCTYPE html>
     <html>
     <head>
@@ -38,10 +36,10 @@ def render_live_clock():
             font-weight: bold;
             padding: 10px 25px;
             border-radius: 12px;
-            border: 2px solid #333;
-            box-shadow: 0 0 15px rgba(0, 229, 255, 0.2);
-            text-shadow: 0 0 5px rgba(0, 229, 255, 0.5);
-            text-align: center;
+            border: 1px solid #333;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.15);
+            text-shadow: 0 0 5px rgba(0, 229, 255, 0.6);
+            user-select: none;
         }
     </style>
     </head>
@@ -50,66 +48,88 @@ def render_live_clock():
         <script>
             function updateClock() {
                 const now = new Date();
-                const timeString = now.toLocaleTimeString('en-US', { hour12: false });
-                document.getElementById('clock').innerText = timeString;
+                document.getElementById('clock').innerText = now.toLocaleTimeString('en-GB', { hour12: false });
             }
             setInterval(updateClock, 1000);
-            updateClock(); // Run immediately
+            updateClock();
         </script>
     </body>
     </html>
-    """
-    # Render it with a fixed height so it fits in the sidebar
+    """)
     components.html(clock_html, height=80)
 
-# --- DATA PERSISTENCE FUNCTIONS (NEW) ---
+# --- BACKEND: CLOUD SYNC ENGINE ---
 def sync_data():
-    """Syncs data. MERGES Date+Time into 'Time' column for Sheets compatibility."""
-    try:
-        from streamlit_gsheets import GSheetsConnection
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        uid = st.session_state.get('user_id')
-        if not uid: return
+    """
+    Synchronizes local session state (Alarms & Schedule) to Google Sheets.
+    Preserves other users' data while updating the current user's entries.
+    """
+    uid = st.session_state.get('user_id')
+    if not uid: return
 
-        # 1. Read existing
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # 1. Fetch & Filter Cloud Data
         try:
             df_cloud = conn.read(worksheet="Reminders", ttl=0)
+            # Keep data that does NOT belong to the current user
             if not df_cloud.empty and "UserID" in df_cloud.columns:
-                df_others = df_cloud[df_cloud["UserID"] != str(uid)]
+                df_final = df_cloud[df_cloud["UserID"] != str(uid)]
             else:
-                df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
-        except:
-            df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
+                df_final = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
+        except Exception:
+            df_final = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
 
-        new_rows = []
-        # 2. Add Alarms
+        # 2. Prepare New Data (Alarms + Schedule)
+        new_entries = []
+
+        # Process Alarms
         for rem in st.session_state.get('reminders', []):
-            new_rows.append({
-                "UserID": str(uid), "Task": str(rem['task']), "Time": str(rem['time']), 
-                "Status": "Done" if rem.get('notified') else "Pending", "Type": "Alarm"
+            new_entries.append({
+                "UserID": str(uid),
+                "Task": str(rem.get('task', 'Unknown')),
+                "Time": str(rem.get('time', '')), 
+                "Status": "Done" if rem.get('notified') else "Pending",
+                "Type": "Alarm"
             })
             
-        # 3. Add Schedule & Calendar Tasks (CRITICAL CALENDAR FIX)
+        # Process Schedule
         for slot in st.session_state.get('timetable_slots', []):
-             # Default to today if date is missing
              date_val = slot.get('Date', datetime.date.today().strftime("%Y-%m-%d"))
-             # Combine Date and Time: "2025-10-27 14:00"
-             combined_time = f"{date_val} {slot['Time']}"
+             time_val = slot.get('Time', '00:00')
              
-             new_rows.append({
-                "UserID": str(uid), "Task": str(slot['Activity']), 
-                "Time": combined_time, 
-                "Status": "Done" if slot['Done'] else "Pending", 
-                "Type": f"Schedule-{slot['Category']}"
+             new_entries.append({
+                "UserID": str(uid),
+                "Task": str(slot.get('Activity', 'Untitled')), 
+                "Time": f"{date_val} {time_val}", 
+                "Status": "Done" if slot.get('Done') else "Pending", 
+                "Type": f"Schedule-{slot.get('Category', 'General')}"
             })
 
-        # 4. Save
+        # 3. Merge & Upload
+        if new_entries:
+            df_new = pd.DataFrame(new_entries)
+            df_final = pd.concat([df_final, df_new], ignore_index=True)
+
+        # Ensure type safety for GSheets
+        df_final = df_final.astype(str)
+        
+        conn.clear(worksheet="Reminders")
+        conn.update(worksheet="Reminders", data=df_final)
+        
+    except Exception as e:
+        # Log to console only, do not disturb user UI
+        print(f"⚠️ Sync Error: {e}")
+
+        # 4. Save to Cloud
         if new_rows:
             df_my_data = pd.DataFrame(new_rows)
             df_final = pd.concat([df_others, df_my_data], ignore_index=True)
         else:
             df_final = df_others
 
+        # Force string type for consistency and upload
         df_final = df_final[["UserID", "Task", "Time", "Status", "Type"]].astype(str)
         conn.clear(worksheet="Reminders")
         conn.update(worksheet="Reminders", data=df_final)
@@ -123,19 +143,18 @@ def get_real_time_weather(city="Jaipur"):
     """
     import json
     from urllib.request import urlopen, Request
-    from urllib.error import URLError
-
-    # Default fallback
+    
+    # Defaults
     fallback_temp = "24°C"
     fallback_desc = f"{city.upper()} (Offline)"
 
     try:
         # 1. Get Coordinates
-        lat, lon = 26.9124, 75.7873 # Default Jaipur
+        lat, lon = 26.9124, 75.7873 # Default: Jaipur
         
         if city.lower() != "jaipur":
             try:
-                # User Agent is required by some APIs to prevent blocking
+                # Use User-Agent to prevent API blocking
                 req = Request(
                     f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json",
                     headers={'User-Agent': 'Mozilla/5.0'}
@@ -147,10 +166,9 @@ def get_real_time_weather(city="Jaipur"):
                     lat = geo_data["results"][0]["latitude"]
                     lon = geo_data["results"][0]["longitude"]
             except:
-                # If geocoding fails, stick to Jaipur or return error
-                pass
+                pass # Fail silently, use default coordinates
 
-        # 2. Get Weather
+        # 2. Get Weather Data
         req_weather = Request(
             f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true",
             headers={'User-Agent': 'Mozilla/5.0'}
@@ -163,7 +181,7 @@ def get_real_time_weather(city="Jaipur"):
             temp = data["current_weather"]["temperature"]
             code = data["current_weather"]["weathercode"]
             
-            # Simple Code Mapping
+            # WMO Weather Code Mapping
             desc = "Clear"
             if code in [1, 2, 3]: desc = "Cloudy"
             elif code in [45, 48]: desc = "Fog"
@@ -172,21 +190,21 @@ def get_real_time_weather(city="Jaipur"):
             return f"{temp}°C", f"{city.upper()} ({desc})"
 
     except Exception as e:
-        # If it fails, return the specific error so we can see it on screen
         return "ERR", str(e)
 
     return fallback_temp, fallback_desc
 
-
 def load_cloud_data():
-    """Loads Reminders & Timetable. Parses Date/Time correctly."""
+    """Loads Reminders & Timetable from GSheets. Parses Date/Time correctly."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         uid = st.session_state.get('user_id')
         
-        try: df = conn.read(worksheet="Reminders", ttl=0)
-        except: return 
+        try: 
+            df = conn.read(worksheet="Reminders", ttl=0)
+        except: 
+            return 
 
         if not df.empty and "UserID" in df.columns:
             my_data = df[df["UserID"] == str(uid)]
@@ -194,29 +212,37 @@ def load_cloud_data():
             loaded_timetable = []
             
             for _, row in my_data.iterrows():
+                # Load Alarms
                 if row['Type'] == "Alarm":
                     loaded_reminders.append({
-                        "task": row['Task'], "time": row['Time'], "notified": (row['Status'] == "Done")
+                        "task": row['Task'], 
+                        "time": row['Time'], 
+                        "notified": (row['Status'] == "Done")
                     })
+                
+                # Load Schedule
                 elif "Schedule" in str(row['Type']):
                     cat = row['Type'].split("-")[1] if "-" in row['Type'] else "General"
-                    
-                    # --- CALENDAR PARSING LOGIC ---
                     raw_time = str(row['Time'])
+                    
+                    # Parse Date/Time format
                     try:
-                        # Try parsing "YYYY-MM-DD HH:MM"
                         dt_obj = datetime.datetime.strptime(raw_time, "%Y-%m-%d %H:%M")
                         date_val = dt_obj.strftime("%Y-%m-%d")
                         time_val = dt_obj.strftime("%H:%M")
                     except ValueError:
-                        # Fallback for old data -> Assume Today
+                        # Fallback for legacy data
                         date_val = datetime.date.today().strftime("%Y-%m-%d")
                         time_val = raw_time
 
                     loaded_timetable.append({
-                        "Date": date_val, "Time": time_val,
-                        "Activity": row['Task'], "Category": cat,
-                        "Done": (row['Status'] == "Done"), "XP": 50, "Difficulty": "Medium"
+                        "Date": date_val, 
+                        "Time": time_val,
+                        "Activity": row['Task'], 
+                        "Category": cat,
+                        "Done": (row['Status'] == "Done"), 
+                        "XP": 50, 
+                        "Difficulty": "Medium"
                     })
             
             st.session_state['reminders'] = loaded_reminders
@@ -224,7 +250,7 @@ def load_cloud_data():
             
     except Exception as e:
         print(f"Cloud Load Error: {e}")
-        
+      
 # --- NEW: CHAT HISTORY DATABASE FUNCTIONS ---
 
 def get_all_chats():
@@ -237,68 +263,61 @@ def get_all_chats():
         return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
 
 def save_chat_to_cloud(role, content):
-    """Saves a single message to the cloud with ON-SCREEN ERROR REPORTING."""
+    """Saves a single message to the cloud with robust error handling."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
         # 1. Prepare Data
-        uid = str(st.session_state.get('user_id', 'Unknown'))
-        sid = str(st.session_state.get('current_session_id', 'Unknown'))
-        sname = str(st.session_state.get('current_session_name', 'New Chat'))
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_row = pd.DataFrame([{
+            "UserID": str(st.session_state.get('user_id', 'Unknown')),
+            "SessionID": str(st.session_state.get('current_session_id', 'Unknown')),
+            "SessionName": str(st.session_state.get('current_session_name', 'New Chat')),
+            "Role": role,
+            "Content": content,
+            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }])
         
-        # 2. Read Sheet (Handle Empty Sheet Case)
+        # 2. Read & Append
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
         except:
-            # If read fails, assume empty and create structure
             df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
         
-        # 3. Create New Row
-        new_row = pd.DataFrame([{
-            "UserID": uid, "SessionID": sid, "SessionName": sname,
-            "Role": role, "Content": content, "Timestamp": ts
-        }])
-        
-        # 4. Append and Update
-        # Ensure consistent columns to avoid Schema errors
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(worksheet="ChatHistory", data=df_final)
         
     except Exception as e:
-        # 🚨 THIS WILL SHOW THE ERROR ON YOUR SCREEN
-        st.error(f"⚠️ CLOUD SAVE FAILED: {str(e)}")
-        # Common fix hint
+        st.error(f"⚠️ Cloud Save Failed: {e}")
         if "Schema" in str(e) or "columns" in str(e):
-            st.warning("Fix: Delete all columns in 'ChatHistory' sheet and let the app recreate them, or ensure headers match exactly: UserID, SessionID, SessionName, Role, Content, Timestamp")
-
+            st.warning("Fix: headers in 'ChatHistory' must match: UserID, SessionID, SessionName, Role, Content, Timestamp")
 
 def load_chat_sessions():
-    """Returns unique sessions for the Sidebar list."""
+    """Returns unique sessions for the Sidebar list (Newest first)."""
     df = get_all_chats()
     uid = str(st.session_state.get('user_id'))
+    
     if not df.empty and "UserID" in df.columns:
         my_chats = df[df["UserID"] == uid]
         if not my_chats.empty:
-            # Return unique sessions, reversed to show newest first
+            # Drop duplicates to get unique SessionIDs, reverse to show latest
             return my_chats[["SessionID", "SessionName"]].drop_duplicates().to_dict('records')[::-1]
     return []
 
 def load_messages_for_session(session_id):
-    """Loads history for a specific chat."""
+    """Loads full conversation history for a specific session."""
     df = get_all_chats()
     if not df.empty and "SessionID" in df.columns:
-        messages = df[df["SessionID"] == str(session_id)]
-        return messages.to_dict('records')
+        return df[df["SessionID"] == str(session_id)].to_dict('records')
     return []
 
 def delete_chat_session(session_id):
-    """Deletes a chat session from cloud."""
+    """Deletes a specific chat session from the cloud."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="ChatHistory", ttl=0)
+        
         if not df.empty:
             df_cleaned = df[df["SessionID"] != str(session_id)]
             conn.clear(worksheet="ChatHistory")
@@ -306,11 +325,12 @@ def delete_chat_session(session_id):
     except: pass
 
 def rename_chat_session(session_id, new_name):
-    """Renames a chat session."""
+    """Renames a chat session in the database."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="ChatHistory", ttl=0)
+        
         if not df.empty:
             df.loc[df["SessionID"] == str(session_id), "SessionName"] = new_name
             conn.update(worksheet="ChatHistory", data=df)
@@ -319,29 +339,23 @@ def rename_chat_session(session_id, new_name):
 # --- NEW: FEEDBACK & SUPPORT BACKEND ---
 
 def save_feedback(query_text):
-    """Saves user feedback to Google Sheets automatically."""
+    """Saves user feedback ticket to Google Sheets."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Prepare Data
-        uid = str(st.session_state.get('user_id', 'Unknown'))
-        name = str(st.session_state.get('user_name', 'Anonymous'))
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        
-        # 2. Read Sheet (Create if missing)
-        try:
-            df = conn.read(worksheet="Feedbacks", ttl=0)
-        except:
-            df = pd.DataFrame(columns=["UserID", "Name", "Timestamp", "Query", "Reply", "Status"])
-        
-        # 3. Add New Row
         new_row = pd.DataFrame([{
-            "UserID": uid, "Name": name, "Timestamp": ts, 
-            "Query": query_text, "Reply": "", "Status": "Open"
+            "UserID": str(st.session_state.get('user_id', 'Unknown')),
+            "Name": str(st.session_state.get('user_name', 'Anonymous')),
+            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 
+            "Query": query_text, 
+            "Reply": "", 
+            "Status": "Open"
         }])
         
-        # 4. Save
+        try: df = conn.read(worksheet="Feedbacks", ttl=0)
+        except: df = pd.DataFrame(columns=["UserID", "Name", "Timestamp", "Query", "Reply", "Status"])
+        
         df_final = pd.concat([df, new_row], ignore_index=True)
         conn.update(worksheet="Feedbacks", data=df_final)
         return True
@@ -350,7 +364,7 @@ def save_feedback(query_text):
         return False
 
 def get_my_feedback_status():
-    """Checks for admin replies."""
+    """Checks for admin replies to feedback."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -358,10 +372,8 @@ def get_my_feedback_status():
         
         uid = str(st.session_state.get('user_id'))
         if not df.empty and "UserID" in df.columns:
-            # Return only this user's tickets, newest first
             return df[df["UserID"] == uid].sort_values(by="Timestamp", ascending=False)
-    except:
-        pass
+    except: pass
     return pd.DataFrame()
 
 # --- 1. PAGE CONFIGURATION ---
@@ -379,9 +391,8 @@ try:
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
-    # st.error("⚠️ `google-genai` library not found. Please run: pip install google-genai")
 
-# --- 2. SUPER-SYSTEM PROMPT (THE NEW BRAIN) ---
+# --- 2. SUPER-SYSTEM PROMPT (THE GURU BRAIN) ---
 SYSTEM_INSTRUCTION = """
 IDENTITY & ORIGIN:
 You are TimeHunt AI, a Digital Gurukul and the world's most advanced productivity guide.
@@ -425,10 +436,10 @@ If asked for a plan, strictly return this JSON inside a code block (Ensure tasks
 # --- 3. SESSION STATE & PERSISTENCE ---
 
 def initialize_session_state():
-    # 1. Define Defaults
+    """Initializes user state, defaults, and API keys securely."""
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     
-    # --- FIX: Removed extra spaces before 'defaults' ---
+    # 1. Default State Values
     defaults = {
         'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
         'active_alarm': None,
@@ -447,98 +458,110 @@ def initialize_session_state():
         'theme_mode': 'Light', 'theme_color': 'Venom Green (Default)'
     }
 
-    # 2. Setup Session State
+    # 2. Apply Defaults
     for key, default_val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_val
 
-    # 3. API Key Setup
-    if 'gemini_api_keys' not in st.session_state or not st.session_state['gemini_api_keys']:
-        if "GEMINI_API_KEY" in st.secrets:
-            st.session_state['gemini_api_keys'] = [st.secrets["GEMINI_API_KEY"]]
-        elif "GOOGLE_API_KEY" in st.secrets:
-            st.session_state['gemini_api_keys'] = [st.secrets["GOOGLE_API_KEY"]]
-        else:
-            st.session_state['gemini_api_keys'] = []
+    # 3. Flexible API Key Loading (Supports n keys)
+    # Initialize list if not present
+    if 'gemini_api_keys' not in st.session_state:
+        st.session_state['gemini_api_keys'] = []
+
+    # Add keys from secrets if they exist and aren't already loaded
+    potential_keys = []
+    
+    # Check standard single keys
+    if "GEMINI_API_KEY" in st.secrets:
+        potential_keys.append(st.secrets["GEMINI_API_KEY"])
+    if "GOOGLE_API_KEY" in st.secrets:
+        potential_keys.append(st.secrets["GOOGLE_API_KEY"])
+        
+    # Check for a list of keys in secrets (e.g., KEYS_LIST = ["key1", "key2"])
+    if "KEYS_LIST" in st.secrets:
+        potential_keys.extend(st.secrets["KEYS_LIST"])
+
+    # Update session state with unique valid keys
+    for k in potential_keys:
+        if k and k not in st.session_state['gemini_api_keys']:
+            st.session_state['gemini_api_keys'].append(k)
            
-# --- 4. WORLD-CLASS CINEMATIC SPLASH (UPDATED TEXT) ---
+# --- 4. WORLD-CLASS CINEMATIC SPLASH ---
 def show_comet_splash():
-    if not st.session_state['splash_played']:
+    """Displays the cinematic intro animation once per session."""
+    if not st.session_state.get('splash_played', False):
         placeholder = st.empty()
         
+        # Load Image Safely
         encoded_img = ""
         has_image = False
         try:
             with open("1000592991.png", "rb") as f:
                 encoded_img = base64.b64encode(f.read()).decode()
                 has_image = True
-        except: pass
+        except: 
+            pass
 
         with placeholder.container():
-            # TEXTWRAP.DEDENT IS CRITICAL - DO NOT REMOVE
-            # I have updated the text in the HTML below
             st.markdown(textwrap.dedent(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=Inter:wght@300;600&display=swap');
-div[data-testid="stVerticalBlock"] > div:has(.main-void) {{ gap: 0 !important; }}
-.stMarkdown {{ background: transparent !important; }}
-.main-void {{ position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: #000000 !important; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999999; overflow: hidden; animation: mainFadeOut 1.2s cubic-bezier(0.7, 0, 0.3, 1) 6.0s forwards; }}
-.orbital-track {{ position: relative; width: 380px; height: 380px; display: flex; justify-content: center; align-items: center; }}
-.comet-engine {{ position: absolute; width: 100%; height: 100%; animation: cometWhip 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }}
-.comet-engine::after {{ content: ''; position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 16px; height: 16px; background: #B5FF5F; border-radius: 50%; box-shadow: 0 0 35px 8px #B5FF5F, 0 0 70px 20px #00E5FF, 0 30px 100px 30px rgba(181, 255, 95, 0.8); }}
-.logo-core {{ position: absolute; width: 200px; height: 200px; background: #000; border-radius: 50%; z-index: 10; display: flex; justify-content: center; align-items: center; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 0 80px rgba(0, 0, 0, 0.8); animation: coreBloom 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }}
-.core-img {{ width: 95%; height: 95%; border-radius: 50%; object-fit: cover; filter: brightness(1.2) contrast(1.1); }}
-.branding-container {{ margin-top: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; background: transparent !important; animation: textReveal 2.8s ease-out 1.4s forwards; opacity: 0; }}
-.main-tagline {{ font-family: 'Syncopate', sans-serif; color: #FFFFFF !important; font-size: 24px; font-weight: 700; letter-spacing: 18px; text-transform: uppercase; margin-bottom: 22px; background: transparent !important; }}
-.sub-tagline {{ font-family: 'Inter', sans-serif; color: #B5FF5F !important; font-size: 14px; letter-spacing: 6px; text-transform: uppercase; font-weight: 500; background: transparent !important; opacity: 0.9; }}
-@keyframes cometWhip {{ 0% {{ transform: rotate(0deg); opacity: 0.4; }} 50% {{ transform: rotate(180deg); opacity: 1; scale: 1.15; }} 100% {{ transform: rotate(360deg); opacity: 0.4; }} }}
-@keyframes coreBloom {{ 0% {{ transform: scale(0.2); opacity: 0; filter: blur(30px); }} 70% {{ transform: scale(1.1); opacity: 1; filter: blur(0px); }} 100% {{ transform: scale(1); opacity: 1; }} }}
-@keyframes textReveal {{ 0% {{ transform: translateY(50px); opacity: 0; filter: blur(15px); }} 100% {{ transform: translateY(0); opacity: 1; filter: blur(0); }} }}
-@keyframes mainFadeOut {{ to {{ opacity: 0; visibility: hidden; transform: scale(1.1); filter: blur(20px); }} }}
-</style>
-<div class="main-void">
-<div class="orbital-track">
-<div class="comet-engine"></div>
-<div class="logo-core">{'<img src="data:image/png;base64,' + encoded_img + '" class="core-img">' if has_image else '<div style="font-size:70px;">🎯</div>'}</div>
-</div>
-<div class="branding-container">
-<div class="main-tagline">TIME HUNT AI</div>
-<div class="sub-tagline">Redefine Productivity • Execute With Precision</div>
-</div>
-</div>
-"""), unsafe_allow_html=True)
+            <style>
+            @import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=Inter:wght@300;600&display=swap');
+            div[data-testid="stVerticalBlock"] > div:has(.main-void) {{ gap: 0 !important; }}
+            .stMarkdown {{ background: transparent !important; }}
+            .main-void {{ position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: #000000 !important; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999999; overflow: hidden; animation: mainFadeOut 1.2s cubic-bezier(0.7, 0, 0.3, 1) 6.0s forwards; }}
+            .orbital-track {{ position: relative; width: 380px; height: 380px; display: flex; justify-content: center; align-items: center; }}
+            .comet-engine {{ position: absolute; width: 100%; height: 100%; animation: cometWhip 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }}
+            .comet-engine::after {{ content: ''; position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 16px; height: 16px; background: #B5FF5F; border-radius: 50%; box-shadow: 0 0 35px 8px #B5FF5F, 0 0 70px 20px #00E5FF, 0 30px 100px 30px rgba(181, 255, 95, 0.8); }}
+            .logo-core {{ position: absolute; width: 200px; height: 200px; background: #000; border-radius: 50%; z-index: 10; display: flex; justify-content: center; align-items: center; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 0 80px rgba(0, 0, 0, 0.8); animation: coreBloom 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }}
+            .core-img {{ width: 95%; height: 95%; border-radius: 50%; object-fit: cover; filter: brightness(1.2) contrast(1.1); }}
+            .branding-container {{ margin-top: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; background: transparent !important; animation: textReveal 2.8s ease-out 1.4s forwards; opacity: 0; }}
+            .main-tagline {{ font-family: 'Syncopate', sans-serif; color: #FFFFFF !important; font-size: 24px; font-weight: 700; letter-spacing: 18px; text-transform: uppercase; margin-bottom: 22px; background: transparent !important; }}
+            .sub-tagline {{ font-family: 'Inter', sans-serif; color: #B5FF5F !important; font-size: 14px; letter-spacing: 6px; text-transform: uppercase; font-weight: 500; background: transparent !important; opacity: 0.9; }}
+            @keyframes cometWhip {{ 0% {{ transform: rotate(0deg); opacity: 0.4; }} 50% {{ transform: rotate(180deg); opacity: 1; scale: 1.15; }} 100% {{ transform: rotate(360deg); opacity: 0.4; }} }}
+            @keyframes coreBloom {{ 0% {{ transform: scale(0.2); opacity: 0; filter: blur(30px); }} 70% {{ transform: scale(1.1); opacity: 1; filter: blur(0px); }} 100% {{ transform: scale(1); opacity: 1; }} }}
+            @keyframes textReveal {{ 0% {{ transform: translateY(50px); opacity: 0; filter: blur(15px); }} 100% {{ transform: translateY(0); opacity: 1; filter: blur(0); }} }}
+            @keyframes mainFadeOut {{ to {{ opacity: 0; visibility: hidden; transform: scale(1.1); filter: blur(20px); }} }}
+            </style>
+            <div class="main-void">
+            <div class="orbital-track">
+            <div class="comet-engine"></div>
+            <div class="logo-core">{'<img src="data:image/png;base64,' + encoded_img + '" class="core-img">' if has_image else '<div style="font-size:70px;">🎯</div>'}</div>
+            </div>
+            <div class="branding-container">
+            <div class="main-tagline">TIME HUNT AI</div>
+            <div class="sub-tagline">Redefine Productivity • Execute With Precision</div>
+            </div>
+            </div>
+            """), unsafe_allow_html=True)
             
             time.sleep(6.5)
         
         placeholder.empty()
         st.session_state['splash_played'] = True
         
-# --- 5. AI ENGINE (UPDATED TO KNOW YOUR NAME) ---
-# --- REPLACEMENT FOR SECTION 5: AI ENGINE ---
+# --- 5. AI ENGINE (CONTEXT & GENERATION) ---
 
 def get_system_context():
     """
-    Constructs a dynamic 'Brain Dump' of the user's current life state.
-    The AI reads this before every single response.
+    Constructs the 'Brain Dump' for the AI.
+    Merges the Global Persona (SYSTEM_INSTRUCTION) with Real-Time Data.
     """
     # 1. User Profile
     user_name = st.session_state.get('user_name', 'Hunter')
-    role = st.session_state.get('user_type', 'Agent')
+    role = st.session_state.get('user_type', 'Student')
     xp = st.session_state.get('user_xp', 0)
     
-    # 2. Time & Date
-    # Calculate IST (UTC + 5:30)
+    # 2. Time & Date (IST)
     utc_now = datetime.datetime.utcnow()
     ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
-    
     current_time = ist_now.strftime("%H:%M")
     current_date = ist_now.strftime("%Y-%m-%d")
     
-    # 3. The Schedule (The AI "sees" this)
-    schedule_txt = "NO ACTIVE MISSIONS."
+    # 3. Compile Schedule
+    schedule_txt = "NO ACTIVE TASKS."
     slots = st.session_state.get('timetable_slots', [])
     if slots:
-        # Filter for today's tasks only
+        # Filter for today's tasks
         todays_tasks = [s for s in slots if s.get('Date') == current_date or not s.get('Date')]
         if todays_tasks:
             schedule_txt = "\n".join(
@@ -546,7 +569,7 @@ def get_system_context():
                  for s in todays_tasks]
             )
     
-    # 4. Active Alarms/Reminders
+    # 4. Compile Reminders
     reminders_txt = "NO ACTIVE ALERTS."
     rems = st.session_state.get('reminders', [])
     if rems:
@@ -554,60 +577,49 @@ def get_system_context():
         if pending_rems:
             reminders_txt = "\n".join([f"- {r['task']} at {r['time']}" for r in pending_rems])
 
-    # 5. The Master Prompt
-    system_prompt = f"""
-    IDENTITY: You are TimeHunt AI, a tactical productivity command center.
+    # 5. Merge with Global Instruction
+    # We append the live data to the existing SYSTEM_INSTRUCTION
+    full_prompt = f"""
+    {SYSTEM_INSTRUCTION}
+    
+    === REAL-TIME INTELLIGENCE ===
     USER: {user_name} | RANK: {role} | XP: {xp}
     CURRENT STATUS: Date: {current_date} | Time: {current_time}
     
-    === LIVE INTELLIGENCE FEED ===
     [TODAY'S SCHEDULE]
     {schedule_txt}
     
     [PENDING ALARMS]
     {reminders_txt}
     
-    === OPERATIONAL PROTOCOLS ===
-    1. BE CONTEXT AWARE: If the user asks "What should I do?", look at the [TODAY'S SCHEDULE] above and tell them specifically based on the current time ({current_time}).
-    2. TONE: Use "Military/Tactical" style but be supportive. Use words like "Mission", "Deploy", "Intel", "Sector".
-    3. STRICT DEADLINES: If a task is pending and time is close, warn them aggressively.
+    INSTRUCTION: Use the context above to provide specific advice. 
+    If a task is due soon ({current_time}), remind the user gently but firmly.
     """
-    return system_prompt
+    return full_prompt
 
 def perform_ai_analysis(user_query):
     """
-    Robust AI Engine with Smart Fallback.
-    Prioritizes Stable Models to avoid 429/404 errors.
+    Robust AI Engine with Smart Fallback & Key Rotation.
     """
-    # 1. Setup Library
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
+    # 1. Check Library
+    if not HAS_GEMINI:
         return "⚠️ SYSTEM FAILURE: `google-genai` library not installed.", "System"
 
-    # 2. Load API Keys (Rotational)
-    api_keys_list = []
-    if "GEMINI_API_KEY" in st.secrets:
-        raw = st.secrets["GEMINI_API_KEY"]
-        api_keys_list = raw if isinstance(raw, list) else [raw]
-    elif "GOOGLE_API_KEY" in st.secrets:
-        raw = st.secrets["GOOGLE_API_KEY"]
-        api_keys_list = raw if isinstance(raw, list) else [raw]
-    
+    # 2. Get Keys (From Session State)
+    api_keys_list = st.session_state.get('gemini_api_keys', [])
     if not api_keys_list:
         return "⚠️ AUTH ERROR: No API Keys found in secrets.toml", "System"
 
-    # 3. Model Priority List (UPDATED TO MATCH YOUR KEYS)
+    # 3. Model Priority List
     models_to_try = [
-        "gemini-2.0-flash",          # Current standard (Fast & Smart)
-        "gemini-2.5-flash",          # Newest experimental flash
-        "gemini-2.0-flash-lite",     # Extremely fast/cheap fallback
-        "gemini-2.0-pro-exp-02-05",  # If you need high intelligence (check exact name in your list)
-        "gemini-2.0-flash-exp",      # Older experimental
+        "gemini-2.0-flash",          
+        "gemini-2.5-flash",          
+        "gemini-2.0-flash-lite",     
+        "gemini-2.0-pro-exp-02-05",  
+        "gemini-2.0-flash-exp",      
     ]
 
-    current_system_context = get_system_context()
+    current_context = get_system_context()
     last_error = "No connection attempted."
 
     # 4. The Loop: Try Every Key x Every Model
@@ -620,63 +632,65 @@ def perform_ai_analysis(user_query):
                     # Construct History
                     history_for_model = []
                     past_chats = st.session_state.get('chat_history', [])[-6:]
+                    
                     for msg in past_chats:
-                        role_label = msg.get('role') or msg.get('Role')
-                        content_text = msg.get('text') or msg.get('Content')
+                        # Normalize role names for API
+                        role_label = msg.get('role', 'user')
+                        content_text = msg.get('content', '')
                         api_role = "user" if role_label == "user" else "model"
-                        history_for_model.append(types.Content(role=api_role, parts=[types.Part.from_text(text=str(content_text))]))
+                        
+                        history_for_model.append(types.Content(
+                            role=api_role, 
+                            parts=[types.Part.from_text(text=str(content_text))]
+                        ))
 
-                    # Attempt Generation
+                    # Configure Chat
                     chat = client.chats.create(
                         model=model_name,
                         history=history_for_model,
                         config=types.GenerateContentConfig(
-                            system_instruction=current_system_context,
+                            system_instruction=current_context,
                             temperature=0.7,
-                            max_output_tokens=500
+                            max_output_tokens=600
                         )
                     )
                     
-                    # Send
+                    # Generate
                     response = chat.send_message(user_query)
-                    
-                    # If we get here, it worked!
                     return response.text, "TimeHunt AI"
 
                 except Exception as model_err:
                     err_str = str(model_err)
                     
-                    # Handle Rate Limits (429) & Model Not Found (404) by just skipping to next model
+                    # Smart Error Handling (Skip 429/404, stop on others?)
                     if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        print(f"⚠️ Key #{key_index} / {model_name} Busy. Switching...")
                         last_error = "Server Busy (Rate Limit)"
-                        time.sleep(1) # Brief pause to be nice to API
+                        time.sleep(0.5)
                         continue
                     elif "404" in err_str or "NOT_FOUND" in err_str:
-                        print(f"⚠️ {model_name} not available on this key. Skipping.")
                         last_error = f"Model {model_name} Not Found"
                         continue
                     else:
-                        # Real error? Save it but keep trying other keys
                         last_error = f"Error: {err_str}"
-                        continue
+                        continue # Try next model/key
 
-        except Exception as key_err:
-            print(f"❌ Key #{key_index} Invalid: {key_err}")
-            continue
+        except Exception:
+            continue # Try next key
 
     # 5. Total Failure
-    return f"⚠️ SYSTEM ALERT: Connection Unstable. Last Error: {last_error}. Try again in 1 minute.", "System"
+    return f"⚠️ SYSTEM ALERT: Connection Unstable. Last Error: {last_error}. Check API Keys.", "System"
     
 # --- 5.5 REMINDER CHECKER WITH BROWSER NOTIFICATIONS ---
 
 def check_reminders():
-    # 1. Javascript: Request Notification Permission on Load
+    """
+    Checks for due tasks and triggers browser-native notifications.
+    Includes Javascript injection for permissions.
+    """
+    # 1. Request Permission on Load
     st.markdown("""
         <script>
-        if (!("Notification" in window)) {
-            console.log("This browser does not support desktop notification");
-        } else {
+        if ("Notification" in window) {
             if (Notification.permission !== "granted") {
                 Notification.requestPermission();
             }
@@ -684,28 +698,28 @@ def check_reminders():
         </script>
     """, unsafe_allow_html=True)
 
+    # 2. Check Logic
     now = datetime.datetime.now()
     if 'reminders' in st.session_state:
         for i, rem in enumerate(st.session_state['reminders']):
+            # Ensure time format is valid
             if isinstance(rem['time'], str):
                 try:
                     rem['time'] = datetime.datetime.fromisoformat(rem['time'])
                 except ValueError: continue
 
-            # If time is up AND we haven't rung yet
+            # Trigger condition: Time passed AND not yet notified
             if not rem['notified'] and now >= rem['time']:
-                # ACTIVATE ALARM STATE
-                st.session_state['active_alarm'] = {
-                    'task': rem['task'],
-                    'index': i
-                }
+                # Update State
+                st.session_state['active_alarm'] = {'task': rem['task'], 'index': i}
                 rem['notified'] = True 
                 
-                sync_data()  # <--- CHANGED THIS LINE (Old: save_data())
+                sync_data()
                 
-                # --- NEW: TRIGGER BROWSER NOTIFICATION ---
-                # This runs JS to pop up a system alert
-                safe_task = rem['task'].replace("'", "").replace('"', "")
+                # Sanitize text for JS to prevent syntax errors
+                safe_task = rem['task'].replace("'", "").replace('"', "").replace("\n", " ")
+                
+                # Trigger Native Notification
                 st.markdown(f"""
                     <script>
                     if (Notification.permission === "granted") {{
@@ -717,51 +731,84 @@ def check_reminders():
                     </script>
                 """, unsafe_allow_html=True)
 
-# --- 6. PAGE: ONBOARDING (DESIGN OPTIMIZED) ---
+# --- 6. PAGE: ONBOARDING (DARK MODE OPTIMIZED) ---
 
 def page_onboarding():
     
-    # 1. Background Setup
-    bg_base64 = None
+    # 1. Dynamic Background Loader
+    bg_style = ""
     try:
         with open("background_small.jpg", "rb") as image_file:
             bg_base64 = base64.b64encode(image_file.read()).decode()
-    except: pass
-
-    if bg_base64:
-        st.markdown(f"""
-        <style>
+            bg_style = f"""
             .fixed-bg {{
                 position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                background-image: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.9)), url("data:image/jpeg;base64,{bg_base64}");
+                background-image: linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.95)), url("data:image/jpeg;base64,{bg_base64}");
                 background-size: cover; z-index: -1;
             }}
-            .stApp {{ background: transparent !important; }}
-        </style>
-        <div class="fixed-bg"></div>
-        """, unsafe_allow_html=True)
+            """
+    except: 
+        pass
 
-    # 2. CSS Styling
-    st.markdown("""
+    # 2. Cyberpunk CSS (High Contrast for Dark Mode)
+    st.markdown(f"""
     <style>
-        .cyber-glass { background: rgba(13, 17, 23, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(0, 229, 255, 0.3); border-radius: 20px; padding: 40px; text-align: center; animation: fadeIn 1s ease-out; }
-        .cyber-header { font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 45px; color: #fff; text-shadow: 0 0 20px rgba(0, 229, 255, 0.6); }
-        .stTextInput input { background-color: #050505 !important; border: 1px solid #333 !important; color: #00E5FF !important; text-align: center; font-weight: bold; letter-spacing: 2px; }
-        div.stButton > button { background: linear-gradient(90deg, #00C6FF, #0072FF); color: white; border: none; padding: 12px 24px; font-weight: bold; width: 100%; border-radius: 6px; margin-top: 10px; }
-        .suggestion-btn { border: 1px dashed #B5FF5F; color: #B5FF5F; padding: 5px; margin: 5px; font-size: 12px; cursor: pointer; }
+        {bg_style}
+        .stApp {{ background: transparent !important; }}
+        .cyber-glass {{ 
+            background: rgba(13, 17, 23, 0.9); 
+            backdrop-filter: blur(15px); 
+            border: 1px solid rgba(0, 229, 255, 0.2); 
+            border-radius: 16px; 
+            padding: 40px; 
+            text-align: center; 
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
+            animation: fadeIn 0.8s ease-out; 
+        }}
+        .cyber-header {{ 
+            font-family: 'Segoe UI', sans-serif; 
+            font-weight: 800; 
+            font-size: 42px; 
+            color: #FFFFFF; 
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(0, 229, 255, 0.5); 
+            margin-bottom: 5px;
+        }}
+        /* Force Input Styling to match Dark Theme */
+        .stTextInput input {{ 
+            background-color: #0A0A0A !important; 
+            border: 1px solid #333 !important; 
+            color: #00E5FF !important; 
+            text-align: center; 
+            font-weight: bold; 
+            letter-spacing: 1px; 
+        }}
+        div.stButton > button {{ 
+            background: linear-gradient(90deg, #00C6FF, #0072FF); 
+            color: white; 
+            border: none; 
+            padding: 12px; 
+            font-weight: bold; 
+            width: 100%; 
+            border-radius: 8px; 
+            transition: 0.3s;
+        }}
+        div.stButton > button:hover {{ box-shadow: 0 0 15px #00C6FF; }}
     </style>
+    <div class="fixed-bg"></div>
     """, unsafe_allow_html=True)
 
     # 3. Logic Flow
     step = st.session_state.get('onboarding_step', 1)
-    col_x, col_center, col_y = st.columns([1, 6, 1])
+    _, col_center, _ = st.columns([1, 6, 1])
     
     with col_center:
         # --- STEP 1: AUTHENTICATION ---
         if step == 1:
             st.markdown('<div class="cyber-glass">', unsafe_allow_html=True)
             st.markdown('<div class="cyber-header">TIMEHUNT</div>', unsafe_allow_html=True)
-            st.markdown('<p style="color:#B5FF5F;">SECURE IDENTITY PROTOCOL</p>', unsafe_allow_html=True)
+            st.markdown('<p style="color:#B5FF5F; font-size: 14px; letter-spacing: 1px;">SECURE IDENTITY PROTOCOL</p>', unsafe_allow_html=True)
             
             default_val = st.session_state.get('suggested_name_choice', "")
             name_input = st.text_input("CODENAME", value=default_val, placeholder="ENTER IDENTITY...", key="login_name").strip()
@@ -777,57 +824,37 @@ def page_onboarding():
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             df = conn.read(worksheet="Sheet1", ttl=0)
                             
+                            # Clean PIN data
                             if not df.empty and 'Name' in df.columns:
-                                # --- PIN FIX: Force conversion to string and remove decimals ---
                                 df['PIN'] = df['PIN'].astype(str).replace(r'\.0$', '', regex=True).str.zfill(4)
-                                
                                 existing = df[df['Name'] == name_input]
                                 
                                 if not existing.empty:
-                                    # USER EXISTS -> CHECK PIN
+                                    # RETURNING USER
                                     stored_pin = str(existing.iloc[0]['PIN']).strip()
-                                    
-                                    # Debug print if needed (check console)
-                                    print(f"DEBUG: Input='{pin_input}', Stored='{stored_pin}'")
-                                    
                                     if str(pin_input) == stored_pin:
-                                        # Login Success
                                         row = existing.iloc[0]
-                                        st.session_state['user_name'] = row['Name']
-                                        st.session_state['user_id'] = row['UserID']
-                                        st.session_state['user_xp'] = int(row['XP'])
-                                        st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
-                                        st.session_state['onboarding_complete'] = True
+                                        st.session_state.update({
+                                            'user_name': row['Name'],
+                                            'user_id': row['UserID'],
+                                            'user_xp': int(row['XP']),
+                                            'user_level': (int(row['XP']) // 500) + 1,
+                                            'onboarding_complete': True
+                                        })
                                         st.toast(f"Welcome back, {name_input}!", icon="🔓")
                                         load_cloud_data()
-                                        time.sleep(1)
+                                        time.sleep(0.5)
                                         st.rerun()
                                     else:
-                                        # Name Taken / Wrong PIN
-                                        st.error(f"⛔ Identity '{name_input}' is taken. Incorrect PIN.")
-                                        st.markdown("**Available Suggestions:**")
-                                        
-                                        s1, s2, s3 = f"{name_input}_{random.randint(10,99)}", f"Agent_{name_input}", f"{name_input}X"
-                                        c_s1, c_s2, c_s3 = st.columns(3)
-                                        if c_s1.button(s1): 
-                                            st.session_state['suggested_name_choice'] = s1
-                                            st.rerun()
-                                        if c_s2.button(s2): 
-                                            st.session_state['suggested_name_choice'] = s2
-                                            st.rerun()
-                                        if c_s3.button(s3): 
-                                            st.session_state['suggested_name_choice'] = s3
-                                            st.rerun()
+                                        st.error("⛔ Access Denied. Incorrect PIN.")
                                 else:
                                     # NEW USER
                                     st.session_state['user_name'] = name_input
                                     st.session_state['temp_pin'] = pin_input
                                     st.session_state['onboarding_step'] = 2
-                                    st.success("Identity Available.")
-                                    time.sleep(1)
                                     st.rerun()
                             else:
-                                # First User
+                                # FIRST EVER USER
                                 st.session_state['user_name'] = name_input
                                 st.session_state['temp_pin'] = pin_input
                                 st.session_state['onboarding_step'] = 2
@@ -835,30 +862,28 @@ def page_onboarding():
                         except Exception as e:
                             st.error(f"Network Error: {e}")
                 else:
-                    st.warning("Enter Codename & PIN.")
+                    st.warning("Credentials Required.")
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- STEP 2: AVATAR (NOW WITH IMAGES) ---
+        # --- STEP 2: AVATAR SELECTION ---
         elif step == 2:
             st.markdown('<div class="cyber-glass"><div class="cyber-header">AVATAR</div>', unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
             
-            # Helper to show image safely
-            def show_av(col, name, file):
+            def show_av(col, name, filename):
                 with col:
-                    if os.path.exists(file):
-                        st.image(file, width=100)
+                    if os.path.exists(filename):
+                        st.image(filename, width=100)
                     else:
-                        st.write("🖼️") # Fallback icon
-                    if st.button(name):
-                        st.session_state['user_avatar'] = file
+                        st.write("👤")
+                    if st.button(name, key=f"btn_{name}"):
+                        st.session_state['user_avatar'] = filename
                         st.session_state['onboarding_step'] = 3
                         st.rerun()
 
             show_av(c1, "SCHOLAR", "Gemini_Generated_Image_djfbqkdjfbqkdjfb.png")
             show_av(c2, "TECHIE", "Gemini_Generated_Image_z8e73dz8e73dz8e7.png")
             show_av(c3, "HUNTER", "Gemini_Generated_Image_18oruj18oruj18or.png")
-            
             st.markdown('</div>', unsafe_allow_html=True)
 
         # --- STEP 3: MISSION & SAVE ---
@@ -874,8 +899,8 @@ def page_onboarding():
                  try:
                      from streamlit_gsheets import GSheetsConnection
                      conn = st.connection("gsheets", type=GSheetsConnection)
-                     df = conn.read(worksheet="Sheet1", ttl=0)
                      
+                     # Create User Record
                      new_user = pd.DataFrame([{
                          "UserID": st.session_state['user_id'],
                          "Name": st.session_state['user_name'],
@@ -885,258 +910,215 @@ def page_onboarding():
                          "PIN": "'" + str(st.session_state.get('temp_pin', "0000"))
                      }])
                      
-                     updated_df = new_user if df.empty else pd.concat([df, new_user], ignore_index=True)
+                     # Append to Cloud
+                     try:
+                        df = conn.read(worksheet="Sheet1", ttl=0)
+                        updated_df = pd.concat([df, new_user], ignore_index=True)
+                     except:
+                        updated_df = new_user
+                        
                      conn.update(worksheet="Sheet1", data=updated_df)
                      
                      st.session_state['onboarding_complete'] = True
-                     st.toast("Profile Created!")
+                     sync_data()
+                     st.toast("Profile Initialized")
                      time.sleep(1)
                      st.rerun()
                  except Exception as e:
                      st.error(f"Upload Failed: {e}")
             st.markdown('</div>', unsafe_allow_html=True)
 
-
-            
-            if st.button("🚀 LAUNCH COMMAND CENTER"):
-               st.session_state['onboarding_complete'] = True
-               sync_data()  # <--- CRITICAL: Save to file BEFORE restarting!
-               st.rerun()
-
-# --- 7. PAGE: SCHEDULER ---
+# --- 7. PAGE: SCHEDULER (DARK MODE OPTIMIZED) ---
 
 def page_scheduler():
-    # --- 1. SETUP & XP LOGIC ---
+    # --- Helper: Streak Calculation ---
     def calculate_streak_multiplier(streak_days):
-        if streak_days >= 30: return 2.5  # TITAN
-        elif streak_days >= 14: return 2.0  # ELITE
-        elif streak_days >= 7: return 1.5   # VETERAN
-        elif streak_days >= 3: return 1.2   # ROOKIE
+        if streak_days >= 30: return 2.5
+        elif streak_days >= 14: return 2.0
+        elif streak_days >= 7: return 1.5
+        elif streak_days >= 3: return 1.2
         return 1.0
 
-    # Ensure data integrity
-    if 'timetable_slots' in st.session_state:
-        for slot in st.session_state['timetable_slots']:
-            if 'Done' not in slot: slot['Done'] = False
-            if 'XP' not in slot: slot['XP'] = 50
-            if 'Difficulty' not in slot: slot['Difficulty'] = 'Medium'
+    # Ensure Data Integrity
+    for slot in st.session_state.get('timetable_slots', []):
+        if 'XP' not in slot: slot['XP'] = 50
+        if 'Difficulty' not in slot: slot['Difficulty'] = 'Medium'
+        if 'Done' not in slot: slot['Done'] = False
 
-    # --- 2. HEADER & STATS ---
-    st.markdown('<div class="big-title">Mission Control ⚙️</div>', unsafe_allow_html=True)
+    # --- Header & Stats ---
+    # CSS wrapper for clean cards
+    st.markdown("""
+    <style>
+        .stat-card { background: rgba(255,255,255,0.05); border: 1px solid #333; border-radius: 12px; padding: 20px; }
+        .stat-val { font-size: 24px; font-weight: bold; color: #fff; }
+        .stat-label { font-size: 12px; color: #aaa; text-transform: uppercase; }
+        .mission-card { background: rgba(20, 20, 20, 0.6); border-left: 4px solid #333; padding: 15px; margin-bottom: 10px; border-radius: 0 8px 8px 0; }
+    </style>
+    """, unsafe_allow_html=True)
     
-    # Calculate Stats
-    total_missions = len(st.session_state['timetable_slots'])
-    completed_missions = len([t for t in st.session_state['timetable_slots'] if t['Done']])
-    pending_missions = total_missions - completed_missions
-    progress = completed_missions / total_missions if total_missions > 0 else 0
-    
+    # Calculate Logic
+    slots = st.session_state['timetable_slots']
+    total = len(slots)
+    completed = len([t for t in slots if t['Done']])
+    pending_count = total - completed
+    progress = completed / total if total > 0 else 0
     streak = st.session_state.get('streak', 1)
-    multiplier = calculate_streak_multiplier(streak)
     
-    # Visual Header with Progress
-    c_stats, c_add = st.columns([2, 1])
-    
-    with c_stats:
+    # Stats UI
+    c_main, c_mini = st.columns([2, 1])
+    with c_main:
         st.markdown(f"""
-        <div style="background: rgba(255,255,255,0.05); border-radius: 15px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <span style="font-size:18px; font-weight:bold; color:#B5FF5F;">Daily Progress</span>
-                <span style="font-size:14px; color:#aaa;">{int(progress*100)}% Clear</span>
+        <div class="stat-card">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                <span style="color:#B5FF5F; font-weight:bold;">Daily Progress</span>
+                <span style="color:#aaa;">{int(progress*100)}%</span>
             </div>
-            <div style="width:100%; background:#333; height:8px; border-radius:4px; overflow:hidden;">
+            <div style="width:100%; background:#222; height:8px; border-radius:4px; overflow:hidden;">
                 <div style="width:{progress*100}%; background: linear-gradient(90deg, #B5FF5F, #00E5FF); height:100%;"></div>
             </div>
-            <div style="margin-top:15px; font-size:14px; color:#ccc;">
-                🔥 <b>Streak:</b> {streak} Days <span style="color:#00E5FF; margin-left:10px;">(x{multiplier} Multiplier Active)</span>
+            <div style="margin-top:10px; font-size:13px; color:#ccc;">
+                🔥 Streak: <span style="color:#fff;">{streak} Days</span> (x{calculate_streak_multiplier(streak)})
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-    with c_add:
-        # Mini Card for Quick Status
+        
+    with c_mini:
         st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1A1A1A, #252525); border-radius: 15px; padding: 20px; text-align:center; border: 1px solid #333;">
-            <div style="font-size: 32px; font-weight:bold; color:white;">{pending_missions}</div>
-            <div style="font-size: 12px; color:#888; text-transform:uppercase; letter-spacing:1px;">Pending Missions</div>
+        <div class="stat-card" style="text-align:center;">
+            <div class="stat-val">{pending_count}</div>
+            <div class="stat-label">Pending</div>
         </div>
         """, unsafe_allow_html=True)
 
-    st.write("") # Spacer
-
-    # --- 3. MISSION DEPLOYMENT INTERFACE ---
+    # --- Mission Deployment ---
     with st.expander("🚁 DEPLOY NEW MISSION", expanded=True):
         with st.form("mission_form", clear_on_submit=True):
             c1, c2, c3 = st.columns([3, 1.5, 1.5])
-            with c1:
-                task_input = st.text_input("Objective", placeholder="Enter mission details...")
-            with c2:
-                cat_input = st.selectbox("Sector", ["Study", "Project", "Health", "Errand", "Drill"])
-            with c3:
-                # Updated Difficulty Logic
-                diff_input = st.selectbox("Class", ["Easy (20 XP)", "Medium (50 XP)", "Hard (150 XP)", "BOSS (300 XP)"])
+            with c1: task = st.text_input("Objective", placeholder="Mission details...")
+            with c2: cat = st.selectbox("Sector", ["Study", "Project", "Health", "Errand"])
+            with c3: diff = st.selectbox("Class", ["Easy (20 XP)", "Medium (50 XP)", "Hard (150 XP)", "BOSS (300 XP)"])
             
-            c_sub, c_clear = st.columns([1, 4])
-            with c_sub:
-                submitted = st.form_submit_button("Deploy ➔", type="primary", use_container_width=True)
-            
-            if submitted and task_input:
-                # Map Selection to XP
-                xp_map = {"Easy (20 XP)": 20, "Medium (50 XP)": 50, "Hard (150 XP)": 150, "BOSS (300 XP)": 300}
-                clean_diff = diff_input.split(" ")[0] # Extracts "Easy", "Hard" etc.
-                
-                # Timezone Fix
-                ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
-                
-                new_mission = {
-                    "Time": ist_now.strftime("%H:%M"),
-                    "Activity": task_input,
-                    "Category": cat_input,
-                    "Difficulty": clean_diff,
-                    "Done": False,
-                    "XP": xp_map.get(diff_input, 50),
-                    "Date": ist_now.strftime("%Y-%m-%d")
-                }
-                
-                st.session_state['timetable_slots'].append(new_mission)
-                sync_data()
-                st.rerun()
-
-    st.divider()
-
-    # --- 4. ACTIVE MISSIONS (CUSTOM CARD UI) ---
-    st.markdown("### 📋 Active Protocols")
-    
-    if not st.session_state['timetable_slots']:
-        st.info("System Idle. No active protocols found.")
-    else:
-        # Separate Pending and Done for cleaner UI
-        pending = [t for t in st.session_state['timetable_slots'] if not t['Done']]
-        done_list = [t for t in st.session_state['timetable_slots'] if t['Done']]
-
-        # A. RENDER PENDING MISSIONS
-        if pending:
-            for i, mission in enumerate(st.session_state['timetable_slots']):
-                if not mission['Done']:
-                    # Difficulty Color Coding
-                    d_color = "#B5FF5F" # Easy/Green
-                    if mission['Difficulty'] == "Medium": d_color = "#FFD700" # Gold
-                    elif mission['Difficulty'] == "Hard": d_color = "#FF4B4B" # Red
-                    elif mission['Difficulty'] == "BOSS": d_color = "#9D00FF" # Purple
+            if st.form_submit_button("Deploy ➔", type="primary", use_container_width=True):
+                if task:
+                    xp_map = {"Easy (20 XP)": 20, "Medium (50 XP)": 50, "Hard (150 XP)": 150, "BOSS (300 XP)": 300}
+                    now_ist = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
                     
-                    # Custom Card Container
-                    with st.container():
-                        # Create a layout: Checkbox | Details | XP Badge
-                        c_chk, c_det, c_xp = st.columns([1, 6, 2], vertical_alignment="center")
-                        
-                        with c_chk:
-                            # The actual interactive element
-                            if st.button("⬜", key=f"btn_done_{i}", help="Mark Complete"):
-                                st.session_state['timetable_slots'][i]['Done'] = True
-                                sync_data()
-                                st.rerun()
-                        
-                        with c_det:
-                            st.markdown(f"""
-                            <div style="font-weight:600; font-size:16px;">{mission['Activity']}</div>
-                            <div style="font-size:12px; color:#888;">
-                                <span style="color:{d_color}; font-weight:bold;">● {mission['Difficulty']}</span> 
-                                | {mission['Category']} | 🕒 {mission['Time']}
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                        with c_xp:
-                            st.markdown(f"""
-                            <div style="background:{d_color}20; color:{d_color}; border:1px solid {d_color}; 
-                            border-radius:8px; padding:5px 10px; text-align:center; font-weight:bold; font-size:12px;">
-                            +{mission['XP']} XP
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        st.markdown("<hr style='margin:5px 0; border:0; border-top:1px solid #333;'>", unsafe_allow_html=True)
-
-        else:
-            st.caption("All systems clear. Good job, Hunter.")
-
-        # B. RENDER COMPLETED SECTION (Collapsible)
-        if done_list:
-            with st.expander(f"✅ Completed Missions ({len(done_list)})"):
-                for t in done_list:
-                     st.markdown(f"~~{t['Activity']}~~ <span style='color:#666; font-size:12px;'>({t['XP']} XP)</span>", unsafe_allow_html=True)
-                
-                # CLAIM REWARDS BUTTON
-                if st.button("🎁 CLAIM REWARDS & ARCHIVE", type="primary", use_container_width=True):
-                    # Calculate Total XP Gain
-                    raw_xp = sum([t['XP'] for t in done_list])
-                    final_xp = int(raw_xp * multiplier)
-                    
-                    # Update Session
-                    st.session_state['user_xp'] += final_xp
-                    st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
-                    
-                    # Archive (Remove from active list)
-                    st.session_state['timetable_slots'] = [t for t in st.session_state['timetable_slots'] if not t['Done']]
-                    
-                    # Log History
-                    today_str = datetime.date.today().strftime("%Y-%m-%d")
-                    st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
-                    
+                    st.session_state['timetable_slots'].append({
+                        "Time": now_ist.strftime("%H:%M"),
+                        "Activity": task, "Category": cat,
+                        "Difficulty": diff.split(" ")[0],
+                        "Done": False, "XP": xp_map.get(diff, 50),
+                        "Date": now_ist.strftime("%Y-%m-%d")
+                    })
                     sync_data()
-                    
-                    # Celebration
-                    st.balloons()
-                    msg = f"**MISSION SUCCESS!**\n\nBase XP: {raw_xp}\nStreak Bonus: x{multiplier}\n**TOTAL GAIN: +{final_xp} XP**"
-                    st.toast(msg, icon="🚀")
-                    time.sleep(2)
                     st.rerun()
 
-    # Reset Option (Subtle)
-    st.write("")
-    if st.button("🗑️ Clear All Data", help="Deletes all active and completed tasks"):
+    st.markdown("### 📋 Active Protocols")
+    
+    # --- Active Missions List ---
+    pending = [t for t in slots if not t['Done']]
+    done_list = [t for t in slots if t['Done']]
+
+    if pending:
+        for i, m in enumerate(slots):
+            if not m['Done']:
+                # Color Coding
+                clr = "#B5FF5F" if m['Difficulty'] == "Easy" else \
+                      "#FFD700" if m['Difficulty'] == "Medium" else \
+                      "#FF4B4B" if m['Difficulty'] == "Hard" else "#9D00FF"
+                
+                with st.container():
+                    c_chk, c_info, c_badge = st.columns([0.5, 6, 1.5], vertical_alignment="center")
+                    with c_chk:
+                        if st.button("⬜", key=f"d_{i}", help="Mark Done"):
+                            st.session_state['timetable_slots'][i]['Done'] = True
+                            sync_data()
+                            st.rerun()
+                    with c_info:
+                        st.markdown(f"""
+                            <div style="font-weight:600; font-size:16px; color:#fff;">{m['Activity']}</div>
+                            <div style="font-size:12px; color:#888;">{m['Category']} | {m['Time']}</div>
+                        """, unsafe_allow_html=True)
+                    with c_badge:
+                        st.markdown(f"<div style='color:{clr}; font-weight:bold; font-size:12px; text-align:right;'>+{m['XP']} XP</div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height:1px; background:#333; margin: 5px 0;'></div>", unsafe_allow_html=True)
+    else:
+        st.info("All systems clear.")
+
+    # --- Completed Section ---
+    if done_list:
+        with st.expander(f"✅ Completed ({len(done_list)})"):
+            for t in done_list:
+                 st.markdown(f"<span style='color:#666; text-decoration:line-through;'>{t['Activity']}</span>", unsafe_allow_html=True)
+            
+            if st.button("🎁 CLAIM REWARDS & ARCHIVE", type="primary"):
+                raw_xp = sum(t['XP'] for t in done_list)
+                final_xp = int(raw_xp * calculate_streak_multiplier(streak))
+                
+                st.session_state['user_xp'] += final_xp
+                st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
+                st.session_state['timetable_slots'] = [t for t in slots if not t['Done']]
+                
+                # Log History
+                today = datetime.date.today().strftime("%Y-%m-%d")
+                st.session_state['xp_history'].append({"Date": today, "XP": final_xp})
+                
+                sync_data()
+                st.balloons()
+                st.toast(f"Success! +{final_xp} XP Added", icon="🚀")
+                time.sleep(1.5)
+                st.rerun()
+                
+    # Footer Action
+    if st.button("🗑️ Clear All", help="Reset all data"):
         st.session_state['timetable_slots'] = []
         sync_data()
         st.rerun()
 
-# --- NEW PAGE: FOCUS TIMER ---
+# --- PAGE: FOCUS TIMER ---
 def page_timer():
-    # --- 1. SESSION STATE FOR TIMER CONFIG ---
+    """
+    Renders a JavaScript-powered circular timer with sound and notifications.
+    Includes Dark Mode support for text visibility.
+    """
+    # 1. Initialize State
     if 'timer_duration' not in st.session_state: st.session_state['timer_duration'] = 25
     if 'timer_mode' not in st.session_state: st.session_state['timer_mode'] = "Focus"
 
     st.markdown('<div class="big-title" style="text-align:center;">⏱️ Tactical Chronometer</div>', unsafe_allow_html=True)
 
-    # --- 2. MODE SELECTION (PYTHON SIDE) ---
-    c_mode1, c_mode2, c_mode3 = st.columns(3)
-    
-    # Helper to style buttons based on active state
+    # 2. Mode Selection
+    # Helper for button styling
     def get_type(mode): return "primary" if st.session_state['timer_mode'] == mode else "secondary"
 
-    with c_mode1:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         if st.button("🎯 FOCUS (25m)", type=get_type("Focus"), use_container_width=True):
             st.session_state['timer_duration'] = 25
             st.session_state['timer_mode'] = "Focus"
             st.rerun()
-    with c_mode2:
+    with c2:
         if st.button("☕ SHORT (5m)", type=get_type("Short"), use_container_width=True):
             st.session_state['timer_duration'] = 5
             st.session_state['timer_mode'] = "Short"
             st.rerun()
-    with c_mode3:
+    with c3:
         if st.button("🔋 LONG (15m)", type=get_type("Long"), use_container_width=True):
             st.session_state['timer_duration'] = 15
             st.session_state['timer_mode'] = "Long"
             st.rerun()
 
-    # --- 3. TASK DEFINITION ---
-    # User types what they are doing. We pass this to the JS notification.
+    # 3. Mission Input
     current_focus = st.text_input("Current Mission Objective", placeholder="What are you hunting?", label_visibility="collapsed")
     if not current_focus: current_focus = "Deep Work Protocol"
 
-    # --- 4. THE ADVANCED TIMER COMPONENT ---
-    # We inject the python variable `st.session_state['timer_duration']` into the HTML
+    # 4. JavaScript Timer Injection
     duration_min = st.session_state['timer_duration']
     
-    # Colors based on mode
-    ring_color = "#B5FF5F" if st.session_state['timer_mode'] == "Focus" else "#00E5FF"
+    # Colors: Green for Focus, Cyan for Short Break, Purple for Long Break
+    if st.session_state['timer_mode'] == "Focus": ring_color = "#B5FF5F"
+    elif st.session_state['timer_mode'] == "Short": ring_color = "#00E5FF"
+    else: ring_color = "#9D00FF"
     
     timer_html = f"""
     <!DOCTYPE html>
@@ -1145,160 +1127,78 @@ def page_timer():
     <style>
         body {{ background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; }}
         
-        /* The Circular Progress Container */
-        .base-timer {{
-            position: relative;
-            width: 300px;
-            height: 300px;
-        }}
-
-        .base-timer__svg {{
-            transform: scaleX(-1);
-        }}
-
-        .base-timer__circle {{
-            fill: none;
-            stroke: none;
-        }}
-
-        .base-timer__path-elapsed {{
-            stroke-width: 10px;
-            stroke: rgba(255, 255, 255, 0.1);
-        }}
-
+        .base-timer {{ position: relative; width: 280px; height: 280px; }}
+        .base-timer__svg {{ transform: scaleX(-1); }}
+        .base-timer__circle {{ fill: none; stroke: none; }}
+        .base-timer__path-elapsed {{ stroke-width: 8px; stroke: rgba(255, 255, 255, 0.1); }}
         .base-timer__path-remaining {{
-            stroke-width: 10px;
-            stroke-linecap: round;
-            transform: rotate(90deg);
-            transform-origin: center;
-            transition: 1s linear all;
-            fill-rule: nonzero;
-            stroke: {ring_color}; 
+            stroke-width: 8px; stroke-linecap: round; transform: rotate(90deg); transform-origin: center;
+            transition: 1s linear all; fill-rule: nonzero; stroke: {ring_color}; 
             filter: drop-shadow(0 0 10px {ring_color});
         }}
-
         .base-timer__label {{
-            position: absolute;
-            width: 300px;
-            height: 300px;
-            top: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 55px;
-            font-family: 'Courier New', monospace;
-            font-weight: bold;
-            color: white;
+            position: absolute; width: 280px; height: 280px; top: 0; display: flex; align-items: center; justify-content: center;
+            font-size: 50px; font-family: 'Courier New', monospace; font-weight: bold; color: #FFFFFF;
             text-shadow: 0 0 20px rgba(0,0,0,0.8);
         }}
-
-        /* Buttons */
-        .controls {{
-            margin-top: 30px;
-            display: flex;
-            gap: 20px;
-        }}
-        
+        .controls {{ margin-top: 25px; display: flex; gap: 15px; }}
         .btn {{
-            border: none;
-            padding: 12px 30px;
-            border-radius: 50px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.2s;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            border: none; padding: 10px 25px; border-radius: 50px; font-size: 14px; font-weight: bold;
+            cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; color: #000;
         }}
-        
-        .btn-start {{ background: {ring_color}; color: #000; box-shadow: 0 0 15px {ring_color}40; }}
+        .btn-start {{ background: {ring_color}; box-shadow: 0 0 15px {ring_color}40; }}
         .btn-start:hover {{ transform: scale(1.05); box-shadow: 0 0 25px {ring_color}60; }}
-        
-        .btn-stop {{ background: #333; color: #fff; border: 1px solid #555; }}
-        .btn-stop:hover {{ background: #FF2A2A; border-color: #FF2A2A; }}
-
+        .btn-stop {{ background: #444; color: #fff; border: 1px solid #666; }}
+        .btn-stop:hover {{ background: #FF4B4B; border-color: #FF4B4B; }}
     </style>
     </head>
     <body>
-        
         <div class="base-timer">
             <svg class="base-timer__svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
                 <g class="base-timer__circle">
                     <circle class="base-timer__path-elapsed" cx="50" cy="50" r="45"></circle>
-                    <path
-                        id="base-timer-path-remaining"
-                        stroke-dasharray="283"
-                        class="base-timer__path-remaining"
-                        d="
-                          M 50, 50
-                          m -45, 0
-                          a 45,45 0 1,0 90,0
-                          a 45,45 0 1,0 -90,0
-                        "
-                    ></path>
+                    <path id="base-timer-path-remaining" stroke-dasharray="283" class="base-timer__path-remaining"
+                        d="M 50, 50 m -45, 0 a 45,45 0 1,0 90,0 a 45,45 0 1,0 -90,0"></path>
                 </g>
             </svg>
-            <span id="base-timer-label" class="base-timer__label">
-                {duration_min}:00
-            </span>
+            <span id="base-timer-label" class="base-timer__label">{duration_min}:00</span>
         </div>
-
         <div class="controls">
-            <button class="btn btn-start" onclick="startTimer()">Initiate</button>
-            <button class="btn btn-stop" onclick="resetTimer()">Abort</button>
+            <button class="btn btn-start" onclick="startTimer()">Start</button>
+            <button class="btn btn-stop" onclick="resetTimer()">Stop</button>
         </div>
-
         <script>
-            // CONFIGURATION
             const FULL_DASH_ARRAY = 283;
             const TIME_LIMIT = {duration_min} * 60;
             let timePassed = 0;
             let timeLeft = TIME_LIMIT;
             let timerInterval = null;
-            const COLOR_CODES = {{ info: {{ color: "green" }} }};
 
-            // NOTIFICATION PERMISSION
-            if ("Notification" in window) {{
-                Notification.requestPermission();
-            }}
+            if ("Notification" in window) {{ if (Notification.permission !== "granted") {{ Notification.requestPermission(); }} }}
 
             function onTimesUp() {{
                 clearInterval(timerInterval);
                 timerInterval = null;
-                
-                // Audio Beep
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                oscillator.type = "square";
-                oscillator.frequency.value = 440; 
-                oscillator.start();
-                gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 1);
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.type = "square"; osc.frequency.value = 440; 
+                osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 1);
                 
-                // Browser Notification
                 if (Notification.permission === "granted") {{
-                    new Notification("TIME HUNT AI", {{
-                        body: "Protocol Complete: {current_focus}",
-                        icon: "https://cdn-icons-png.flaticon.com/512/2921/2921226.png"
-                    }});
+                    new Notification("TIME HUNT AI", {{ body: "Protocol Complete: {current_focus}", icon: "" }});
                 }}
             }}
 
             function startTimer() {{
-                if (timerInterval) return; // Prevent multiple clicks
-                
+                if (timerInterval) return;
                 timerInterval = setInterval(() => {{
-                    timePassed = timePassed += 1;
+                    timePassed += 1;
                     timeLeft = TIME_LIMIT - timePassed;
-                    
                     document.getElementById("base-timer-label").innerHTML = formatTime(timeLeft);
                     setCircleDasharray();
-        
-                    if (timeLeft <= 0) {{
-                        onTimesUp();
-                    }}
+                    if (timeLeft <= 0) onTimesUp();
                 }}, 1000);
             }}
             
@@ -1314,94 +1214,67 @@ def page_timer():
             function formatTime(time) {{
                 const minutes = Math.floor(time / 60);
                 let seconds = time % 60;
-                if (seconds < 10) {{ seconds = `0${{seconds}}`; }}
+                if (seconds < 10) seconds = `0${{seconds}}`;
                 return `${{minutes}}:${{seconds}}`;
             }}
 
-            function calculateTimeFraction() {{
-                const rawTimeFraction = timeLeft / TIME_LIMIT;
-                return rawTimeFraction - (1 / TIME_LIMIT) * (1 - rawTimeFraction);
-            }}
-
             function setCircleDasharray() {{
-                const circleDasharray = `${{(
-                    calculateTimeFraction() * FULL_DASH_ARRAY
-                ).toFixed(0)}} 283`;
-                document
-                    .getElementById("base-timer-path-remaining")
-                    .setAttribute("stroke-dasharray", circleDasharray);
+                const rawTimeFraction = timeLeft / TIME_LIMIT;
+                const circleDasharray = `${{( (rawTimeFraction - (1 / TIME_LIMIT) * (1 - rawTimeFraction)) * FULL_DASH_ARRAY ).toFixed(0)}} 283`;
+                document.getElementById("base-timer-path-remaining").setAttribute("stroke-dasharray", circleDasharray);
             }}
         </script>
     </body>
     </html>
     """
-    
-    # We use a container to center the iframe horizontally
     with st.container():
-        components.html(timer_html, height=450)
+        components.html(timer_html, height=400)
 
-    # --- 5. REWARD SECTION (GAMIFICATION) ---
+    # 5. Rewards
     st.markdown("---")
-    c_reward, c_info = st.columns([2, 1])
-    
-    with c_reward:
-        st.markdown("### 🎁 Claim Session Rewards")
-        st.caption("Upon timer completion, verify your work to claim XP.")
-        
-        # Reward Logic based on Duration
+    c_rew, c_inf = st.columns([2, 1])
+    with c_rew:
+        st.markdown("### 🎁 Session Rewards")
         possible_xp = 50 if st.session_state['timer_duration'] == 25 else 100 if st.session_state['timer_duration'] == 15 else 10
-        
         if st.button(f"Verify & Claim +{possible_xp} XP", use_container_width=True):
             st.session_state['user_xp'] += possible_xp
-            # Update Level
             st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
-            
-            # Log History
-            today_str = datetime.date.today().strftime("%Y-%m-%d")
-            st.session_state['xp_history'].append({"Date": today_str, "XP": possible_xp})
-            
+            st.session_state['xp_history'].append({"Date": datetime.date.today().strftime("%Y-%m-%d"), "XP": possible_xp})
             sync_data()
-            st.balloons()
-            st.toast(f"Session Recorded! +{possible_xp} XP", icon="🧠")
+            st.toast(f"Logged! +{possible_xp} XP", icon="🧠")
             time.sleep(1)
             st.rerun()
+    with c_inf:
+        st.info(f"Mode: **{st.session_state['timer_mode']}**\n\nFocus: {current_focus}")
 
-    with c_info:
-        st.info(f"**Current Mode:** {st.session_state['timer_mode']}\n\nMaintain focus on '{current_focus}'. Do not switch tabs if possible.")
-
-# --- NEW: CALENDAR PAGE ---
-
+# --- PAGE: CALENDAR (MOBILE OPTIMIZED) ---
 def page_calendar():
-    # --- 📱 CRITICAL CSS FIX FOR CALENDAR GRID 📱 ---
-    # This forces the columns (days) to stay side-by-side on mobile
+    """
+    Renders a responsive calendar where columns stay aligned on mobile.
+    Includes task management for selected dates.
+    """
+    # 1. Critical CSS for Mobile Grid Stability
     st.markdown("""
     <style>
-        /* Force all columns on this page to be side-by-side with equal width */
-        [data-testid="column"], [data-testid="stColumn"] {
-            flex: 1 1 0% !important;
-            min-width: 0 !important;
-            padding: 0 1px !important; 
-        }
-        
-        /* Make the text centered and smaller so it fits */
-        [data-testid="column"] button, [data-testid="stColumn"] button {
-            padding: 0px 5px !important;
-            min-height: 40px !important; 
-            font-size: 12px !important;
-        }
-        
-        /* Fix the header alignment */
-        h3 { text-align: center; font-size: 20px !important; margin: 0 !important; }
+        /* Force Calendar Columns to stay inline on mobile */
+        [data-testid="column"] { flex: 1 1 0% !important; min-width: 0 !important; padding: 0 1px !important; }
+        /* Smaller buttons for calendar days */
+        [data-testid="column"] button { padding: 0px 2px !important; min-height: 35px !important; font-size: 12px !important; }
+        /* Header Alignment */
+        h3 { text-align: center; font-size: 18px !important; margin: 0 !important; }
+        /* Ensure Inputs on form are readable */
+        .stTextInput input, .stTimeInput input { font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="big-title">📅 Tactical Grid</div>', unsafe_allow_html=True)
 
+    # State Defaults
     if 'cal_year' not in st.session_state: st.session_state['cal_year'] = datetime.date.today().year
     if 'cal_month' not in st.session_state: st.session_state['cal_month'] = datetime.date.today().month
     if 'sel_date' not in st.session_state: st.session_state['sel_date'] = datetime.date.today().strftime("%Y-%m-%d")
 
-    # 1. Navigation
+    # 2. Navigation
     c_prev, c_month, c_next = st.columns([1, 4, 1], vertical_alignment="center")
     with c_prev:
         if st.button("◀", key="prev_m"):
@@ -1417,16 +1290,12 @@ def page_calendar():
         month_name = calendar.month_name[st.session_state['cal_month']]
         st.markdown(f"<h3>{month_name} {st.session_state['cal_year']}</h3>", unsafe_allow_html=True)
 
-    # 2. Grid Headers (M T W T F S S)
-    # Use a container to slightly separate headers from days
-    with st.container():
-        cols = st.columns(7)
-        days = ["M","T","W","T","F","S","S"]
-        for i, d in enumerate(days):
-            # We use small font for mobile headers
-            cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:#888; font-size:12px;'>{d}</div>", unsafe_allow_html=True)
+    # 3. Headers
+    cols = st.columns(7)
+    for i, d in enumerate(["M","T","W","T","F","S","S"]):
+        cols[i].markdown(f"<div style='text-align:center; color:#AAA; font-size:10px; font-weight:bold;'>{d}</div>", unsafe_allow_html=True)
 
-    # 3. Grid Days
+    # 4. Calendar Grid
     month_matrix = calendar.monthcalendar(st.session_state['cal_year'], st.session_state['cal_month'])
     for week in month_matrix:
         cols = st.columns(7)
@@ -1435,44 +1304,36 @@ def page_calendar():
                 cols[i].write("")
             else:
                 d_str = f"{st.session_state['cal_year']}-{st.session_state['cal_month']:02d}-{day:02d}"
-                has_task = any(t.get('Date') == d_str for t in st.session_state['timetable_slots'])
-                label = f"{day}"
-                if has_task: label += " •"
+                has_task = any(t.get('Date') == d_str for t in st.session_state.get('timetable_slots', []))
                 
-                # Highlight selected date
+                label = f"{day} •" if has_task else f"{day}"
                 btn_type = "primary" if st.session_state['sel_date'] == d_str else "secondary"
                 
                 if cols[i].button(label, key=f"d_{d_str}", type=btn_type, use_container_width=True):
                     st.session_state['sel_date'] = d_str
                     st.rerun()
 
-    # 4. Selected Date Details
+    # 5. Selected Day View
     st.markdown("---")
     sel = st.session_state['sel_date']
-    st.markdown(f"### 🎯 Missions: {sel}")
+    st.markdown(f"**Missions for {sel}**")
     
-    # Task List & Add Form - Use tabs or simple stack on mobile
-    
-    tasks = [t for t in st.session_state['timetable_slots'] if t.get('Date') == sel]
-    
+    tasks = [t for t in st.session_state.get('timetable_slots', []) if t.get('Date') == sel]
     if tasks:
         for t in tasks:
-            status = "✅" if t['Done'] else "⭕"
-            st.info(f"{status} **{t['Time']}** {t['Activity']}")
+            st.markdown(f"{'✅' if t['Done'] else '⭕'} **{t['Time']}** {t['Activity']}")
     else:
-        st.caption("No missions.")
+        st.caption("No missions deployed.")
 
     with st.form("add_cal", clear_on_submit=True):
-        st.markdown("**Add New Mission**")
-        c_t, c_time = st.columns([3, 2]) # These will also be side-by-side now due to our CSS, which is good
-        with c_t:
-            task = st.text_input("Task", label_visibility="collapsed", placeholder="Enter Task...")
-        with c_time:
-            time_at = st.time_input("Time", label_visibility="collapsed")
-            
-        if st.form_submit_button("Deploy Mission", use_container_width=True):
+        c_t, c_tm = st.columns([3, 2])
+        with c_t: task = st.text_input("Task", placeholder="New Mission...")
+        with c_tm: time_at = st.time_input("Time")
+        
+        if st.form_submit_button("Add Mission", use_container_width=True):
             st.session_state['timetable_slots'].append({
-                "Date": sel, "Time": time_at.strftime("%H:%M"), "Activity": task, "Done":False, "Category":"General", "XP":50
+                "Date": sel, "Time": time_at.strftime("%H:%M"), "Activity": task, 
+                "Done": False, "Category": "General", "XP": 50, "Difficulty": "Medium"
             })
             sync_data()
             st.rerun()
@@ -1480,384 +1341,365 @@ def page_calendar():
 # --- 8. PAGE: AI ASSISTANT ---
 
 def page_ai_assistant():
-    # Import necessary libraries for this page
-    from streamlit_mic_recorder import mic_recorder
-    from PIL import Image 
-    import io
-
+    """
+    Advanced Chat Interface with Voice Support and Auto-Audio Response.
+    Includes persistent history and context-aware responses.
+    """
+    # Local imports for this specific page
+    import uuid
+    from PIL import Image
+    
     # --- HELPER: PROCESS MESSAGE ---
-    # NOTICE: This 'def' aligns perfectly with the imports above
     def process_message(prompt_text):
         """Helper to send message, get AI response, and save to history."""
-        # 1. HANDLE NEW CHAT SESSION
+        # 1. Initialize Session if needed
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
-            short_name = " ".join(prompt_text.split()[:5])
-            st.session_state['current_session_name'] = short_name
+            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4])
 
-        # 2. USER MESSAGE
+        # 2. Append User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
         save_chat_to_cloud("user", prompt_text)
         
-        # 3. AI RESPONSE
-        response_text, _ = perform_ai_analysis(prompt_text)
+        # 3. Generate AI Response
+        with st.spinner("Analyzing parameters..."):
+            response_text, _ = perform_ai_analysis(prompt_text)
         
+        # 4. Append AI Message
         st.session_state['chat_history'].append({"role": "model", "text": response_text})
         save_chat_to_cloud("model", response_text)
         
-        # 4. AUDIO & RERUN
+        # 5. Audio Feedback (Auto-Play)
+        # Limit text length for TTS to avoid URL errors
         clean_text = response_text.replace('\n', ' ').replace('#', '')[:200]
         tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
         st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
         
         st.rerun()
 
-    # --- HEADER ---
+    # --- HEADER SECTION ---
     c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
     with c_title:
         st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
     
     with c_mic:
+        # Mic Recorder Widget
         audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
 
-    # --- VOICE LOGIC ---
+    # --- VOICE INPUT PROCESSING ---
     if audio_data:
-        try:
-            st.toast("Voice received. Processing...", icon="🎧")
-        except Exception as e:
-            st.error(f"Voice Error: {e}")
+        # Note: mic_recorder usually returns raw bytes, transcription would need an STT service.
+        # Since we don't have Whisper API keys configured here, we notify the user.
+        st.toast("Voice captured. (STT requires API integration)", icon="🎤")
 
-    # --- CHAT DISPLAY LOGIC ---
+    # --- CHAT UI LOGIC ---
     if not st.session_state.get('chat_history'):
-        # --- WELCOME SCREEN ---
+        # --- EMPTY STATE (WELCOME SCREEN) ---
         user_name = st.session_state.get('user_name', 'Hunter').split()[0]
-        greetings = ["Where should we start?", "What is the mission?", "Ready to optimize?"]
-        random_greet = random.choice(greetings)
+        greet = random.choice(["Reporting for duty.", "Systems online.", "Ready to optimize."])
 
         st.markdown(f"""
         <style>
-            .welcome-text {{ font-family: 'Inter', sans-serif; font-size: 45px; font-weight: 600; background: -webkit-linear-gradient(0deg, #B5FF5F, #00E5FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-top: 20px; }}
-            .sub-text {{ font-family: 'Inter', sans-serif; font-size: 45px; font-weight: 600; color: #555; margin-bottom: 40px; }}
+            .welcome-h1 {{ 
+                font-family: 'Inter', sans-serif; font-size: 40px; font-weight: 700; 
+                background: linear-gradient(90deg, #B5FF5F, #00E5FF); -webkit-background-clip: text; 
+                -webkit-text-fill-color: transparent; margin-top: 20px; 
+            }}
+            .welcome-sub {{ font-size: 20px; color: #666; margin-bottom: 40px; }}
         </style>
-        <div><div class="welcome-text">Hi, {user_name}</div><div class="sub-text">{random_greet}</div></div>
+        <div>
+            <div class="welcome-h1">Hi, {user_name}</div>
+            <div class="welcome-sub">{greet}</div>
+        </div>
         """, unsafe_allow_html=True)
 
+        # Quick Action Buttons
         c1, c2, c3, c4 = st.columns(4)
         if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a strict hourly schedule for me today.")
         if c2.button("🧠 Learn", use_container_width=True): process_message("Explain a complex topic simply.")
         if c3.button("🔥 Motivate", use_container_width=True): process_message("I am tired. Give me military motivation.")
-        if c4.button("📝 Study", use_container_width=True): process_message("Give me scientific study techniques.")
+        if c4.button("📝 Tips", use_container_width=True): process_message("Give me 3 productivity hacks.")
 
     else:
+        # --- CHAT HISTORY RENDERER ---
         chat_container = st.container()
         with chat_container:
             for msg in st.session_state['chat_history']:
                 content = msg.get('text') or msg.get('Content')
-                raw_role = str(msg.get('role') or msg.get('Role')).lower()
+                role = str(msg.get('role') or msg.get('Role')).lower()
                 
-                # --- FIXED AVATAR LOGIC (With PIL) ---
-                if raw_role in ["model", "assistant", "ai"]:
+                # Determine Role & Avatar
+                if role in ["model", "assistant", "ai"]:
                     ui_role = "assistant"
+                    # Try loading custom avatar
                     if os.path.exists("1000592991.png"):
-                        avatar_icon = Image.open("1000592991.png")
+                        avatar = Image.open("1000592991.png")
                     else:
-                        avatar_icon = "🤖"
-                        
+                        avatar = "🤖" 
                 else:
                     ui_role = "user"
                     user_av = st.session_state.get('user_avatar', "👤")
-                    
-                    if isinstance(user_av, str) and (user_av.endswith('.png') or user_av.endswith('.jpg')) and os.path.exists(user_av):
-                        avatar_icon = Image.open(user_av)
+                    # Check if avatar is a valid file path
+                    if isinstance(user_av, str) and os.path.exists(user_av):
+                        avatar = Image.open(user_av)
                     else:
-                        avatar_icon = user_av if user_av else "👤"
+                        avatar = "👤"
 
-                # RENDER
-                with st.chat_message(ui_role, avatar=avatar_icon):
-                    st.write(content)
+                # Render Message
+                with st.chat_message(ui_role, avatar=avatar):
+                    st.markdown(content)
 
-    # --- INPUT ---
+    # --- INPUT AREA ---
     if prompt := st.chat_input("Input command parameters..."):
         process_message(prompt)
 
-# --- 9. CUSTOM UI STYLING ---
+# --- 9. CUSTOM UI STYLING (GLOBAL CSS) ---
 def inject_custom_css():
-    # 1. Load User Preferences
-    theme_color = st.session_state.get('theme_color', 'Venom Green (Default)')
-    theme_mode = st.session_state.get('theme_mode', 'Light') 
+    """Injects CSS variables and overrides for theming."""
+    # 1. Load Preferences
+    theme_mode = st.session_state.get('theme_mode', 'Dark') 
     
-    # 2. Define Colors
-    colors = {"Venom Green (Default)": "#B5FF5F", "Cyber Blue": "#00E5FF", "Crimson Alert": "#FF2A2A", "Stealth Grey": "#A0A0A0"}
-    accent = colors.get(theme_color, "#B5FF5F")
-    
-    # 3. Mode Logic
+    # 2. Define Palette
     if theme_mode == "Light":
-        main_bg, sidebar_bg, card_bg, text_color = "linear-gradient(180deg, #FFF6E5 0%, #FFFFFF 100%)", "linear-gradient(180deg, #FDF3E6 0%, #FFFFFF 100%)", "#FFFFFF", "#1A1A1A"
-        input_bg = "#FFFFFF"
+        colors = {
+            "bg": "linear-gradient(180deg, #FDFBF7 0%, #FFFFFF 100%)",
+            "sidebar": "#F4F4F4",
+            "card": "#FFFFFF",
+            "text": "#1A1A1A",
+            "input": "#FFFFFF",
+            "border": "#E0E0E0"
+        }
     else:
-        main_bg, sidebar_bg, card_bg, text_color = "linear-gradient(180deg, #0E1117 0%, #151922 100%)", "#0E1117", "#1E232F", "#FAFAFA"
-        input_bg = "#262730"
+        colors = {
+            "bg": "linear-gradient(180deg, #0E1117 0%, #161B22 100%)",
+            "sidebar": "#0E1117",
+            "card": "#1E232F",
+            "text": "#FAFAFA",
+            "input": "#262730",
+            "border": "rgba(255,255,255,0.1)"
+        }
+        
+    accent = "#B5FF5F" # Standard Venom Green
 
-    # 4. INJECT CSS (WITH MOBILE GRID FIX)
+    # 3. Inject CSS
     st.markdown(f"""
         <style>
-            :root {{ --accent: {accent}; --text: {text_color}; --card-bg: {card_bg}; }}
-            .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
-            section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
+            :root {{ 
+                --accent: {accent}; 
+                --text: {colors['text']}; 
+                --card-bg: {colors['card']}; 
+            }}
+            
+            /* Main Backgrounds */
+            .stApp {{ background: {colors['bg']} !important; color: {colors['text']} !important; }}
+            section[data-testid="stSidebar"] {{ background: {colors['sidebar']} !important; }}
             
             /* Typography */
-            .big-title {{ font-size: 42px !important; font-weight: 900 !important; color: {text_color} !important; margin-bottom: 5px; }}
-            .sub-title {{ font-size: 18px !important; color: {text_color} !important; opacity: 0.8; margin-bottom: 20px; }}
+            .big-title {{ 
+                font-size: 38px !important; 
+                font-weight: 800 !important; 
+                color: {colors['text']} !important; 
+                margin-bottom: 10px; 
+            }}
             
-            /* Cards & Inputs */
-            .css-card {{ background-color: {card_bg}; border-radius: 24px; padding: 25px; margin-bottom: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }}
-            .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {{ background-color: {input_bg} !important; border-radius: 12px; }}
+            /* Card Component */
+            .glass-card {{
+                background: {colors['card']};
+                border: 1px solid {colors['border']};
+                border-radius: 16px;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }}
+            
+            /* Input Fields */
+            .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {{ 
+                background-color: {colors['input']} !important; 
+                color: {colors['text']} !important;
+                border-radius: 10px; 
+                border: 1px solid {colors['border']} !important;
+            }}
             
             /* Buttons */
-            .stButton button {{ border-radius: 20px; font-weight: 600; width: 100%; border: 1px solid rgba(0,0,0,0.1); }}
+            .stButton button {{ 
+                border-radius: 12px; 
+                font-weight: 600; 
+                transition: transform 0.1s;
+            }}
+            .stButton button:active {{ transform: scale(0.98); }}
         </style>
     """, unsafe_allow_html=True)
 
-# --- 10. MAIN ROUTER ---
+# --- 10. PDF REPORT GENERATOR ---
 
 def create_mission_report(user_name, level, xp, history):
+    """Generates a PDF summary of user progress."""
     pdf = FPDF()
     pdf.add_page()
     
-    # 1. Header (Tactical Style)
+    # 1. Header
     pdf.set_font("Courier", "B", 24)
     pdf.cell(0, 10, "TIMEHUNT // MISSION REPORT", ln=True, align='C')
     pdf.ln(5)
     
-    pdf.set_font("Courier", "", 12)
+    pdf.set_font("Courier", "", 10)
     pdf.cell(0, 10, f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
-    pdf.line(10, 30, 200, 30) # Horizontal line
-    pdf.ln(20)
+    pdf.line(10, 30, 200, 30) 
+    pdf.ln(15)
     
     # 2. Agent Profile
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, f"AGENT: {user_name}", ln=True)
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, f"AGENT: {user_name.upper()}", ln=True)
     pdf.set_font("Arial", "", 12)
-    pdf.cell(0, 10, f"Current Rank: Level {level}", ln=True)
-    pdf.cell(0, 10, f"Total Experience: {xp} XP", ln=True)
+    pdf.cell(0, 10, f"Rank: Level {level} | XP: {xp}", ln=True)
     pdf.ln(10)
     
-    # 3. Performance History
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(0, 10, "MISSION LOG (Last 7 Entries)", ln=True)
-    pdf.ln(5)
+    # 3. Mission Log Table
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, "RECENT MISSION LOG:", ln=True)
+    pdf.ln(2)
     
-    pdf.set_font("Courier", "", 10)
-    # Table Header
-    pdf.cell(40, 10, "DATE", 1)
-    pdf.cell(40, 10, "XP GAINED", 1)
+    # Headers
+    pdf.set_font("Courier", "B", 10)
+    pdf.cell(50, 8, "DATE", 1)
+    pdf.cell(50, 8, "XP GAINED", 1)
     pdf.ln()
     
-    # Table Rows (Last 7 entries)
+    # Rows
+    pdf.set_font("Courier", "", 10)
     if history:
-        for entry in history[-7:]:
-            date = entry.get('Date', 'Unknown')
-            gain = str(entry.get('XP', 0))
-            pdf.cell(40, 10, date, 1)
-            pdf.cell(40, 10, f"+{gain} XP", 1)
+        for entry in history[-10:]: # Last 10 entries
+            date_str = str(entry.get('Date', 'N/A'))
+            xp_str = f"+{entry.get('XP', 0)}"
+            pdf.cell(50, 8, date_str, 1)
+            pdf.cell(50, 8, xp_str, 1)
             pdf.ln()
     else:
-        pdf.cell(0, 10, "No mission data recorded yet.", ln=True)
+        pdf.cell(100, 8, "No data available.", 1, ln=True)
         
     pdf.ln(20)
-    pdf.set_font("Arial", "I", 10)
-    pdf.cell(0, 10, "End of Report. Stay Sharp.", align='C')
+    pdf.set_font("Arial", "I", 8)
+    pdf.cell(0, 10, "End of Transmission.", align='C')
     
-    # Return PDF as bytes
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 10. MAIN ROUTER ---
+# --- 11. PAGE: HOME DASHBOARD ---
+
 def page_home():
-    # --- 1. TIME & GREETING LOGIC ---
-    # Calculate IST (UTC + 5:30)
+    # --- 1. GREETING LOGIC ---
     utc_now = datetime.datetime.utcnow()
     ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
-    current_hour = ist_now.hour
+    hr = ist_now.hour
     
-    if 5 <= current_hour < 12: greeting = "Good Morning"
-    elif 12 <= current_hour < 17: greeting = "Good Afternoon"
-    elif 17 <= current_hour < 22: greeting = "Good Evening"
+    if 5 <= hr < 12: greeting = "Good Morning"
+    elif 12 <= hr < 17: greeting = "Good Afternoon"
+    elif 17 <= hr < 22: greeting = "Good Evening"
     else: greeting = "Night Operations"
 
-    # Dynamic Quotes
-    quotes = [
-        "Discipline is the bridge between goals and accomplishment.", 
-        "The only bad workout is the one that didn't happen.", 
-        "Focus on the mission, not the noise.", 
-        "Your future self is watching you right now."
-    ]
-    random_sub = random.choice(quotes)
+    quote = random.choice([
+        "Discipline is freedom.", 
+        "Focus on the mission.", 
+        "Execute with precision.",
+        "Your future is created now."
+    ])
 
-    # --- 2. HERO BANNER (UPDATED WITH REAL WEATHER) ---
-    st.markdown("""
-    <style>
-        .hero-container {
-            padding: 20px;
-            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
-            border-radius: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
-            margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .glass-card {
-            background: rgba(20, 20, 20, 0.6);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 16px;
-            padding: 20px;
-            transition: transform 0.2s;
-        }
-        .glass-card:hover {
-            transform: translateY(-2px);
-            border-color: var(--accent);
-        }
-        .progress-bg {
-            width: 100%;
-            height: 8px;
-            background: #333;
-            border-radius: 4px;
-            margin-top: 10px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent), #00E5FF);
-            border-radius: 4px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    col_hero_text, col_hero_weather = st.columns([3, 1])
+    # --- 2. HERO BANNER ---
+    col_text, col_weather = st.columns([3, 1])
     
-    with col_hero_text:
+    with col_text:
         st.markdown(f'<div class="big-title">{greeting}, {st.session_state["user_name"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="color:#aaa; font-size:16px;">{random_sub}</div>', unsafe_allow_html=True)
+        st.caption(f"🚀 {quote}")
     
-    with col_hero_weather:
-        # 1. Get Location from Session (Default: Jaipur)
-        target_city = st.session_state.get('user_city', 'Jaipur')
+    with col_weather:
+        # Fetch Real Weather
+        city = st.session_state.get('user_city', 'Jaipur')
+        temp, desc = get_real_time_weather(city)
         
-        # 2. Fetch Real Data (Using the new urllib function)
-        real_temp, real_desc = get_real_time_weather(target_city)
-        
-        # 3. Render Tactical Weather Widget
         st.markdown(f"""
-        <div style="text-align:right; font-family:monospace; animation: fadeIn 2s;">
-            <div style="font-size:28px; font-weight:bold; color:var(--accent); text-shadow: 0 0 10px rgba(0,229,255,0.3);">{real_temp}</div>
-            <div style="color:#fff; font-size:14px; letter-spacing:1px;">{real_desc}</div>
-            <div style="color:#888; font-size:12px;">{ist_now.strftime('%H:%M')} IST</div>
+        <div style="text-align:right; font-family:monospace; background:rgba(255,255,255,0.05); padding:10px; border-radius:10px;">
+            <div style="font-size:24px; font-weight:bold; color:#B5FF5F;">{temp}</div>
+            <div style="font-size:12px;">{desc}</div>
         </div>
         """, unsafe_allow_html=True)
 
     st.write("")
 
-    # --- 3. LEVEL & XP SYSTEM (VISUALIZED) ---
-    current_xp = st.session_state.get('user_xp', 0)
-    current_lvl = st.session_state.get('user_level', 1)
+    # --- 3. LEVEL PROGRESS ---
+    xp = st.session_state.get('user_xp', 0)
+    lvl = st.session_state.get('user_level', 1)
     
-    xp_for_next_lvl = current_lvl * 1000
-    xp_in_current_lvl = current_xp - ((current_lvl - 1) * 1000)
-    progress_percent = min(100, max(0, (xp_in_current_lvl / 1000) * 100))
+    # Calculate progress bar (0-1000 XP per level loop)
+    xp_in_lvl = xp % 1000
+    prog = (xp_in_lvl / 1000) * 100
     
-    col_level, col_obj = st.columns([2, 1])
-    
-    with col_level:
-        st.markdown(f"""
-        <div class="glass-card">
-            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                <span style="font-weight:bold; font-size:18px;">Hunter Rank: {current_lvl}</span>
-                <span style="color:var(--accent);">{int(xp_in_current_lvl)} / 1000 XP</span>
-            </div>
-            <div class="progress-bg">
-                <div class="progress-fill" style="width: {progress_percent}%;"></div>
-            </div>
-            <div style="margin-top:8px; font-size:12px; color:#888;">
-                Next Rank Unlocks: <b>Elite Status</b> (at {xp_for_next_lvl} XP)
-            </div>
+    st.markdown(f"""
+    <div class="glass-card">
+        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+            <span style="font-weight:bold;">Rank: {lvl}</span>
+            <span style="color:#B5FF5F;">{xp_in_lvl} / 1000 XP</span>
         </div>
-        """, unsafe_allow_html=True)
+        <div style="width:100%; height:8px; background:#333; border-radius:4px;">
+            <div style="width:{prog}%; height:100%; background:linear-gradient(90deg, #B5FF5F, #00E5FF); border-radius:4px;"></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.write("")
 
-    with col_obj:
-        current_obj = st.session_state.get('current_objective', 'Clear Backlog')
-        with st.container(border=True):
-            st.caption("🎯 CURRENT OBJECTIVE")
-            st.markdown(f"**{current_obj}**")
-            if st.button("Edit", key="edit_obj_btn", help="Update your main focus"):
-                 with st.popover("Update Objective"):
-                     new_obj = st.text_input("New Focus", value=current_obj)
-                     if st.button("Save Focus"):
-                         st.session_state['current_objective'] = new_obj
-                         st.rerun()
-
-    # --- 4. DASHBOARD GRID ---
+    # --- 4. DASHBOARD CARDS ---
     c1, c2, c3 = st.columns(3)
     
-    next_mission = "No Active Missions"
-    mission_time = "--:--"
-    
-    sorted_slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
-    pending_slots = [s for s in sorted_slots if not s['Done']]
-    
-    if pending_slots:
-        next_mission = pending_slots[0]['Activity']
-        mission_time = pending_slots[0]['Time']
+    # Card 1: Next Mission
+    slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
+    pending = [s for s in slots if not s['Done']]
+    next_task = pending[0]['Activity'] if pending else "No Active Missions"
+    next_time = pending[0]['Time'] if pending else "--:--"
     
     with c1:
         st.markdown(f"""
-        <div class="glass-card" style="height: 180px; position:relative;">
-            <div style="color:#888; font-size:12px; letter-spacing:1px;">NEXT PROTOCOL</div>
-            <div style="font-size:22px; font-weight:bold; margin-top:5px; line-height:1.2;">{next_mission}</div>
-            <div style="position:absolute; bottom:20px; left:20px; font-family:monospace; color:var(--accent); font-size:28px;">
-                {mission_time}
-            </div>
+        <div class="glass-card" style="height:160px; display:flex; flex-direction:column; justify-content:space-between;">
+            <div style="color:#888; font-size:12px;">NEXT PROTOCOL</div>
+            <div style="font-size:20px; font-weight:bold;">{next_task}</div>
+            <div style="font-size:28px; color:#B5FF5F; font-family:monospace;">{next_time}</div>
         </div>
         """, unsafe_allow_html=True)
 
+    # Card 2: Quick Actions
     with c2:
         with st.container(border=True):
-            st.markdown("**⚡ Quick Actions**")
-            if st.button("➕ New Task", use_container_width=True):
-                st.toast("Go to Scheduler Tab to add detailed tasks.", icon="ℹ️")
-            
-            if st.button("🧘 Decompress", use_container_width=True):
-                st.session_state['show_breathing'] = not st.session_state.get('show_breathing', False)
+            st.markdown("**⚡ Actions**")
+            if st.button("➕ Add Task", use_container_width=True):
+                st.session_state['page_mode'] = 'Scheduler' # Redirect via state if supported
                 st.rerun()
-                
-            if st.button("🤖 Ask AI", use_container_width=True):
-                st.toast("Switching to AI Assistant...", icon="🧠")
+            if st.button("🧘 Breathe", use_container_width=True):
+                st.session_state['show_breathing'] = True
+                st.rerun()
 
+    # Card 3: Streak
     streak = st.session_state.get('streak', 1)
     with c3:
         st.markdown(f"""
-        <div class="glass-card" style="height: 180px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
+        <div class="glass-card" style="height:160px; text-align:center;">
             <div style="font-size:40px;">🔥</div>
-            <div style="font-size:30px; font-weight:bold; color:#fff;">{streak} Day</div>
+            <div style="font-size:24px; font-weight:bold;">{streak} Days</div>
             <div style="color:#888; font-size:12px;">ACTIVE STREAK</div>
-            <div style="margin-top:5px; color:var(--accent); font-size:12px;">XP Multiplier: {1 + (streak*0.1):.1f}x</div>
         </div>
         """, unsafe_allow_html=True)
 
     # --- 5. BREATHING OVERLAY ---
     if st.session_state.get('show_breathing', False):
         st.markdown("---")
-        st.markdown("### 🧘 Tactical Decompression")
+        st.markdown("<h3 style='text-align:center;'>🧘 Decompress</h3>", unsafe_allow_html=True)
+        
+        # CSS Animation for Pulse
         st.markdown("""
-        <div style="display:flex; justify-content:center; margin: 20px 0;">
+        <div style="display:flex; justify-content:center; margin: 30px 0;">
             <div style="
-                width: 80px; height: 80px; 
-                background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+                width: 100px; height: 100px; 
+                background: radial-gradient(circle, #B5FF5F 0%, transparent 70%);
                 border-radius: 50%;
                 animation: pulse 4s infinite ease-in-out;
             "></div>
         </div>
-        <div style="text-align:center; font-family:monospace; color:#aaa;">INHALE... HOLD... EXHALE...</div>
         <style>
             @keyframes pulse {
                 0% { transform: scale(0.8); opacity: 0.3; }
@@ -1866,23 +1708,27 @@ def page_home():
             }
         </style>
         """, unsafe_allow_html=True)
-        if st.button("Close Exercise"):
+        
+        if st.button("End Exercise", use_container_width=True):
             st.session_state['show_breathing'] = False
             st.rerun()
 
 # --- 11. PAGE: ABOUT (REDESIGNED "BEST IN CLASS") ---
 def page_about():
+    """
+    Renders the professional credential page.
+    Clean, bordered layout suitable for a Capstone Project presentation.
+    """
     # 1. Main Title
     st.markdown("# 🛡️ System Architecture")
     st.markdown("### TimeHunt AI: Tactical Productivity Suite")
     
-    # 2. CAPSTONE DOSSIER (Replaces the Black Box)
-    # We use a native container with a border. It looks clean and works on all phones.
+    # 2. CAPSTONE DOSSIER
     with st.container(border=True):
-        c_icon, c_info = st.columns([1, 5])
+        c_icon, c_info = st.columns([1, 5], vertical_alignment="center")
         
         with c_icon:
-            st.markdown("<div style='font-size: 45px; text-align: center; padding-top: 10px;'>🎓</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 50px; text-align: center;'>🎓</div>", unsafe_allow_html=True)
         
         with c_info:
             st.markdown("### CBSE Capstone Project")
@@ -1891,7 +1737,7 @@ def page_about():
 
     st.write("") # Spacer
 
-    # 3. FEATURES GRID (Clean & Colorful)
+    # 3. FEATURES GRID
     st.markdown("### ⚡ Operational Arsenal")
     
     row1_1, row1_2 = st.columns(2)
@@ -1918,21 +1764,18 @@ def page_about():
 
     st.divider()
 
-    # 4. TECH STACK (Professional Badges)
+    # 4. TECH STACK BADGES
     st.markdown("### 🏗️ Technical Stack")
-    
-    # Custom HTML for nice pills/badges
     st.markdown("""
     <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-        <span style="background-color: #FF4B4B; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Streamlit</span>
-        <span style="background-color: #306998; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Python 3.9+</span>
-        <span style="background-color: #4285F4; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Google Gemini</span>
-        <span style="background-color: #0F9D58; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Google Sheets API</span>
-        <span style="background-color: #F4B400; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; font-weight: bold;">Pandas</span>
+        <span style="background-color: #FF4B4B; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;">Streamlit</span>
+        <span style="background-color: #306998; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;">Python 3.9+</span>
+        <span style="background-color: #4285F4; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;">Google Gemini</span>
+        <span style="background-color: #0F9D58; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;">Google Sheets API</span>
+        <span style="background-color: #F4B400; color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold;">Pandas</span>
     </div>
     """, unsafe_allow_html=True)
 
-    st.write("")
     st.write("")
     st.caption("🔒 System Status: ONLINE | 🛡️ Developed with ❤️ by TIME HUNT AI TEAM")
 
@@ -1941,72 +1784,61 @@ def fetch_leaderboard_data():
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="Sheet1", ttl=0) # Read all users
+        df = conn.read(worksheet="Sheet1", ttl=0)
         
         if not df.empty and 'XP' in df.columns:
-            # Ensure XP is a number
+            # Clean and Sort Data
             df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
-            # Sort Highest -> Lowest
             df = df.sort_values(by='XP', ascending=False).reset_index(drop=True)
-            # Add Rank
             df['Rank'] = df.index + 1
-            return df.head(10) # Return top 10
-    except Exception as e:
+            return df.head(10)
+    except Exception:
         return pd.DataFrame()
     return pd.DataFrame()
 
 def page_dashboard():
-    # --- 1. DASHBOARD STYLING (Cyberpunk/Tactical Look) ---
+    # --- 1. DASHBOARD STYLING ---
     st.markdown("""
     <style>
         .dash-card {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
+            border-radius: 16px;
             padding: 20px;
             text-align: center;
             backdrop-filter: blur(10px);
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
         }
+        .dash-card:hover { transform: translateY(-5px); border-color: #B5FF5F; }
         .stat-value { font-size: 32px; font-weight: 800; color: #B5FF5F; }
         .stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #aaa; }
-        .rank-badge {
-            font-size: 50px;
-            animation: float 3s ease-in-out infinite;
-        }
-        @keyframes float {
-            0% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-            100% { transform: translateY(0px); }
-        }
+        .rank-badge { font-size: 50px; animation: float 3s ease-in-out infinite; }
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="big-title">📊 Intelligence Report</div>', unsafe_allow_html=True)
 
-    # --- 2. DATA PROCESSING ---
+    # --- 2. DATA CALCULATION ---
     slots = st.session_state.get('timetable_slots', [])
     xp = st.session_state.get('user_xp', 0)
     level = st.session_state.get('user_level', 1)
     
-    # Calculate Metrics
-    total_tasks = len(slots)
+    total = len(slots)
     completed = len([t for t in slots if t.get('Done')])
-    pending = total_tasks - completed
-    success_rate = int((completed / total_tasks * 100)) if total_tasks > 0 else 0
+    rate = int((completed / total * 100)) if total > 0 else 0
     
-    # Calculate Rank Title
-    rank_titles = {1: "Scout", 5: "Ranger", 10: "Veteran", 20: "Commander", 50: "Titan"}
-    # Find closest rank without going over
+    # Dynamic Rank Logic
+    titles = {1: "Scout", 5: "Ranger", 10: "Veteran", 20: "Commander", 50: "Titan"}
     current_title = "Rookie"
-    for lvl, title in rank_titles.items():
+    for lvl, title in titles.items():
         if level >= lvl: current_title = title
     
-    # --- 3. TOP ROW: HUD STATS ---
+    # --- 3. TOP ROW: HUD ---
     c_rank, c_stats = st.columns([1, 3])
     
     with c_rank:
-        # Animated Rank Badge
         st.markdown(f"""
         <div class="dash-card">
             <div class="rank-badge">🛡️</div>
@@ -2016,46 +1848,40 @@ def page_dashboard():
         """, unsafe_allow_html=True)
         
     with c_stats:
-        # 3-Column Metrics
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f"""<div class="dash-card"><div class="stat-value">{xp}</div><div class="stat-label">Total XP</div></div>""", unsafe_allow_html=True)
-        with c2:
-            st.markdown(f"""<div class="dash-card"><div class="stat-value">{completed}</div><div class="stat-label">Missions Done</div></div>""", unsafe_allow_html=True)
-        with c3:
-            color = "#00E5FF" if success_rate > 80 else "#FF2A2A"
-            st.markdown(f"""<div class="dash-card"><div class="stat-value" style="color:{color} !important;">{success_rate}%</div><div class="stat-label">Success Rate</div></div>""", unsafe_allow_html=True)
+        with c1: st.markdown(f"""<div class="dash-card"><div class="stat-value">{xp}</div><div class="stat-label">Total XP</div></div>""", unsafe_allow_html=True)
+        with c2: st.markdown(f"""<div class="dash-card"><div class="stat-value">{completed}</div><div class="stat-label">Missions</div></div>""", unsafe_allow_html=True)
+        with c3: 
+            clr = "#00E5FF" if rate > 80 else "#FF2A2A"
+            st.markdown(f"""<div class="dash-card"><div class="stat-value" style="color:{clr} !important;">{rate}%</div><div class="stat-label">Success Rate</div></div>""", unsafe_allow_html=True)
 
     st.write("")
     
-    # --- 4. MIDDLE ROW: CHARTS & SECTOR ANALYSIS ---
-    col_chart, col_breakdown = st.columns([2, 1])
+    # --- 4. CHARTS & ANALYSIS ---
+    c_chart, c_split = st.columns([2, 1])
     
-    with col_chart:
-        st.markdown("### 📈 XP Velocity (Growth)")
+    with c_chart:
+        st.markdown("### 📈 XP Velocity")
         if st.session_state.get('xp_history'):
-            history_df = pd.DataFrame(st.session_state['xp_history'])
-            # Create a clean line chart
-            st.line_chart(history_df.set_index('Date')['XP'], color="#B5FF5F")
+            df_hist = pd.DataFrame(st.session_state['xp_history'])
+            st.line_chart(df_hist.set_index('Date')['XP'], color="#B5FF5F")
         else:
-            st.info("Awaiting mission data to generate tactical graph.")
+            st.info("Insufficient data for tactical graph.")
             
-    with col_breakdown:
-        st.markdown("### 🧩 Sector Split")
+    with c_split:
+        st.markdown("### 🧩 Sectors")
         if slots:
-            # Pandas magic to count categories
-            df_slots = pd.DataFrame(slots)
-            if 'Category' in df_slots.columns:
-                cat_counts = df_slots['Category'].value_counts()
-                st.dataframe(cat_counts, use_container_width=True, column_config={"count": st.column_config.ProgressColumn("Volume", format="%d", min_value=0, max_value=int(cat_counts.max()))})
+            df_s = pd.DataFrame(slots)
+            if 'Category' in df_s.columns:
+                counts = df_s['Category'].value_counts()
+                st.dataframe(counts, use_container_width=True, column_config={"count": st.column_config.ProgressColumn("Vol", format="%d", min_value=0, max_value=int(counts.max()))})
         else:
-            st.caption("No sectors defined.")
+            st.caption("No active sectors.")
 
     st.divider()
 
-    # --- GLOBAL LEADERBOARD SECTION ---
+    # --- 5. GLOBAL LEADERBOARD ---
     st.markdown("### 🏆 Global Hunter Rankings")
-    
     leader_df = fetch_leaderboard_data()
     
     if not leader_df.empty:
@@ -2066,359 +1892,291 @@ def page_dashboard():
             column_config={
                 "Rank": st.column_config.NumberColumn("Rank", format="#%d", width="small"),
                 "Name": st.column_config.TextColumn("Agent", width="medium"),
-                "XP": st.column_config.ProgressColumn("Total XP", format="%d XP", min_value=0, max_value=int(leader_df['XP'].max() + 500))
+                "XP": st.column_config.ProgressColumn("XP", format="%d", min_value=0, max_value=int(leader_df['XP'].max() + 500))
             }
         )
-        
-        # Show User's Personal Rank
-        my_id = str(st.session_state.get('user_id'))
-        my_rank_row = leader_df[leader_df['UserID'].astype(str) == my_id]
-        if not my_rank_row.empty:
-            rank_num = my_rank_row.iloc[0]['Rank']
-            st.info(f"📍 You are currently **Rank #{rank_num}** on the global grid.")
     else:
-        st.warning("Leaderboard offline. Check connection.")
+        st.warning("Leaderboard Offline.")
 
-    # --- 5. EXPORT & LOGS ---
-    c_log, c_export = st.columns([3, 1])
-    
-    with c_log:
-        with st.expander("📜 Mission Log (Recent History)"):
-            if st.session_state.get('xp_history'):
-                st.dataframe(pd.DataFrame(st.session_state['xp_history']).tail(10), use_container_width=True)
-            else:
-                st.caption("Log is empty.")
-
-    with c_export:
-        st.markdown("### 🗂️ Archive")
-        if st.button("📄 Export Dossier (PDF)", type="primary", use_container_width=True):
-            try:
-                pdf_bytes = create_mission_report(
-                    st.session_state.get('user_name', 'Agent'),
-                    level,
-                    xp,
-                    st.session_state.get('xp_history', [])
-                )
-                b64 = base64.b64encode(pdf_bytes).decode()
-                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Mission_Report.pdf" style="text-decoration:none; color:#B5FF5F; font-weight:bold; border:1px solid #B5FF5F; padding:10px; border-radius:10px; display:block; text-align:center;">📥 Download Now</a>'
-                st.markdown(href, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Generation Failed: {e}")
-
-    
-# ------ SETTINGS PAGE --------
+    # --- 6. EXPORT ---
+    st.markdown("### 🗂️ Archive")
+    if st.button("📄 Export Dossier (PDF)", type="primary", use_container_width=True):
+        try:
+            pdf_bytes = create_mission_report(
+                st.session_state.get('user_name', 'Agent'), level, xp, st.session_state.get('xp_history', [])
+            )
+            b64 = base64.b64encode(pdf_bytes).decode()
+            href = f'<a href="data:application/octet-stream;base64,{b64}" download="Mission_Report.pdf" style="text-decoration:none; color:#B5FF5F; border:1px solid #B5FF5F; padding:10px; display:block; text-align:center; border-radius:10px;">📥 Download PDF</a>'
+            st.markdown(href, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Error: {e}")
+ 
+# ------ PAGE: SETTINGS --------
 
 def page_settings():
     st.markdown("## ⚙️ Command Center")
     
-    # --- 1. VISUAL INTERFACE ---
-    st.markdown("### 🎨 Visual Interface")
-    c_mode, c_color = st.columns(2)
-    with c_mode:
-        current_mode = st.session_state.get('theme_mode', 'Dark')
-        mode_choice = st.radio("System Mode", ["Dark", "Light"], horizontal=True, index=0 if current_mode=='Dark' else 1)
-    with c_color:
-        current_theme = st.session_state.get('theme_color', 'Venom Green (Default)')
-        color_options = ["Venom Green (Default)", "Cyber Blue", "Crimson Alert", "Stealth Grey"]
-        idx_theme = color_options.index(current_theme) if current_theme in color_options else 0
-        theme_choice = st.selectbox("HUD Accent Color", color_options, index=idx_theme)
+    # 1. VISUAL SETTINGS
+    st.markdown("### 🎨 Interface Theme")
+    c1, c2 = st.columns(2)
+    with c1:
+        cur_mode = st.session_state.get('theme_mode', 'Dark')
+        new_mode = st.radio("System Mode", ["Dark", "Light"], index=0 if cur_mode=='Dark' else 1, horizontal=True)
+    with c2:
+        cur_color = st.session_state.get('theme_color', 'Venom Green (Default)')
+        opts = ["Venom Green (Default)", "Cyber Blue", "Crimson Alert", "Stealth Grey"]
+        new_color = st.selectbox("HUD Accent", opts, index=opts.index(cur_color) if cur_color in opts else 0)
 
-    if st.button("Apply Visual Settings", use_container_width=True):
-        st.session_state['theme_mode'] = mode_choice
-        st.session_state['theme_color'] = theme_choice
+    if st.button("Apply Visuals", use_container_width=True):
+        st.session_state['theme_mode'] = new_mode
+        st.session_state['theme_color'] = new_color
         st.rerun() 
 
     st.markdown("---")
 
-    # --- 2. SYSTEM PERMISSIONS (THE FINAL FIX) ---
+    # 2. NOTIFICATIONS
     st.markdown("### 🔔 System Access")
-    st.info("Authorize this browser to receive mission alerts.")
+    st.info("Authorize browser notifications for mission alerts.")
     
-    # WE USE components.html TO FORCE JAVASCRIPT EXECUTION
+    # JS Injection for Permissions
     components.html("""
     <!DOCTYPE html>
     <html>
     <head>
     <style>
         .btn {
-            background: #1A1A1A; 
-            color: #B5FF5F; 
-            border: 1px solid #B5FF5F; 
-            padding: 15px 30px; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-family: 'Courier New', monospace; 
-            font-weight: bold;
-            font-size: 16px;
-            width: 100%;
-            transition: 0.3s;
+            background: #1A1A1A; color: #B5FF5F; border: 1px solid #B5FF5F; 
+            padding: 12px; border-radius: 8px; cursor: pointer; font-family: monospace; 
+            font-weight: bold; width: 100%; transition: 0.3s;
         }
-        .btn:hover {
-            background: #B5FF5F;
-            color: black;
-        }
+        .btn:hover { background: #B5FF5F; color: black; }
     </style>
     </head>
     <body>
-    
-    <button class="btn" onclick="requestPerm()">🔓 CLICK TO AUTHORIZE ALERTS</button>
-
+    <button class="btn" onclick="req()">🔓 AUTHORIZE ALERTS</button>
     <script>
-    function requestPerm() {
-        if (!("Notification" in window)) {
-            alert("This browser does not support desktop notifications");
-        } else {
-            Notification.requestPermission().then(function (permission) {
-                if (permission === "granted") {
-                    new Notification("TimeHunt Protocol", {
-                        body: "Communications Link Established. Notifications Active.",
-                        icon: "https://cdn-icons-png.flaticon.com/512/2921/2921226.png"
-                    });
-                } else {
-                    alert("Permission denied. Please click the 'Lock' icon in your URL bar to reset permissions.");
-                }
+    function req() {
+        if (!("Notification" in window)) { alert("Not supported."); } 
+        else {
+            Notification.requestPermission().then(p => {
+                if (p === "granted") new Notification("Protocol Active", {body: "Link Established."});
+                else alert("Denied. Check browser settings.");
             });
         }
     }
     </script>
     </body>
     </html>
-    """, height=100)
+    """, height=80)
 
     st.markdown("---")
     
-    # --- 3. PROFILE SETTINGS ---
-    st.markdown("### 👤 Identity Protocol")
-    new_name = st.text_input("Update Codename", st.session_state.get('user_name', ''))
-    if st.button("Save Name"):
+    # 3. IDENTITY
+    st.markdown("### 👤 Identity")
+    new_name = st.text_input("Codename", st.session_state.get('user_name', ''))
+    if st.button("Update Identity"):
         st.session_state['user_name'] = new_name
         sync_data()
-        st.toast("Identity Updated.")
+        st.toast("Identity Saved.")
 
     st.markdown("---")
 
-    # --- 4. DANGER ZONE ---
-    st.markdown("### ☠️ Danger Zone")
-    with st.expander("Show Advanced Reset Options"):
-        st.warning("This action cannot be undone.")
-        if st.button("🔥 Factory Reset (Delete All Data)", type="primary"):
+    # 4. RESET
+    with st.expander("☠️ Danger Zone"):
+        if st.button("🔥 Factory Reset", type="primary"):
             st.session_state.clear()
             st.rerun()
  
-# --- MISSING ALARM OVERLAY FUNCTION ---
+# --- ALARM OVERLAY (GLOBAL COMPONENT) ---
 def render_alarm_ui():
     """
     Renders a Full-Screen 'Code Red' Overlay when an alarm triggers.
-    Works on ANY page because it is injected at the top level.
+    Injected at the top level to block interaction until resolved.
     """
     if st.session_state.get('active_alarm'):
-        alarm_data = st.session_state['active_alarm']
-        task_name = alarm_data['task']
-        idx = alarm_data['index']
+        alarm = st.session_state['active_alarm']
+        task = alarm['task']
+        idx = alarm['index']
         
-        # --- 1. PLAY SOUND (Hidden Loop) ---
-        sound_file = "alarm.mp3"
-        if os.path.exists(sound_file):
-            try:
-                with open(sound_file, "rb") as f:
-                    audio_bytes = f.read()
-                b64 = base64.b64encode(audio_bytes).decode()
-                # Autoplay, Loop, Hidden
-                st.markdown(f'<audio src="data:audio/mp3;base64,{b64}" autoplay loop></audio>', unsafe_allow_html=True)
-            except: pass
-        else:
-            # Fallback Beep
-            st.markdown('<audio src="https://www.soundjay.com/buttons/beep-01a.mp3" autoplay loop></audio>', unsafe_allow_html=True)
+        # 1. Play Sound (Hidden)
+        try:
+            # Try local file first, else fallback URL
+            if os.path.exists("alarm.mp3"):
+                with open("alarm.mp3", "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                src = f"data:audio/mp3;base64,{b64}"
+            else:
+                src = "https://www.soundjay.com/buttons/beep-01a.mp3"
+            st.markdown(f'<audio src="{src}" autoplay loop></audio>', unsafe_allow_html=True)
+        except: pass
 
-        # --- 2. CSS FOR FULL-SCREEN OVERLAY ---
+        # 2. Overlay CSS
         st.markdown("""
         <style>
-            /* The Overlay Background */
             .alarm-overlay {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                background: rgba(0, 0, 0, 0.95);
-                z-index: 999999;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                backdrop-filter: blur(15px);
-                animation: fadeIn 0.3s ease-out;
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                background: rgba(0, 0, 0, 0.96); z-index: 999999;
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                backdrop-filter: blur(20px); animation: fadeIn 0.3s;
             }
-            
-            /* The Alarm Box */
             .alarm-box {
-                width: 90%;
-                max-width: 500px;
-                background: linear-gradient(135deg, #1a0000 0%, #2d0000 100%);
-                border: 2px solid #FF2A2A;
-                border-radius: 20px;
-                padding: 40px;
-                text-align: center;
-                box-shadow: 0 0 60px rgba(255, 42, 42, 0.6);
-                animation: pulse-red 1.2s infinite ease-in-out;
+                width: 90%; max-width: 500px;
+                background: linear-gradient(135deg, #220000, #400000);
+                border: 2px solid #FF2A2A; border-radius: 20px; padding: 40px;
+                text-align: center; box-shadow: 0 0 80px rgba(255, 42, 42, 0.5);
+                animation: pulse 1s infinite;
             }
-            
-            .alarm-title {
-                font-family: 'Courier New', monospace;
-                font-size: 32px;
-                font-weight: 900;
-                color: #FF2A2A;
-                margin-bottom: 15px;
-                text-transform: uppercase;
-                letter-spacing: 3px;
-                text-shadow: 0 0 10px rgba(255, 42, 42, 0.8);
-            }
-            
-            .alarm-task {
-                font-size: 28px;
-                color: white;
-                margin-bottom: 10px;
-                font-weight: bold;
-            }
-            
-            @keyframes pulse-red {
-                0% { box-shadow: 0 0 0 0 rgba(255, 42, 42, 0.7); transform: scale(1); }
-                50% { box-shadow: 0 0 0 20px rgba(255, 42, 42, 0); transform: scale(1.02); }
-                100% { box-shadow: 0 0 0 0 rgba(255, 42, 42, 0); transform: scale(1); }
+            @keyframes pulse {
+                0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 42, 42, 0.7); }
+                50% { transform: scale(1.02); box-shadow: 0 0 0 20px rgba(255, 42, 42, 0); }
+                100% { transform: scale(1); }
             }
         </style>
         """, unsafe_allow_html=True)
 
-        # --- 3. RENDER VISUALS ---
+        # 3. Visuals
         st.markdown(f"""
         <div class="alarm-overlay">
             <div class="alarm-box">
-                <div style="font-size:70px; margin-bottom:10px;">🚨</div>
-                <div class="alarm-title">MISSION CRITICAL</div>
-                <div class="alarm-task">"{task_name}"</div>
-                <div style="color:#ffaaaa; margin-bottom:30px; font-family:monospace;">DEADLINE PROTOCOL ACTIVE</div>
+                <div style="font-size:80px; margin-bottom:10px;">🚨</div>
+                <h1 style="color:#FF2A2A; font-family:monospace; margin:0;">MISSION CRITICAL</h1>
+                <h2 style="color:white; margin-top:10px;">"{task}"</h2>
+                <p style="color:#ffaaaa;">IMMEDIATE ACTION REQUIRED</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # --- 4. RENDER BUTTONS (Streamlit native buttons float on top) ---
-        # We use a container that sits effectively "above" the HTML overlay due to Streamlit's layout engine
+        # 4. Interaction Buttons (Above Overlay)
         with st.container():
-            col1, col2, col3 = st.columns([1, 1, 1])
-            
-            with col1:
-                if st.button("🛑 STOP ALARM", type="primary", use_container_width=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if st.button("🛑 STOP", type="primary", use_container_width=True):
                     st.session_state['active_alarm'] = None
                     st.rerun()
-            
-            with col2:
-                if st.button("💤 SNOOZE (5m)", use_container_width=True):
-                    # Logic: Add 5 mins
-                    st.session_state['reminders'][idx]['time'] += datetime.timedelta(minutes=5)
-                    st.session_state['reminders'][idx]['notified'] = False
+            with c2:
+                if st.button("💤 +5 MIN", use_container_width=True):
+                    # Add 5 mins to reminder
+                    if idx < len(st.session_state['reminders']):
+                        st.session_state['reminders'][idx]['time'] += datetime.timedelta(minutes=5)
+                        st.session_state['reminders'][idx]['notified'] = False
                     st.session_state['active_alarm'] = None
                     sync_data()
                     st.rerun()
-
-            with col3:
-                if st.button("✅ MARK DONE", use_container_width=True):
-                    # Logic: Remove Task
-                    st.session_state['reminders'].pop(idx)
+            with c3:
+                if st.button("✅ DONE", use_container_width=True):
+                    if idx < len(st.session_state['reminders']):
+                        st.session_state['reminders'].pop(idx)
                     st.session_state['active_alarm'] = None
                     sync_data()
                     st.rerun()
         
-        # STOP EXECUTION so the user is forced to interact
+        # Stop App Execution to force interaction
         st.stop()
 
-# --- PAGE: TACTICAL HELP CENTER ---
+# --- 12. PAGE: TACTICAL HELP CENTER ---
+
 def page_help():
+    """
+    Renders the Help/Support page.
+    Includes: App Installation Guide, Feedback Ticket System, and FAQs.
+    """
+    # 1. Header
     st.markdown('<div class="big-title">🆘 Tactical Support</div>', unsafe_allow_html=True)
     st.caption("Operational Manual & Command Link")
     
-    # --- SECTION 1: INSTALLATION GUIDE (VISUAL) ---
+    # --- SECTION 1: INSTALLATION (PWA GUIDE) ---
     st.markdown("### 📲 Deployment (Install App)")
-    st.info("To activate the custom TimeHunt insignia on your device, bypass the standard protocol:")
+    st.info("To install the TimeHunt interface on your home screen:")
     
     with st.container():
         c1, c2 = st.columns(2)
+        
+        # Android Card
         with c1:
             st.markdown("""
             <div class="glass-card" style="height:100%;">
-                <h4 style="color:#B5FF5F">🤖 Android / Chrome</h4>
-                <ol style="font-size:14px; margin-left: -20px;">
-                    <li>Tap the <b>Three Dots (⋮)</b> in Chrome.</li>
+                <h4 style="color:#B5FF5F; margin-bottom:10px;">🤖 Android / Chrome</h4>
+                <ol style="font-size:14px; margin-left: -20px; line-height: 1.6;">
+                    <li>Tap the <b>Three Dots (⋮)</b> menu.</li>
                     <li>Select <b>"Add to Home Screen"</b>.</li>
-                    <li><b>CRITICAL:</b> If a popup with a Red Boat logo appears, CLOSE IT.</li>
-                    <li>Rename to "TimeHunt AI".</li>
+                    <li><i>Note: Reject any generic logo popups.</i></li>
+                    <li>Confirm name as "TimeHunt AI".</li>
                 </ol>
             </div>
             """, unsafe_allow_html=True)
+            
+        # iOS Card
         with c2:
             st.markdown("""
             <div class="glass-card" style="height:100%;">
-                <h4 style="color:#00E5FF">🍎 iOS / Safari</h4>
-                <ol style="font-size:14px; margin-left: -20px;">
-                    <li>Tap the <b>Share Button</b> (Box with Arrow).</li>
+                <h4 style="color:#00E5FF; margin-bottom:10px;">🍎 iOS / Safari</h4>
+                <ol style="font-size:14px; margin-left: -20px; line-height: 1.6;">
+                    <li>Tap the <b>Share Button</b> (Box + Arrow).</li>
                     <li>Scroll down to <b>"Add to Home Screen"</b>.</li>
-                    <li>The Tactical Logo will load automatically.</li>
-                    <li>Tap <b>Add</b>.</li>
+                    <li>The Tactical Logo will auto-load.</li>
+                    <li>Tap <b>Add</b> to confirm.</li>
                 </ol>
             </div>
             """, unsafe_allow_html=True)
 
     st.write("")
 
-    # --- SECTION 2: COMMAND LINK (FEEDBACK) ---
+    # --- SECTION 2: COMMAND LINK (FEEDBACK SYSTEM) ---
     st.markdown("### 📡 Command Link (Q&A)")
     
-    # A. TICKET HISTORY
+    # A. Ticket History Display
     my_tickets = get_my_feedback_status()
     
     if not my_tickets.empty:
         st.markdown("#### Incoming Transmissions")
         for index, row in my_tickets.iterrows():
-            # Check for Admin Reply
+            # Determine Status
             has_reply = pd.notna(row['Reply']) and str(row['Reply']).strip() != ""
+            border_col = "#B5FF5F" if has_reply else "#444"
+            status_txt = "✅ SECURE" if has_reply else "⏳ PENDING"
             
-            # Dynamic Styling based on status
-            border_color = "#B5FF5F" if has_reply else "#333"
-            status_icon = "✅ SECURE" if has_reply else "⏳ PENDING"
+            # HTML for Ticket Card
+            reply_html = f'<div style="margin-top:10px; padding-top:10px; border-top:1px dashed #555; color:#B5FF5F;"><b>⚓ HQ REPLY:</b> {row["Reply"]}</div>' if has_reply else ''
             
             st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.03); border: 1px solid {border_color}; border-radius: 12px; padding: 15px; margin-bottom: 10px;">
-                <div style="display:flex; justify-content:space-between; font-size:12px; color:#888;">
-                    <span>DATE: {row['Timestamp']}</span>
-                    <span style="color:{border_color}; font-weight:bold;">{status_icon}</span>
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid {border_col}; border-radius: 12px; padding: 15px; margin-bottom: 12px;">
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:#888; letter-spacing:1px;">
+                    <span>TIMESTAMP: {row['Timestamp']}</span>
+                    <span style="color:{border_col}; font-weight:bold;">{status_txt}</span>
                 </div>
-                <div style="margin-top:5px; font-weight:bold; font-size:16px;">"{row['Query']}"</div>
-                {f'<div style="margin-top:10px; padding-top:10px; border-top:1px dashed #444; color:#B5FF5F;"><b>⚓ HQ REPLY:</b> {row["Reply"]}</div>' if has_reply else ''}
+                <div style="margin-top:8px; font-weight:600; font-size:15px; color:#fff;">"{row['Query']}"</div>
+                {reply_html}
             </div>
             """, unsafe_allow_html=True)
     
-    # B. SUBMISSION FORM
-    with st.expander("📝 Open New Channel", expanded=not my_tickets.empty):
+    # B. Submission Form
+    # If tickets exist, collapse the form by default to save space
+    is_expanded = True if my_tickets.empty else False
+    
+    with st.expander("📝 Open New Channel", expanded=is_expanded):
         with st.form("help_form", clear_on_submit=True):
             st.write("**Describe your objective or report a bug:**")
-            query = st.text_area("Message", placeholder="Example: How do I delete a chat session?", label_visibility="collapsed")
+            query = st.text_area("Message Payload", placeholder="Example: How do I reset my XP streak?", label_visibility="collapsed")
             
             if st.form_submit_button("🚀 Transmit to HQ", use_container_width=True, type="primary"):
                 if len(query) > 5:
                     if save_feedback(query):
-                        st.toast("Message received at Base.", icon="📨")
+                        st.toast("Transmission Sent. Stand by.", icon="📨")
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.warning("Transmission too short.")
+                    st.warning("Transmission too short. Elaborate.")
 
     st.divider()
 
     # --- SECTION 3: FIELD MANUAL (FAQ) ---
     st.markdown("### 📘 Field Manual")
+    
     faqs = {
-        "🎯 How is XP calculated?": "Base XP is determined by task difficulty (Easy=20, Medium=50, Boss=300). Streak Multipliers boost this by up to 2.5x.",
-        "🔊 Why no audio?": "Browsers block auto-playing audio. Click anywhere on the page once to 'Initialize' the audio engine.",
-        "☁️ Is my data safe?": "Affirmative. Your schedule is encrypted with your unique User ID. Only you hold the clearance."
+        "🎯 How is XP calculated?": "XP is based on difficulty: Easy (20), Medium (50), Hard (150), BOSS (300). Daily streaks apply a multiplier up to 2.5x.",
+        "🔊 Audio not playing?": "Modern browsers block auto-audio. Interact with the page (click anywhere) once to initialize the Tactical Engine.",
+        "☁️ Data Privacy Status?": "Encrypted. Your schedule relies on your unique User ID. Clearing browser cache will require a re-login (PIN).",
+        "🛑 How to delete alarms?": "When an alarm triggers, a 'MARK DONE' button appears. You can also delete tasks directly from the Scheduler."
     }
     
     for q, a in faqs.items():
@@ -2428,30 +2186,36 @@ def page_help():
 # --- MAIN APP FUNCTION ---
 
 def main():
-    # 1. Initialize System
+    """
+    Main application entry point.
+    Orchestrates initialization, navigation, and global systems.
+    """
+    # 1. System Initialization
     initialize_session_state()
     
-    # 2. GLOBAL ALARM SYSTEM (The "Code Red" Overlay)
-    # We check reminders first. If one triggers, render_alarm_ui() 
-    # will launch the full-screen overlay and stop the rest of the app from loading.
+    # 2. Global Alarm System
+    # Checks for due tasks immediately. If triggered, render_alarm_ui() 
+    # takes over the screen and halts further execution.
     check_reminders()
     render_alarm_ui()
 
-    # 3. Load Styles & Visuals
+    # 3. Visuals & Assets
     inject_custom_css()
     show_comet_splash()
 
-    # 4. Onboarding Gate
-    if not st.session_state['onboarding_complete']:
+    # 4. Authentication Gate
+    if not st.session_state.get('onboarding_complete', False):
         page_onboarding()
         return 
 
-    # A. CHAT MODE SIDEBAR (UPDATED WITH DELETE FEATURE)
+    # --- SIDEBAR LOGIC ---
+    
+    # A. CHAT MODE SIDEBAR (Specialized for AI Context)
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
             
-            # 1. Top Buttons (Back & New)
+            # Navigation Buttons
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("🏠 Back", use_container_width=True):
@@ -2466,12 +2230,10 @@ def main():
             
             st.divider()
 
-            # 2. DELETE TOGGLE LOGIC
-            # Initialize the state if it doesn't exist
+            # Delete Toggle Logic
             if 'delete_mode' not in st.session_state: 
                 st.session_state['delete_mode'] = False
             
-            # The Toggle Button
             toggle_label = "❌ Cancel" if st.session_state['delete_mode'] else "🗑️ Delete Chats"
             if st.button(toggle_label, use_container_width=True):
                 st.session_state['delete_mode'] = not st.session_state['delete_mode']
@@ -2479,30 +2241,26 @@ def main():
 
             st.markdown("---")
             
-            # 3. LIST CHATS
+            # Chat Session List
             sessions = load_chat_sessions()
             
             if st.session_state['delete_mode']:
-                # === DELETE MODE: SHOW CHECKBOXES ===
+                # DELETE MODE: Checkboxes
                 st.warning("Select chats to remove:")
-                
                 with st.form("del_form"):
                     selected_ids = []
                     if not sessions:
-                        st.caption("No chats to delete.")
+                        st.caption("No chats found.")
                     
                     for s in sessions:
-                        # Checkbox for each chat
                         if st.checkbox(f"{s['SessionName']}", key=f"del_{s['SessionID']}"):
                             selected_ids.append(s['SessionID'])
                     
-                    # The Red Confirm Button
                     if st.form_submit_button("🔥 PERMANENTLY DELETE", type="primary", use_container_width=True):
                         if selected_ids:
                             for sid in selected_ids:
                                 delete_chat_session(sid)
-                            st.toast(f"Deleted {len(selected_ids)} chats!")
-                            # Reset states
+                            st.toast(f"Deleted {len(selected_ids)} chats.")
                             st.session_state['delete_mode'] = False
                             if st.session_state.get('current_session_id') in selected_ids:
                                 st.session_state['current_session_id'] = None
@@ -2510,15 +2268,13 @@ def main():
                             time.sleep(0.5)
                             st.rerun()
                         else:
-                            st.warning("Select at least one chat.")
-                            
+                            st.warning("Select items first.")
             else:
-                # === NORMAL MODE: SHOW BUTTONS ===
+                # NORMAL MODE: Navigation
                 if not sessions:
-                    st.caption("No history found.")
+                    st.caption("No history.")
                 
                 for s in sessions:
-                    # Highlight active chat
                     is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
                     b_type = "primary" if is_active else "secondary"
                     
@@ -2526,24 +2282,20 @@ def main():
                         st.session_state['current_session_id'] = s['SessionID']
                         st.session_state['current_session_name'] = s['SessionName']
                         
-                        # Load messages
                         msgs = load_messages_for_session(s['SessionID'])
-                        formatted_msgs = []
-                        for m in msgs:
-                            formatted_msgs.append({"role": m["Role"], "text": m["Content"]})
-                        st.session_state['chat_history'] = formatted_msgs
+                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in msgs]
                         st.rerun()
         
-        # Load the AI Page Content
+        # Render AI Page
         page_ai_assistant()
 
-    # B. MAIN MENU SIDEBAR (Default App Mode)
+    # B. MAIN MENU SIDEBAR (Standard App Mode)
     else:
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
             
-            # --- AUDIO ENGINE ---
+            # Sonic Intel (Audio)
             st.markdown("### 🎧 Sonic Intel")
             with st.container():
                 music_mode = st.selectbox("Frequency", 
@@ -2556,17 +2308,16 @@ def main():
                     "Divine Flute (Flow)": "flute.mp3", 
                     "Rainfall (Calm)": "rain.mp3"
                 }
+                
                 target_file = local_map.get(music_mode)
-
                 if target_file and os.path.exists(target_file):
                     st.audio(target_file, format="audio/mp3", loop=True)
                 else:
-                    st.caption("⚠️ File not found.")
+                    st.caption("⚠️ Audio file missing locally.")
             
             st.markdown("---")
             
-            # --- LOCATION OVERRIDE (For Exam Demo) ---
-            # THIS IS THE NEW CODE BLOCK
+            # Location Override
             with st.expander("📍 Sector Location"):
                 city_input = st.text_input("Base City", value=st.session_state.get('user_city', 'Jaipur'))
                 if city_input != st.session_state.get('user_city', 'Jaipur'):
@@ -2575,9 +2326,7 @@ def main():
 
             st.markdown("---")
             
-            # --- MAIN NAVIGATION ---
-            # 1. Define the menu options and icons
-            # We added "Help" to options and "life-preserver" to icons
+            # Navigation Menu
             nav = option_menu(
                 menu_title=None,
                 options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "Help", "About", "Settings"], 
@@ -2593,7 +2342,7 @@ def main():
 
             st.caption(f"🆔 **Agent:** {st.session_state.get('user_name', 'Hunter')}")
 
-        # --- ROUTER LOGIC ---
+        # Page Routing
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
