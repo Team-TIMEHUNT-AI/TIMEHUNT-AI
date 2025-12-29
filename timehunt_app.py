@@ -1772,7 +1772,7 @@ def page_home():
         st.markdown(f"""
         <div class="glass-card">
             <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                <span style="font-weight:bold; font-size:18px;">Hunter Rank: {current_lvl}</span>
+                <span style="font-weight:bold; font-size:18px;">Current Level: {current_lvl}</span>
                 <span style="color:var(--accent);">{int(xp_in_current_lvl)} / 1000 XP</span>
             </div>
             <div class="progress-bg">
