@@ -2581,9 +2581,9 @@ icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "grap
             st.rerun()
         elif nav == "Timer": page_timer()  
         elif nav == "Dashboard": page_dashboard()
+        elif nav == "Help": page_help()
         elif nav == "About": page_about()
         elif nav == "Settings": page_settings()
-        elif nav == "Help": page_help()
-
+        
 if __name__ == "__main__":
     main()
