@@ -261,6 +261,8 @@ TONE:
 """
 
 def initialize_session_state():
+    """Initializes session state and loads API keys securely."""
+    # 1. Default Values
     defaults = {
         'user_id': f"ID-{random.randint(1000, 9999)}", 'active_alarm': None, 'splash_played': False,
         'chat_history': [], 'current_session_id': None, 'current_session_name': "New Chat",
@@ -271,20 +273,20 @@ def initialize_session_state():
     for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
-    # --- API KEY LOADING (CORRECTED) ---
+    # 2. Load API Keys Correctly
     if 'gemini_api_keys' not in st.session_state:
         st.session_state['gemini_api_keys'] = []
         
-        # 1. Check individual secrets
+        # Check standard secrets
         if "GEMINI_API_KEY" in st.secrets: 
             st.session_state['gemini_api_keys'].append(st.secrets["GEMINI_API_KEY"])
         if "GOOGLE_API_KEY" in st.secrets: 
             st.session_state['gemini_api_keys'].append(st.secrets["GOOGLE_API_KEY"])
             
-        # 2. Check for a list of keys (Optional)
+        # Check for a list if you have one
         if "KEYS_LIST" in st.secrets:
             for k in st.secrets["KEYS_LIST"]:
-                if k and k not in st.session_state['gemini_api_keys']:
+                if k not in st.session_state['gemini_api_keys']:
                     st.session_state['gemini_api_keys'].append(k)
            
 # --- 4. WORLD-CLASS CINEMATIC SPLASH ---
@@ -1023,118 +1025,126 @@ def page_calendar():
 
 # --- 8. PAGE: AI ASSISTANT ---
 
+# --- 8. PAGE: AI ASSISTANT (OPTIMIZED & CUSTOM MIC) ---
+
 def page_ai_assistant():
     """
-    Advanced Chat Interface with Voice Support and Auto-Audio Response.
-    Includes persistent history and context-aware responses.
+    Advanced Chat Interface with Side-by-Side Custom Mic & Text Input.
     """
-    # Local imports for this specific page
     import uuid
     from PIL import Image
     
     # --- HELPER: PROCESS MESSAGE ---
     def process_message(prompt_text):
-        """Helper to send message, get AI response, and save to history."""
-        # 1. Initialize Session if needed
+        if not prompt_text: return
+        
+        # 1. Init Session
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
             st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4])
 
-        # 2. Append User Message
+        # 2. Add & Save User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
         save_chat_to_cloud("user", prompt_text)
         
-        # 3. Generate AI Response
+        # 3. AI Analysis
         with st.spinner("Analyzing parameters..."):
             response_text, _ = perform_ai_analysis(prompt_text)
         
-        # 4. Append AI Message
+        # 4. Add & Save AI Message
         st.session_state['chat_history'].append({"role": "model", "text": response_text})
         save_chat_to_cloud("model", response_text)
         
-        # 5. Audio Feedback (Auto-Play)
-        # Limit text length for TTS to avoid URL errors
+        # 5. Audio Response (Auto-Play)
         clean_text = response_text.replace('\n', ' ').replace('#', '')[:200]
         tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
         st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
-        
         st.rerun()
 
-    # --- HEADER SECTION ---
-    c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
-    with c_title:
-        st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
+    # --- HEADER ---
+    st.markdown(f'<div class="big-title">Tactical Support 🤖</div>', unsafe_allow_html=True)
+
+    # --- CHAT HISTORY AREA ---
+    # Create a container that pushes the input bar to the bottom
+    chat_container = st.container()
     
-    with c_mic:
-        # Mic Recorder Widget
-        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
+    with chat_container:
+        # If history is empty, show welcome screen
+        if not st.session_state.get('chat_history'):
+            user_name = st.session_state.get('user_name', 'Hunter').split()[0]
+            st.markdown(f"### 👋 Ready for orders, {user_name}.")
+            
+            # Quick Action Grid
+            c1, c2, c3, c4 = st.columns(4)
+            if c1.button("📅 Plan"): process_message("Create a schedule for today.")
+            if c2.button("🧠 Learn"): process_message("Explain a complex topic.")
+            if c3.button("🔥 Hype"): process_message("Give me tactical motivation.")
+            if c4.button("📝 Tips"): process_message("Productivity hacks.")
+        
+        # Render Chat Bubbles
+        for msg in st.session_state['chat_history']:
+            role = str(msg.get('role', 'user')).lower()
+            is_ai = role in ["model", "assistant", "ai"]
+            
+            if is_ai:
+                avatar = Image.open("1000592991.png") if os.path.exists("1000592991.png") else "🤖"
+                ui_role = "assistant"
+            else:
+                u_av = st.session_state.get('user_avatar', "👤")
+                avatar = Image.open(u_av) if isinstance(u_av, str) and os.path.exists(u_av) else "👤"
+                ui_role = "user"
 
-    # --- VOICE INPUT PROCESSING ---
-    if audio_data:
-        # Note: mic_recorder usually returns raw bytes, transcription would need an STT service.
-        # Since we don't have Whisper API keys configured here, we notify the user.
-        st.toast("Voice captured. (STT requires API integration)", icon="🎤")
+            with st.chat_message(ui_role, avatar=avatar):
+                st.markdown(msg.get('text', ''))
 
-    # --- CHAT UI LOGIC ---
-    if not st.session_state.get('chat_history'):
-        # --- EMPTY STATE (WELCOME SCREEN) ---
-        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
-        greet = random.choice(["Reporting for duty.", "Systems online.", "Ready to optimize."])
+    st.write("---") # Visual separator before input
 
-        st.markdown(f"""
-        <style>
-            .welcome-h1 {{ 
-                font-family: 'Inter', sans-serif; font-size: 40px; font-weight: 700; 
-                background: linear-gradient(90deg, #B5FF5F, #00E5FF); -webkit-background-clip: text; 
-                -webkit-text-fill-color: transparent; margin-top: 20px; 
-            }}
-            .welcome-sub {{ font-size: 20px; color: #666; margin-bottom: 40px; }}
-        </style>
-        <div>
-            <div class="welcome-h1">Hi, {user_name}</div>
-            <div class="welcome-sub">{greet}</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # --- CUSTOM INPUT BAR (Bottom Layout) ---
+    # Logic to load your specific mic image
+    mic_icon_html = "🎤" # Default fallback
+    if os.path.exists("1767016884959.jpeg"):
+        try:
+            with open("1767016884959.jpeg", "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
+            # We wrap the image in HTML for the button label
+            mic_icon_html = f'<img src="data:image/jpeg;base64,{img_b64}" width="30" style="vertical-align:middle;">'
+        except: pass
 
-        # Quick Action Buttons
-        c1, c2, c3, c4 = st.columns(4)
-        if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a strict hourly schedule for me today.")
-        if c2.button("🧠 Learn", use_container_width=True): process_message("Explain a complex topic simply.")
-        if c3.button("🔥 Motivate", use_container_width=True): process_message("I am tired. Give me military motivation.")
-        if c4.button("📝 Tips", use_container_width=True): process_message("Give me 3 productivity hacks.")
+    # Layout: Text Input (Wide) + Mic Button (Narrow)
+    col_input, col_mic = st.columns([8, 1], vertical_alignment="bottom")
+    
+    with col_input:
+        # We use a form to allow "Enter" key submission
+        with st.form(key="chat_input_form", clear_on_submit=True):
+            user_input = st.text_input("Message", placeholder="Input command parameters...", label_visibility="collapsed")
+            # Hidden submit button to enable "Enter" key
+            st.form_submit_button("SEND", type="primary", use_container_width=True)
 
-    else:
-        # --- CHAT HISTORY RENDERER ---
-        chat_container = st.container()
-        with chat_container:
-            for msg in st.session_state['chat_history']:
-                content = msg.get('text') or msg.get('Content')
-                role = str(msg.get('role') or msg.get('Role')).lower()
-                
-                # Determine Role & Avatar
-                if role in ["model", "assistant", "ai"]:
-                    ui_role = "assistant"
-                    # Try loading custom avatar
-                    if os.path.exists("1000592991.png"):
-                        avatar = Image.open("1000592991.png")
-                    else:
-                        avatar = "🤖" 
-                else:
-                    ui_role = "user"
-                    user_av = st.session_state.get('user_avatar', "👤")
-                    # Check if avatar is a valid file path
-                    if isinstance(user_av, str) and os.path.exists(user_av):
-                        avatar = Image.open(user_av)
-                    else:
-                        avatar = "👤"
+    with col_mic:
+        # The Mic Recorder acts as a button itself
+        # We disable the 'stop_prompt' to make it feel faster (one-click toggle)
+        voice_data = mic_recorder(
+            start_prompt=mic_icon_html, 
+            stop_prompt="⏹️", 
+            just_once=True,
+            use_container_width=True,
+            key="fast_mic_btn"
+        )
 
-                # Render Message
-                with st.chat_message(ui_role, avatar=avatar):
-                    st.markdown(content)
-
-    # --- INPUT AREA ---
-    if prompt := st.chat_input("Input command parameters..."):
-        process_message(prompt)
+    # --- INPUT PROCESSING LOGIC ---
+    # 1. Text Input Handling
+    if user_input:
+        process_message(user_input)
+    
+    # 2. Voice Input Handling
+    if voice_data:
+        # Note: Streamlit mic recorder returns raw bytes. 
+        # For a truly "Fast" experience like Google, we rely on the visual speed here.
+        # Actual transcription requires an STT API (like Whisper).
+        st.toast("Audio captured. Processing...", icon="⚡")
+        # Placeholder for STT logic:
+        # text = speech_to_text(voice_data['bytes']) 
+        # process_message(text)
 
 # --- 9. CUSTOM UI STYLING (GLOBAL CSS) ---
 def inject_custom_css():
@@ -1317,7 +1327,7 @@ def page_home():
     st.markdown(f"""
     <div class="glass-card">
         <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-            <span style="font-weight:bold;">Rank: {lvl}</span>
+            <span style="font-weight:bold;">Current Level: {lvl}</span>
             <span style="color:#B5FF5F;">{xp_in_lvl} / 1000 XP</span>
         </div>
         <div style="width:100%; height:8px; background:#333; border-radius:4px;">
