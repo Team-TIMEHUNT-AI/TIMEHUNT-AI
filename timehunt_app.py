@@ -201,10 +201,21 @@ def save_chat_to_cloud(role, content):
     except: pass
 
 def load_chat_sessions():
+    """Loads unique sessions for the Sidebar list, preventing duplicate keys."""
     df = get_all_chats()
     uid = str(st.session_state.get('user_id'))
+    
     if not df.empty and "UserID" in df.columns:
-        return df[df["UserID"] == uid][["SessionID", "SessionName"]].drop_duplicates().to_dict('records')[::-1]
+        # Filter for current user
+        user_chats = df[df["UserID"] == uid][["SessionID", "SessionName"]]
+        
+        # CRITICAL FIX: Drop duplicates based ONLY on 'SessionID'. 
+        # keep='last' ensures we get the most recently used name for that session.
+        unique_chats = user_chats.drop_duplicates(subset=['SessionID'], keep='last')
+        
+        # Return reversed (newest on top)
+        return unique_chats.to_dict('records')[::-1]
+        
     return []
 
 def load_messages_for_session(sid):
