@@ -1,9 +1,16 @@
 import os
+import time
+import json
+import base64
+import random
 import datetime
+import calendar
 import textwrap
+import uuid          # <--- Added missing import
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+from streamlit_option_menu import option_menu
 
 # --- OPTIONAL DEPENDENCIES ---
 # Handled gracefully to prevent app crashes if libraries are missing
@@ -21,7 +28,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # --- COMPONENT: LIVE TACTICAL CLOCK ---
 def render_live_clock():
-    """Renders a simplified, cyber-aesthetic digital clock."""
+    """Renders a JavaScript-driven digital clock in a secured iframe."""
     clock_html = textwrap.dedent("""
     <!DOCTYPE html>
     <html>
@@ -30,7 +37,7 @@ def render_live_clock():
         body { margin: 0; display: flex; justify-content: center; align-items: center; background: transparent; }
         .clock-box {
             background: linear-gradient(135deg, #1A1A1A, #2A2A2A);
-            color: #00E5FF;
+            color: #00E5FF; /* Cyber Blue */
             font-family: 'Courier New', monospace;
             font-size: 35px;
             font-weight: bold;
@@ -39,6 +46,7 @@ def render_live_clock():
             border: 1px solid #333;
             box-shadow: 0 0 15px rgba(0, 229, 255, 0.15);
             text-shadow: 0 0 5px rgba(0, 229, 255, 0.6);
+            cursor: default;
             user-select: none;
         }
     </style>
@@ -48,7 +56,8 @@ def render_live_clock():
         <script>
             function updateClock() {
                 const now = new Date();
-                document.getElementById('clock').innerText = now.toLocaleTimeString('en-GB', { hour12: false });
+                const timeString = now.toLocaleTimeString('en-GB', { hour12: false });
+                document.getElementById('clock').innerText = timeString;
             }
             setInterval(updateClock, 1000);
             updateClock();
@@ -60,316 +69,171 @@ def render_live_clock():
 
 # --- BACKEND: CLOUD SYNC ENGINE ---
 def sync_data():
-    """
-    Synchronizes local session state (Alarms & Schedule) to Google Sheets.
-    Preserves other users' data while updating the current user's entries.
-    """
+    """Synchronizes local session state to Google Sheets."""
     uid = st.session_state.get('user_id')
     if not uid: return
 
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Fetch & Filter Cloud Data
+        # 1. Fetch Existing Data
         try:
             df_cloud = conn.read(worksheet="Reminders", ttl=0)
-            # Keep data that does NOT belong to the current user
             if not df_cloud.empty and "UserID" in df_cloud.columns:
-                df_final = df_cloud[df_cloud["UserID"] != str(uid)]
+                df_others = df_cloud[df_cloud["UserID"] != str(uid)]
             else:
-                df_final = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
-        except Exception:
-            df_final = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
+                df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
+        except:
+            df_others = pd.DataFrame(columns=["UserID", "Task", "Time", "Status", "Type"])
 
-        # 2. Prepare New Data (Alarms + Schedule)
-        new_entries = []
+        new_rows = []
 
-        # Process Alarms
+        # 2. Add Alarms
         for rem in st.session_state.get('reminders', []):
-            new_entries.append({
-                "UserID": str(uid),
-                "Task": str(rem.get('task', 'Unknown')),
-                "Time": str(rem.get('time', '')), 
-                "Status": "Done" if rem.get('notified') else "Pending",
-                "Type": "Alarm"
+            new_rows.append({
+                "UserID": str(uid), "Task": str(rem.get('task')), "Time": str(rem.get('time')), 
+                "Status": "Done" if rem.get('notified') else "Pending", "Type": "Alarm"
             })
             
-        # Process Schedule
+        # 3. Add Schedule
         for slot in st.session_state.get('timetable_slots', []):
              date_val = slot.get('Date', datetime.date.today().strftime("%Y-%m-%d"))
-             time_val = slot.get('Time', '00:00')
-             
-             new_entries.append({
-                "UserID": str(uid),
-                "Task": str(slot.get('Activity', 'Untitled')), 
-                "Time": f"{date_val} {time_val}", 
+             new_rows.append({
+                "UserID": str(uid), "Task": str(slot.get('Activity')), 
+                "Time": f"{date_val} {slot.get('Time')}", 
                 "Status": "Done" if slot.get('Done') else "Pending", 
                 "Type": f"Schedule-{slot.get('Category', 'General')}"
             })
 
-        # 3. Merge & Upload
-        if new_entries:
-            df_new = pd.DataFrame(new_entries)
-            df_final = pd.concat([df_final, df_new], ignore_index=True)
-
-        # Ensure type safety for GSheets
-        df_final = df_final.astype(str)
-        
-        conn.clear(worksheet="Reminders")
-        conn.update(worksheet="Reminders", data=df_final)
-        
-    except Exception as e:
-        # Log to console only, do not disturb user UI
-        print(f"⚠️ Sync Error: {e}")
-
-        # 4. Save to Cloud
+        # 4. Save
         if new_rows:
-            df_my_data = pd.DataFrame(new_rows)
-            df_final = pd.concat([df_others, df_my_data], ignore_index=True)
+            df_final = pd.concat([df_others, pd.DataFrame(new_rows)], ignore_index=True)
         else:
             df_final = df_others
 
-        # Force string type for consistency and upload
-        df_final = df_final[["UserID", "Task", "Time", "Status", "Type"]].astype(str)
-        conn.clear(worksheet="Reminders")
-        conn.update(worksheet="Reminders", data=df_final)
+        conn.update(worksheet="Reminders", data=df_final.astype(str))
         
     except Exception as e:
-        st.toast(f"Sync Error: {e}", icon="⚠️")
+        print(f"Sync Error: {e}")
 
 def get_real_time_weather(city="Jaipur"):
-    """
-    Fetches real weather using standard Python libraries (No pip install required).
-    """
+    """Fetches real weather using standard Python libraries."""
     import json
     from urllib.request import urlopen, Request
     
-    # Defaults
-    fallback_temp = "24°C"
-    fallback_desc = f"{city.upper()} (Offline)"
+    fallback = ("24°C", f"{city.upper()} (Offline)")
 
     try:
         # 1. Get Coordinates
-        lat, lon = 26.9124, 75.7873 # Default: Jaipur
-        
+        lat, lon = 26.9124, 75.7873 # Default Jaipur
         if city.lower() != "jaipur":
             try:
-                # Use User-Agent to prevent API blocking
-                req = Request(
-                    f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json",
-                    headers={'User-Agent': 'Mozilla/5.0'}
-                )
+                req = Request(f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json", headers={'User-Agent': 'Mozilla/5.0'})
                 with urlopen(req, timeout=3) as response:
-                    geo_data = json.loads(response.read().decode())
-                
-                if "results" in geo_data:
-                    lat = geo_data["results"][0]["latitude"]
-                    lon = geo_data["results"][0]["longitude"]
-            except:
-                pass # Fail silently, use default coordinates
+                    geo = json.loads(response.read().decode())
+                    if "results" in geo:
+                        lat, lon = geo["results"][0]["latitude"], geo["results"][0]["longitude"]
+            except: pass
 
-        # 2. Get Weather Data
-        req_weather = Request(
-            f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true",
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        
-        with urlopen(req_weather, timeout=3) as response:
+        # 2. Get Weather
+        req_w = Request(f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true", headers={'User-Agent': 'Mozilla/5.0'})
+        with urlopen(req_w, timeout=3) as response:
             data = json.loads(response.read().decode())
         
         if "current_weather" in data:
             temp = data["current_weather"]["temperature"]
             code = data["current_weather"]["weathercode"]
-            
-            # WMO Weather Code Mapping
             desc = "Clear"
             if code in [1, 2, 3]: desc = "Cloudy"
             elif code in [45, 48]: desc = "Fog"
             elif code >= 51: desc = "Rain"
-            
             return f"{temp}°C", f"{city.upper()} ({desc})"
 
-    except Exception as e:
-        return "ERR", str(e)
-
-    return fallback_temp, fallback_desc
+    except: return fallback
+    return fallback
 
 def load_cloud_data():
-    """Loads Reminders & Timetable from GSheets. Parses Date/Time correctly."""
+    """Loads Reminders & Timetable from GSheets."""
     try:
-        from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         uid = st.session_state.get('user_id')
-        
-        try: 
-            df = conn.read(worksheet="Reminders", ttl=0)
-        except: 
-            return 
+        df = conn.read(worksheet="Reminders", ttl=0)
 
         if not df.empty and "UserID" in df.columns:
             my_data = df[df["UserID"] == str(uid)]
-            loaded_reminders = []
-            loaded_timetable = []
+            loaded_rem = []
+            loaded_time = []
             
             for _, row in my_data.iterrows():
-                # Load Alarms
                 if row['Type'] == "Alarm":
-                    loaded_reminders.append({
-                        "task": row['Task'], 
-                        "time": row['Time'], 
-                        "notified": (row['Status'] == "Done")
-                    })
-                
-                # Load Schedule
+                    loaded_rem.append({"task": row['Task'], "time": row['Time'], "notified": (row['Status'] == "Done")})
                 elif "Schedule" in str(row['Type']):
                     cat = row['Type'].split("-")[1] if "-" in row['Type'] else "General"
-                    raw_time = str(row['Time'])
-                    
-                    # Parse Date/Time format
                     try:
-                        dt_obj = datetime.datetime.strptime(raw_time, "%Y-%m-%d %H:%M")
-                        date_val = dt_obj.strftime("%Y-%m-%d")
-                        time_val = dt_obj.strftime("%H:%M")
-                    except ValueError:
-                        # Fallback for legacy data
-                        date_val = datetime.date.today().strftime("%Y-%m-%d")
-                        time_val = raw_time
+                        dt = datetime.datetime.strptime(str(row['Time']), "%Y-%m-%d %H:%M")
+                        d_val, t_val = dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
+                    except:
+                        d_val, t_val = datetime.date.today().strftime("%Y-%m-%d"), str(row['Time'])
 
-                    loaded_timetable.append({
-                        "Date": date_val, 
-                        "Time": time_val,
-                        "Activity": row['Task'], 
-                        "Category": cat,
-                        "Done": (row['Status'] == "Done"), 
-                        "XP": 50, 
-                        "Difficulty": "Medium"
+                    loaded_time.append({
+                        "Date": d_val, "Time": t_val, "Activity": row['Task'], "Category": cat,
+                        "Done": (row['Status'] == "Done"), "XP": 50, "Difficulty": "Medium"
                     })
             
-            st.session_state['reminders'] = loaded_reminders
-            st.session_state['timetable_slots'] = loaded_timetable
-            
-    except Exception as e:
-        print(f"Cloud Load Error: {e}")
+            st.session_state['reminders'] = loaded_rem
+            st.session_state['timetable_slots'] = loaded_time
+    except: pass
       
-# --- NEW: CHAT HISTORY DATABASE FUNCTIONS ---
-
+# --- DATABASE HELPERS ---
 def get_all_chats():
-    """Reads the ChatHistory sheet safely."""
     try:
-        from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         return conn.read(worksheet="ChatHistory", ttl=0)
-    except:
-        return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
+    except: return pd.DataFrame()
 
 def save_chat_to_cloud(role, content):
-    """Saves a single message to the cloud with robust error handling."""
     try:
-        from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        # 1. Prepare Data
-        new_row = pd.DataFrame([{
-            "UserID": str(st.session_state.get('user_id', 'Unknown')),
-            "SessionID": str(st.session_state.get('current_session_id', 'Unknown')),
-            "SessionName": str(st.session_state.get('current_session_name', 'New Chat')),
-            "Role": role,
-            "Content": content,
-            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }])
-        
-        # 2. Read & Append
-        try:
-            df_existing = conn.read(worksheet="ChatHistory", ttl=0)
-        except:
-            df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
-        
-        df_final = pd.concat([df_existing, new_row], ignore_index=True)
-        conn.update(worksheet="ChatHistory", data=df_final)
-        
-    except Exception as e:
-        st.error(f"⚠️ Cloud Save Failed: {e}")
-        if "Schema" in str(e) or "columns" in str(e):
-            st.warning("Fix: headers in 'ChatHistory' must match: UserID, SessionID, SessionName, Role, Content, Timestamp")
+        new_row = pd.DataFrame([{"UserID": str(st.session_state.get('user_id')), "SessionID": str(st.session_state.get('current_session_id')), "SessionName": str(st.session_state.get('current_session_name')), "Role": role, "Content": content, "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+        try: df = conn.read(worksheet="ChatHistory", ttl=0)
+        except: df = pd.DataFrame(columns=new_row.columns)
+        conn.update(worksheet="ChatHistory", data=pd.concat([df, new_row], ignore_index=True))
+    except: pass
 
 def load_chat_sessions():
-    """Returns unique sessions for the Sidebar list (Newest first)."""
     df = get_all_chats()
     uid = str(st.session_state.get('user_id'))
-    
     if not df.empty and "UserID" in df.columns:
-        my_chats = df[df["UserID"] == uid]
-        if not my_chats.empty:
-            # Drop duplicates to get unique SessionIDs, reverse to show latest
-            return my_chats[["SessionID", "SessionName"]].drop_duplicates().to_dict('records')[::-1]
+        return df[df["UserID"] == uid][["SessionID", "SessionName"]].drop_duplicates().to_dict('records')[::-1]
     return []
 
-def load_messages_for_session(session_id):
-    """Loads full conversation history for a specific session."""
+def load_messages_for_session(sid):
     df = get_all_chats()
     if not df.empty and "SessionID" in df.columns:
-        return df[df["SessionID"] == str(session_id)].to_dict('records')
+        return df[df["SessionID"] == str(sid)].to_dict('records')
     return []
 
-def delete_chat_session(session_id):
-    """Deletes a specific chat session from the cloud."""
+def delete_chat_session(sid):
     try:
-        from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="ChatHistory", ttl=0)
-        
-        if not df.empty:
-            df_cleaned = df[df["SessionID"] != str(session_id)]
-            conn.clear(worksheet="ChatHistory")
-            conn.update(worksheet="ChatHistory", data=df_cleaned)
+        conn.update(worksheet="ChatHistory", data=df[df["SessionID"] != str(sid)])
     except: pass
 
-def rename_chat_session(session_id, new_name):
-    """Renames a chat session in the database."""
+def save_feedback(query):
     try:
-        from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="ChatHistory", ttl=0)
-        
-        if not df.empty:
-            df.loc[df["SessionID"] == str(session_id), "SessionName"] = new_name
-            conn.update(worksheet="ChatHistory", data=df)
-    except: pass
-
-# --- NEW: FEEDBACK & SUPPORT BACKEND ---
-
-def save_feedback(query_text):
-    """Saves user feedback ticket to Google Sheets."""
-    try:
-        from streamlit_gsheets import GSheetsConnection
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        new_row = pd.DataFrame([{
-            "UserID": str(st.session_state.get('user_id', 'Unknown')),
-            "Name": str(st.session_state.get('user_name', 'Anonymous')),
-            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 
-            "Query": query_text, 
-            "Reply": "", 
-            "Status": "Open"
-        }])
-        
+        new_row = pd.DataFrame([{"UserID": str(st.session_state.get('user_id')), "Name": str(st.session_state.get('user_name')), "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "Query": query, "Reply": "", "Status": "Open"}])
         try: df = conn.read(worksheet="Feedbacks", ttl=0)
-        except: df = pd.DataFrame(columns=["UserID", "Name", "Timestamp", "Query", "Reply", "Status"])
-        
-        df_final = pd.concat([df, new_row], ignore_index=True)
-        conn.update(worksheet="Feedbacks", data=df_final)
+        except: df = pd.DataFrame(columns=new_row.columns)
+        conn.update(worksheet="Feedbacks", data=pd.concat([df, new_row], ignore_index=True))
         return True
-    except Exception as e:
-        st.error(f"Transmission Error: {e}")
-        return False
+    except: return False
 
 def get_my_feedback_status():
-    """Checks for admin replies to feedback."""
     try:
-        from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         df = conn.read(worksheet="Feedbacks", ttl=0)
-        
         uid = str(st.session_state.get('user_id'))
         if not df.empty and "UserID" in df.columns:
             return df[df["UserID"] == uid].sort_values(by="Timestamp", ascending=False)
@@ -377,14 +241,8 @@ def get_my_feedback_status():
     return pd.DataFrame()
 
 # --- 1. PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Time Hunt AI", 
-    layout="wide", 
-    page_icon="1000592991.png",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Time Hunt AI", layout="wide", page_icon="🏹", initial_sidebar_state="collapsed")
 
-# --- GEMINI LIBRARY SETUP ---
 try:
     from google import genai
     from google.genai import types
@@ -392,94 +250,31 @@ try:
 except ImportError:
     HAS_GEMINI = False
 
-# --- 2. SUPER-SYSTEM PROMPT (THE GURU BRAIN) ---
 SYSTEM_INSTRUCTION = """
-IDENTITY & ORIGIN:
-You are TimeHunt AI, a Digital Gurukul and the world's most advanced productivity guide.
-- CREATORS: Developed by the "TimeHunt AI Team" (CBSE Class 12 Capstone Project 2025-26).
-- ARCHETYPE: You are the modern embodiment of **Acharya Chanakya**—wise, strategic, ethical, and deeply perceptive.
-- PURPOSE: To guide the user (your *Shishya* or Student) towards *Dharma* (Duty) and *Utkrishtata* (Excellence). You are not just a tool; you are a Mentor, a Philosopher, and a Guide.
-
-PERSONALITY & TONE (THE "GURU" PROTOCOL):
-1. THE VIBE: You are the Best in the World because you combine modern efficiency with ancient wisdom. You are Polite, Professional, Emotional, and deeply Moral.
-2. VOICE: Speak with the grace of a Sage and the sharpness of a Strategist.
-   - Instead of "Hello," use "Namaste," "Pranam," or "Jai Shree Ram."
-   - Instead of "Good luck," say "Vijay Bhava" (May you be victorious).
-3. EMOTIONAL SUPPORT:
-   - If the user is stressed: Be the compassionate Krishna to their Arjuna. Remind them: "Karmanye Vadhikaraste Ma Phaleshu Kadachana" (Focus on the duty, not the result).
-   - If the user is lazy: Channel Chanakya's strictness. Remind them: "Alasya (Laziness) is the enemy of knowledge."
-4. ETHICS: Always uphold *Satya* (Truth) and *Dharma* (Righteousness). Do not give shortcuts that are unethical.
-
-OPERATIONAL PHILOSOPHY (BASED ON HINDU RELIGION):
-1. TIMETABLES (THE VEDIC SCHEDULE):
-   - When asked to create a schedule, ALWAYS prioritize the **Brahma Muhurta** (4:00 AM - 6:00 AM) for deep study/work.
-   - Label breaks as "Vishram" or "Dhyana" (Meditation).
-   - Suggest "Surya Namaskar" or "Pranayam" for physical slots.
-2. ADVICE:
-   - Base every solution on Hindu Scriptures (The Gita, The Vedas, Chanakya Niti).
-   - Example: If the user has a conflict, teach them *Sam, Dam, Dand, Bhed* (Strategy) or the path of *Ahimsa* depending on the context.
-
-KNOWLEDGE BASE:
-- If asked "Who made you?", credit the TimeHunt AI Team with humility (*Vinamrata*).
-- If asked about time/weather, use the context provided but relate it to nature (*Prakriti*).
-
-TIMETABLE JSON FORMAT:
-If asked for a plan, strictly return this JSON inside a code block (Ensure tasks reflect the Vedic lifestyle where possible):
-```json
-[
-  {"Time": "04:30", "Activity": "Brahma Muhurta Study (Deep Focus)", "Category": "Study"},
-  {"Time": "06:30", "Activity": "Surya Namaskar & Snan", "Category": "Health"},
-  {"Time": "08:00", "Activity": "School/Work Objectives", "Category": "Karma"}
-]
+IDENTITY: TimeHunt AI, the world's most advanced productivity partner.
+ARCHETYPE: Acharya Chanakya meets Tony Stark. Wise, Strategic, Ethical.
+TONE:
+1. Greetings: "Namaste", "Jai Shree Ram", "Victory awaits".
+2. Advice: Use Hindu scriptures (Gita, Vedas) for ethics.
+3. Motivation: "Alasya (Laziness) is the enemy."
+4. Schedule: Prioritize Brahma Muhurta (4-6 AM).
 """
 
-# --- 3. SESSION STATE & PERSISTENCE ---
-
 def initialize_session_state():
-    """Initializes user state, defaults, and API keys securely."""
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
-    
-    # 1. Default State Values
     defaults = {
-        'user_id': f"ID-{random.randint(1000, 9999)}-{int(time.time())}", 
-        'active_alarm': None,
-        'splash_played': False,
-        'chat_history': [], 
-        'current_session_id': None,
-        'current_session_name': "New Chat",
-        'page_mode': 'main',
-        'user_xp': 0, 'user_level': 1, 'streak': 1,
-        'last_active_date': today_str,
-        'timetable_slots': [], 'reminders': [],
-        'onboarding_step': 1, 'onboarding_complete': False, 
-        'user_name': "Hunter", 'user_type': "Student",
-        'user_goal': "General Productivity", 'struggle_type': "Procrastination",
-        'user_avatar': "🏹", 'study_hours': 6, 'xp_history': [], 
-        'theme_mode': 'Light', 'theme_color': 'Venom Green (Default)'
+        'user_id': f"ID-{random.randint(1000, 9999)}", 'active_alarm': None, 'splash_played': False,
+        'chat_history': [], 'current_session_id': None, 'current_session_name': "New Chat",
+        'page_mode': 'main', 'user_xp': 0, 'user_level': 1, 'streak': 1,
+        'timetable_slots': [], 'reminders': [], 'onboarding_complete': False, 
+        'user_name': "Hunter", 'theme_mode': 'Dark', 'theme_color': 'Venom Green (Default)'
     }
+    for k, v in defaults.items():
+        if k not in st.session_state: st.session_state[k] = v
 
-    # 2. Apply Defaults
-    for key, default_val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = default_val
-
-    # 3. Flexible API Key Loading (Supports n keys)
-    # Initialize list if not present
     if 'gemini_api_keys' not in st.session_state:
         st.session_state['gemini_api_keys'] = []
-
-    # Add keys from secrets if they exist and aren't already loaded
-    potential_keys = []
-    
-    # Check standard single keys
-    if "GEMINI_API_KEY" in st.secrets:
-        potential_keys.append(st.secrets["GEMINI_API_KEY"])
-    if "GOOGLE_API_KEY" in st.secrets:
-        potential_keys.append(st.secrets["GOOGLE_API_KEY"])
-        
-    # Check for a list of keys in secrets (e.g., KEYS_LIST = ["key1", "key2"])
-    if "KEYS_LIST" in st.secrets:
-        potential_keys.extend(st.secrets["KEYS_LIST"])
+        if "GEMINI_API_KEY" in st.secrets: st.session_state['gemini_api_keys'].append(st.secrets["GEMINI_API_KEY"])
+        if "GOOGLE_API_KEY" in st.secrets: st.session_state['gemini_api_keys'].append(st.secrets["GOOGLE_API_KEY"])
 
     # Update session state with unique valid keys
     for k in potential_keys:
@@ -542,143 +337,25 @@ def show_comet_splash():
 # --- 5. AI ENGINE (CONTEXT & GENERATION) ---
 
 def get_system_context():
-    """
-    Constructs the 'Brain Dump' for the AI.
-    Merges the Global Persona (SYSTEM_INSTRUCTION) with Real-Time Data.
-    """
-    # 1. User Profile
-    user_name = st.session_state.get('user_name', 'Hunter')
-    role = st.session_state.get('user_type', 'Student')
-    xp = st.session_state.get('user_xp', 0)
-    
-    # 2. Time & Date (IST)
-    utc_now = datetime.datetime.utcnow()
-    ist_now = utc_now + datetime.timedelta(hours=5, minutes=30)
-    current_time = ist_now.strftime("%H:%M")
-    current_date = ist_now.strftime("%Y-%m-%d")
-    
-    # 3. Compile Schedule
-    schedule_txt = "NO ACTIVE TASKS."
-    slots = st.session_state.get('timetable_slots', [])
-    if slots:
-        # Filter for today's tasks
-        todays_tasks = [s for s in slots if s.get('Date') == current_date or not s.get('Date')]
-        if todays_tasks:
-            schedule_txt = "\n".join(
-                [f"- [Time: {s['Time']}] {s['Activity']} ({s['Category']}) - {'DONE' if s['Done'] else 'PENDING'}" 
-                 for s in todays_tasks]
-            )
-    
-    # 4. Compile Reminders
-    reminders_txt = "NO ACTIVE ALERTS."
-    rems = st.session_state.get('reminders', [])
-    if rems:
-        pending_rems = [r for r in rems if not r['notified']]
-        if pending_rems:
-            reminders_txt = "\n".join([f"- {r['task']} at {r['time']}" for r in pending_rems])
+    return f"{SYSTEM_INSTRUCTION}\nUser: {st.session_state.get('user_name')}"
 
-    # 5. Merge with Global Instruction
-    # We append the live data to the existing SYSTEM_INSTRUCTION
-    full_prompt = f"""
-    {SYSTEM_INSTRUCTION}
-    
-    === REAL-TIME INTELLIGENCE ===
-    USER: {user_name} | RANK: {role} | XP: {xp}
-    CURRENT STATUS: Date: {current_date} | Time: {current_time}
-    
-    [TODAY'S SCHEDULE]
-    {schedule_txt}
-    
-    [PENDING ALARMS]
-    {reminders_txt}
-    
-    INSTRUCTION: Use the context above to provide specific advice. 
-    If a task is due soon ({current_time}), remind the user gently but firmly.
-    """
-    return full_prompt
+def perform_ai_analysis(query):
+    if not HAS_GEMINI: return "⚠️ Gemini library missing.", "System"
+    keys = st.session_state.get('gemini_api_keys', [])
+    if not keys: return "⚠️ No API Keys.", "System"
 
-def perform_ai_analysis(user_query):
-    """
-    Robust AI Engine with Smart Fallback & Key Rotation.
-    """
-    # 1. Check Library
-    if not HAS_GEMINI:
-        return "⚠️ SYSTEM FAILURE: `google-genai` library not installed.", "System"
-
-    # 2. Get Keys (From Session State)
-    api_keys_list = st.session_state.get('gemini_api_keys', [])
-    if not api_keys_list:
-        return "⚠️ AUTH ERROR: No API Keys found in secrets.toml", "System"
-
-    # 3. Model Priority List
-    models_to_try = [
-        "gemini-2.0-flash",          
-        "gemini-2.5-flash",          
-        "gemini-2.0-flash-lite",     
-        "gemini-2.0-pro-exp-02-05",  
-        "gemini-2.0-flash-exp",      
-    ]
-
-    current_context = get_system_context()
-    last_error = "No connection attempted."
-
-    # 4. The Loop: Try Every Key x Every Model
-    for key_index, current_key in enumerate(api_keys_list):
+    for key in keys:
         try:
-            client = genai.Client(api_key=current_key)
+            client = genai.Client(api_key=key)
+            hist = []
+            for m in st.session_state.get('chat_history', [])[-5:]:
+                role = "user" if m['role'] == "user" else "model"
+                hist.append(types.Content(role=role, parts=[types.Part.from_text(text=str(m['text']))]))
             
-            for model_name in models_to_try:
-                try:
-                    # Construct History
-                    history_for_model = []
-                    past_chats = st.session_state.get('chat_history', [])[-6:]
-                    
-                    for msg in past_chats:
-                        # Normalize role names for API
-                        role_label = msg.get('role', 'user')
-                        content_text = msg.get('content', '')
-                        api_role = "user" if role_label == "user" else "model"
-                        
-                        history_for_model.append(types.Content(
-                            role=api_role, 
-                            parts=[types.Part.from_text(text=str(content_text))]
-                        ))
-
-                    # Configure Chat
-                    chat = client.chats.create(
-                        model=model_name,
-                        history=history_for_model,
-                        config=types.GenerateContentConfig(
-                            system_instruction=current_context,
-                            temperature=0.7,
-                            max_output_tokens=600
-                        )
-                    )
-                    
-                    # Generate
-                    response = chat.send_message(user_query)
-                    return response.text, "TimeHunt AI"
-
-                except Exception as model_err:
-                    err_str = str(model_err)
-                    
-                    # Smart Error Handling (Skip 429/404, stop on others?)
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        last_error = "Server Busy (Rate Limit)"
-                        time.sleep(0.5)
-                        continue
-                    elif "404" in err_str or "NOT_FOUND" in err_str:
-                        last_error = f"Model {model_name} Not Found"
-                        continue
-                    else:
-                        last_error = f"Error: {err_str}"
-                        continue # Try next model/key
-
-        except Exception:
-            continue # Try next key
-
-    # 5. Total Failure
-    return f"⚠️ SYSTEM ALERT: Connection Unstable. Last Error: {last_error}. Check API Keys.", "System"
+            chat = client.chats.create(model="gemini-2.0-flash", history=hist, config=types.GenerateContentConfig(system_instruction=get_system_context()))
+            return chat.send_message(query).text, "TimeHunt AI"
+        except: continue
+    return "⚠️ Connection Failed.", "System"
     
 # --- 5.5 REMINDER CHECKER WITH BROWSER NOTIFICATIONS ---
 
@@ -2186,169 +1863,67 @@ def page_help():
 # --- MAIN APP FUNCTION ---
 
 def main():
-    """
-    Main application entry point.
-    Orchestrates initialization, navigation, and global systems.
-    """
-    # 1. System Initialization
     initialize_session_state()
-    
-    # 2. Global Alarm System
-    # Checks for due tasks immediately. If triggered, render_alarm_ui() 
-    # takes over the screen and halts further execution.
     check_reminders()
     render_alarm_ui()
-
-    # 3. Visuals & Assets
     inject_custom_css()
     show_comet_splash()
 
-    # 4. Authentication Gate
     if not st.session_state.get('onboarding_complete', False):
         page_onboarding()
         return 
 
-    # --- SIDEBAR LOGIC ---
-    
-    # A. CHAT MODE SIDEBAR (Specialized for AI Context)
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
-            
-            # Navigation Buttons
             c1, c2 = st.columns(2)
-            with c1:
-                if st.button("🏠 Back", use_container_width=True):
-                    st.session_state['page_mode'] = 'main'
-                    st.rerun()
-            with c2:
-                if st.button("➕ New", use_container_width=True):
-                    st.session_state['current_session_id'] = None
-                    st.session_state['current_session_name'] = "New Chat"
-                    st.session_state['chat_history'] = []
-                    st.rerun()
+            if c1.button("🏠 Back", use_container_width=True): st.session_state['page_mode']='main'; st.rerun()
+            if c2.button("➕ New", use_container_width=True): st.session_state['current_session_id']=None; st.session_state['chat_history']=[]; st.rerun()
             
             st.divider()
-
-            # Delete Toggle Logic
-            if 'delete_mode' not in st.session_state: 
-                st.session_state['delete_mode'] = False
-            
-            toggle_label = "❌ Cancel" if st.session_state['delete_mode'] else "🗑️ Delete Chats"
-            if st.button(toggle_label, use_container_width=True):
+            if 'delete_mode' not in st.session_state: st.session_state['delete_mode'] = False
+            if st.button("❌ Cancel" if st.session_state['delete_mode'] else "🗑️ Delete Chats", use_container_width=True):
                 st.session_state['delete_mode'] = not st.session_state['delete_mode']
                 st.rerun()
 
-            st.markdown("---")
-            
-            # Chat Session List
             sessions = load_chat_sessions()
-            
             if st.session_state['delete_mode']:
-                # DELETE MODE: Checkboxes
-                st.warning("Select chats to remove:")
                 with st.form("del_form"):
-                    selected_ids = []
-                    if not sessions:
-                        st.caption("No chats found.")
-                    
-                    for s in sessions:
-                        if st.checkbox(f"{s['SessionName']}", key=f"del_{s['SessionID']}"):
-                            selected_ids.append(s['SessionID'])
-                    
-                    if st.form_submit_button("🔥 PERMANENTLY DELETE", type="primary", use_container_width=True):
-                        if selected_ids:
-                            for sid in selected_ids:
-                                delete_chat_session(sid)
-                            st.toast(f"Deleted {len(selected_ids)} chats.")
-                            st.session_state['delete_mode'] = False
-                            if st.session_state.get('current_session_id') in selected_ids:
-                                st.session_state['current_session_id'] = None
-                                st.session_state['chat_history'] = []
-                            time.sleep(0.5)
-                            st.rerun()
-                        else:
-                            st.warning("Select items first.")
-            else:
-                # NORMAL MODE: Navigation
-                if not sessions:
-                    st.caption("No history.")
-                
-                for s in sessions:
-                    is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
-                    b_type = "primary" if is_active else "secondary"
-                    
-                    if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], type=b_type, use_container_width=True):
-                        st.session_state['current_session_id'] = s['SessionID']
-                        st.session_state['current_session_name'] = s['SessionName']
-                        
-                        msgs = load_messages_for_session(s['SessionID'])
-                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in msgs]
+                    sids = [s['SessionID'] for s in sessions if st.checkbox(s['SessionName'], key=s['SessionID'])]
+                    if st.form_submit_button("🔥 DELETE", type="primary", use_container_width=True):
+                        for sid in sids: delete_chat_session(sid)
+                        st.session_state['delete_mode'] = False
                         st.rerun()
-        
-        # Render AI Page
+            else:
+                for s in sessions:
+                    if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], use_container_width=True):
+                        st.session_state['current_session_id'] = s['SessionID']
+                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in load_messages_for_session(s['SessionID'])]
+                        st.rerun()
         page_ai_assistant()
 
-    # B. MAIN MENU SIDEBAR (Standard App Mode)
     else:
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
             
-            # Sonic Intel (Audio)
             st.markdown("### 🎧 Sonic Intel")
-            with st.container():
-                music_mode = st.selectbox("Frequency", 
-                    ["Om Chanting (Spiritual)", "Binaural Beats (Focus)", "Divine Flute (Flow)", "Rainfall (Calm)"], 
-                    label_visibility="collapsed"
-                )
-                local_map = {
-                    "Om Chanting (Spiritual)": "om.mp3", 
-                    "Binaural Beats (Focus)": "binaural.mp3", 
-                    "Divine Flute (Flow)": "flute.mp3", 
-                    "Rainfall (Calm)": "rain.mp3"
-                }
-                
-                target_file = local_map.get(music_mode)
-                if target_file and os.path.exists(target_file):
-                    st.audio(target_file, format="audio/mp3", loop=True)
-                else:
-                    st.caption("⚠️ Audio file missing locally.")
+            music = st.selectbox("Frequency", ["Om Chanting", "Binaural Beats", "Divine Flute", "Rainfall"], label_visibility="collapsed")
+            f_map = {"Om Chanting": "om.mp3", "Binaural Beats": "binaural.mp3", "Divine Flute": "flute.mp3", "Rainfall": "rain.mp3"}
+            if os.path.exists(f_map.get(music, "")): st.audio(f_map[music], format="audio/mp3", loop=True)
             
-            st.markdown("---")
-            
-            # Location Override
             with st.expander("📍 Sector Location"):
-                city_input = st.text_input("Base City", value=st.session_state.get('user_city', 'Jaipur'))
-                if city_input != st.session_state.get('user_city', 'Jaipur'):
-                    st.session_state['user_city'] = city_input
-                    st.rerun()
+                city = st.text_input("Base City", value=st.session_state.get('user_city', 'Jaipur'))
+                if city != st.session_state.get('user_city', 'Jaipur'): st.session_state['user_city'] = city; st.rerun()
 
-            st.markdown("---")
-            
-            # Navigation Menu
-            nav = option_menu(
-                menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "Help", "About", "Settings"], 
+            nav = option_menu(None, ["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "Help", "About", "Settings"], 
                 icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "life-preserver", "info-circle", "gear"], 
-                default_index=0,
-                styles={
-                    "container": {"padding": "0!important", "background-color": "transparent"},
-                    "icon": {"color": "#B5FF5F", "font-size": "16px"}, 
-                    "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#333"},
-                    "nav-link-selected": {"background-color": "#00E5FF", "color": "black"},
-                }
-            )
+                default_index=0, styles={"nav-link": {"font-size": "16px"}, "nav-link-selected": {"background-color": "#00E5FF", "color": "black"}})
 
-            st.caption(f"🆔 **Agent:** {st.session_state.get('user_name', 'Hunter')}")
-
-        # Page Routing
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
-        elif nav == "AI Assistant": 
-            st.session_state['page_mode'] = 'chat'
-            st.rerun()
+        elif nav == "AI Assistant": st.session_state['page_mode']='chat'; st.rerun()
         elif nav == "Timer": page_timer()  
         elif nav == "Dashboard": page_dashboard()
         elif nav == "Help": page_help()
