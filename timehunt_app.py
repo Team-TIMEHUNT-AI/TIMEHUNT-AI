@@ -316,7 +316,53 @@ def rename_chat_session(session_id, new_name):
             conn.update(worksheet="ChatHistory", data=df)
     except: pass
 
+# --- NEW: FEEDBACK & SUPPORT BACKEND ---
 
+def save_feedback(query_text):
+    """Saves user feedback to Google Sheets automatically."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # 1. Prepare Data
+        uid = str(st.session_state.get('user_id', 'Unknown'))
+        name = str(st.session_state.get('user_name', 'Anonymous'))
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        
+        # 2. Read Sheet (Create if missing)
+        try:
+            df = conn.read(worksheet="Feedbacks", ttl=0)
+        except:
+            df = pd.DataFrame(columns=["UserID", "Name", "Timestamp", "Query", "Reply", "Status"])
+        
+        # 3. Add New Row
+        new_row = pd.DataFrame([{
+            "UserID": uid, "Name": name, "Timestamp": ts, 
+            "Query": query_text, "Reply": "", "Status": "Open"
+        }])
+        
+        # 4. Save
+        df_final = pd.concat([df, new_row], ignore_index=True)
+        conn.update(worksheet="Feedbacks", data=df_final)
+        return True
+    except Exception as e:
+        st.error(f"Transmission Error: {e}")
+        return False
+
+def get_my_feedback_status():
+    """Checks for admin replies."""
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Feedbacks", ttl=0)
+        
+        uid = str(st.session_state.get('user_id'))
+        if not df.empty and "UserID" in df.columns:
+            # Return only this user's tickets, newest first
+            return df[df["UserID"] == uid].sort_values(by="Timestamp", ascending=False)
+    except:
+        pass
+    return pd.DataFrame()
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -2273,6 +2319,100 @@ def render_alarm_ui():
         # STOP EXECUTION so the user is forced to interact
         st.stop()
 
+# --- PAGE: TACTICAL HELP CENTER ---
+def page_help():
+    st.markdown('<div class="big-title">🆘 Tactical Support</div>', unsafe_allow_html=True)
+    st.caption("Operational Manual & Command Link")
+    
+    # --- SECTION 1: INSTALLATION GUIDE (VISUAL) ---
+    st.markdown("### 📲 Deployment (Install App)")
+    st.info("To activate the custom TimeHunt insignia on your device, bypass the standard protocol:")
+    
+    with st.container():
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("""
+            <div class="glass-card" style="height:100%;">
+                <h4 style="color:#B5FF5F">🤖 Android / Chrome</h4>
+                <ol style="font-size:14px; margin-left: -20px;">
+                    <li>Tap the <b>Three Dots (⋮)</b> in Chrome.</li>
+                    <li>Select <b>"Add to Home Screen"</b>.</li>
+                    <li><b>CRITICAL:</b> If a popup with a Red Boat logo appears, CLOSE IT.</li>
+                    <li>Rename to "TimeHunt AI".</li>
+                </ol>
+            </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown("""
+            <div class="glass-card" style="height:100%;">
+                <h4 style="color:#00E5FF">🍎 iOS / Safari</h4>
+                <ol style="font-size:14px; margin-left: -20px;">
+                    <li>Tap the <b>Share Button</b> (Box with Arrow).</li>
+                    <li>Scroll down to <b>"Add to Home Screen"</b>.</li>
+                    <li>The Tactical Logo will load automatically.</li>
+                    <li>Tap <b>Add</b>.</li>
+                </ol>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.write("")
+
+    # --- SECTION 2: COMMAND LINK (FEEDBACK) ---
+    st.markdown("### 📡 Command Link (Q&A)")
+    
+    # A. TICKET HISTORY
+    my_tickets = get_my_feedback_status()
+    
+    if not my_tickets.empty:
+        st.markdown("#### Incoming Transmissions")
+        for index, row in my_tickets.iterrows():
+            # Check for Admin Reply
+            has_reply = pd.notna(row['Reply']) and str(row['Reply']).strip() != ""
+            
+            # Dynamic Styling based on status
+            border_color = "#B5FF5F" if has_reply else "#333"
+            status_icon = "✅ SECURE" if has_reply else "⏳ PENDING"
+            
+            st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid {border_color}; border-radius: 12px; padding: 15px; margin-bottom: 10px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; color:#888;">
+                    <span>DATE: {row['Timestamp']}</span>
+                    <span style="color:{border_color}; font-weight:bold;">{status_icon}</span>
+                </div>
+                <div style="margin-top:5px; font-weight:bold; font-size:16px;">"{row['Query']}"</div>
+                {f'<div style="margin-top:10px; padding-top:10px; border-top:1px dashed #444; color:#B5FF5F;"><b>⚓ HQ REPLY:</b> {row["Reply"]}</div>' if has_reply else ''}
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # B. SUBMISSION FORM
+    with st.expander("📝 Open New Channel", expanded=not my_tickets.empty):
+        with st.form("help_form", clear_on_submit=True):
+            st.write("**Describe your objective or report a bug:**")
+            query = st.text_area("Message", placeholder="Example: How do I delete a chat session?", label_visibility="collapsed")
+            
+            if st.form_submit_button("🚀 Transmit to HQ", use_container_width=True, type="primary"):
+                if len(query) > 5:
+                    if save_feedback(query):
+                        st.toast("Message received at Base.", icon="📨")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    st.warning("Transmission too short.")
+
+    st.divider()
+
+    # --- SECTION 3: FIELD MANUAL (FAQ) ---
+    st.markdown("### 📘 Field Manual")
+    faqs = {
+        "🎯 How is XP calculated?": "Base XP is determined by task difficulty (Easy=20, Medium=50, Boss=300). Streak Multipliers boost this by up to 2.5x.",
+        "🔊 Why no audio?": "Browsers block auto-playing audio. Click anywhere on the page once to 'Initialize' the audio engine.",
+        "☁️ Is my data safe?": "Affirmative. Your schedule is encrypted with your unique User ID. Only you hold the clearance."
+    }
+    
+    for q, a in faqs.items():
+        with st.expander(q):
+            st.write(a)
+
 # --- MAIN APP FUNCTION ---
 
 def main():
@@ -2424,10 +2564,9 @@ def main():
             st.markdown("---")
             
             # --- MAIN NAVIGATION ---
-            nav = option_menu(
-                menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "About", "Settings"], 
-                icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "info-circle", "gear"], 
+options=["Home", "Scheduler", "Calendar", "AI Assistant", "Timer", "Dashboard", "Help", "About", "Settings"], 
+icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "life-preserver", "info-circle", "gear"], 
+
                 default_index=0
             )
 
@@ -2444,6 +2583,7 @@ def main():
         elif nav == "Dashboard": page_dashboard()
         elif nav == "About": page_about()
         elif nav == "Settings": page_settings()
+        elif nav == "Help": page_help()
 
 if __name__ == "__main__":
     main()
