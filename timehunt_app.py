@@ -1587,12 +1587,14 @@ def inject_custom_css():
         card_bg = "#FFFFFF"
         text_color = "#1A1A1A"
         border_color = "#E0E0E0"
+        btn_text = "#000000"
     else:
         main_bg = "#0E1117"
         sidebar_bg = "#262730"
         card_bg = "#1E1E1E"
         text_color = "#FAFAFA"
         border_color = "#333333"
+        btn_text = "#FFFFFF"
 
     st.markdown(f"""
         <style>
@@ -1601,6 +1603,7 @@ def inject_custom_css():
                 --text: {text_color}; 
                 --card-bg: {card_bg}; 
                 --border: {border_color};
+                --primary-color: {accent};
             }}
             
             .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
@@ -1630,13 +1633,34 @@ def inject_custom_css():
                 background-color: {sidebar_bg} !important; 
                 color: {text_color} !important; 
                 border-radius: 8px;
+                border: 1px solid {border_color} !important;
             }}
             
-            /* Button Styling */
-            .stButton button {{ 
+            /* BUTTON VISIBILITY FIX */
+            div.stButton > button {{ 
+                color: {btn_text} !important;
+                background-color: {card_bg};
+                border: 1px solid {border_color};
                 border-radius: 10px; 
                 font-weight: 600; 
-                border: 1px solid {border_color};
+                transition: all 0.2s;
+            }}
+            
+            div.stButton > button:hover {{
+                border-color: {accent};
+                color: {accent} !important;
+            }}
+            
+            /* Primary Buttons (Filled) - Force Black Text for readability on bright accents */
+            div.stButton > button[kind="primary"] {{
+                background-color: {accent} !important;
+                color: #000000 !important;
+                border: none;
+            }}
+            
+            /* Checkbox & Radio Text */
+            label {{
+                color: {text_color} !important;
             }}
         </style>
     """, unsafe_allow_html=True)
@@ -2411,7 +2435,6 @@ def main():
     initialize_session_state()
     
     # 2. CHECK GLOBAL ALARMS (Code Red Overlay)
-    # This must run before UI rendering to block interaction if alarm is active
     check_reminders()
     render_alarm_ui()
 
@@ -2419,12 +2442,12 @@ def main():
     inject_custom_css()
     show_comet_splash()
 
-    # 4. Onboarding Gate (Login Screen)
+    # 4. Onboarding Gate
     if not st.session_state['onboarding_complete']:
         page_onboarding()
         return 
 
-    # 5. CHAT MODE SIDEBAR (Special Layout)
+    # 5. CHAT MODE SIDEBAR
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 Chat History")
@@ -2454,7 +2477,7 @@ def main():
 
             st.markdown("---")
             
-            # List Sessions
+            # List Sessions (FIXED LOOP)
             sessions = load_chat_sessions()
             
             if st.session_state['delete_mode']:
@@ -2462,28 +2485,31 @@ def main():
                 st.caption("Select chats to delete:")
                 with st.form("del_form"):
                     selected_ids = []
-                    for s in sessions:
-                        if st.checkbox(f"{s['SessionName']}", key=f"del_{s['SessionID']}"):
+                    # Added 'enumerate' to ensure unique keys
+                    for i, s in enumerate(sessions):
+                        unique_key = f"del_{s['SessionID']}_{i}"
+                        if st.checkbox(f"{s['SessionName']}", key=unique_key):
                             selected_ids.append(s['SessionID'])
                     
                     if st.form_submit_button("🗑️ Delete Selected", type="primary", use_container_width=True):
                         for sid in selected_ids:
                             delete_chat_session(sid)
                         st.session_state['delete_mode'] = False
-                        # Reset if current chat deleted
                         if st.session_state.get('current_session_id') in selected_ids:
                             st.session_state['current_session_id'] = None
                             st.session_state['chat_history'] = []
                         st.rerun()
             else:
                 # Normal Mode UI
-                for s in sessions:
+                # Added 'enumerate' to ensure unique keys here too
+                for i, s in enumerate(sessions):
                     is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
                     b_type = "primary" if is_active else "secondary"
-                    if st.button(f"📄 {s['SessionName']}", key=s['SessionID'], type=b_type, use_container_width=True):
+                    unique_key = f"sess_{s['SessionID']}_{i}"
+                    
+                    if st.button(f"📄 {s['SessionName']}", key=unique_key, type=b_type, use_container_width=True):
                         st.session_state['current_session_id'] = s['SessionID']
                         st.session_state['current_session_name'] = s['SessionName']
-                        # Load History
                         msgs = load_messages_for_session(s['SessionID'])
                         st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in msgs]
                         st.rerun()
