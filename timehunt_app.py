@@ -533,23 +533,25 @@ def initialize_session_state():
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
 def show_cinematic_intro():
     """
-    High-Fidelity reproduction of the 'Comet' intro.
-    Uses Parallax layers and Camera Exposure effects.
+    High-Fidelity 'Comet' Intro with Crash Protection.
     """
     if not st.session_state['splash_played']:
         placeholder = st.empty()
         
-        # Load Logo safely
-        logo_b64 = ""
+        # Safe Logo Loading
+        logo_html = '<div style="font-size: 80px;">🏹</div>' # Default fallback
         try:
-            with open("1000592991.png", "rb") as f:
-                logo_b64 = base64.b64encode(f.read()).decode()
-        except: pass
+            if os.path.exists("1000592991.png"):
+                with open("1000592991.png", "rb") as f:
+                    logo_b64 = base64.b64encode(f.read()).decode()
+                # We use an f-string carefully here
+                logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="main-logo">'
+        except Exception:
+            pass
 
         with placeholder.container():
             st.markdown(f"""
             <style>
-                /* CORE CONTAINER */
                 .intro-container {{
                     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
                     background: #000; z-index: 999999;
@@ -557,122 +559,64 @@ def show_cinematic_intro():
                     overflow: hidden;
                     animation: globalFadeOut 0.5s ease-in-out 6.5s forwards;
                 }}
-
-                /* LAYER 1: DEEP SPACE (Stars) */
+                
+                /* LAYER 1: Deep Space Grid */
                 .space-layer {{
                     position: absolute; width: 120%; height: 120%;
-                    background-image: 
-                        radial-gradient(white 1px, transparent 1px),
-                        radial-gradient(rgba(255,255,255,0.5) 1px, transparent 1px);
-                    background-size: 50px 50px, 150px 150px;
-                    opacity: 0.6;
+                    background-image: radial-gradient(rgba(255,255,255,0.3) 1px, transparent 1px);
+                    background-size: 40px 40px;
+                    opacity: 0.5;
                     animation: spaceDrift 10s linear infinite;
                 }}
 
-                /* LAYER 2: NEBULA CLOUDS (The colored lights) */
-                /* We use two gradients moving in opposite directions for 'liquid' feel */
+                /* LAYER 2: Moving Nebula */
                 .nebula-1 {{
                     position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-                    background: radial-gradient(circle at center, rgba(255, 60, 0, 0.15), transparent 40%);
-                    filter: blur(80px);
-                    animation: orbitSlow 12s linear infinite;
-                    mix-blend-mode: screen;
-                }}
-                .nebula-2 {{
-                    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-                    background: radial-gradient(circle at center, rgba(0, 200, 255, 0.1), transparent 45%);
+                    background: radial-gradient(circle at center, rgba(255, 60, 0, 0.1), transparent 50%);
                     filter: blur(60px);
-                    animation: orbitReverse 15s linear infinite;
-                    mix-blend-mode: screen;
+                    animation: orbitSlow 12s linear infinite;
                 }}
 
-                /* LAYER 3: THE IGNITION POINT (Tiny dot before explosion) */
-                .ignition-core {{
-                    position: absolute; width: 4px; height: 4px;
-                    background: #fff; border-radius: 50%;
-                    box-shadow: 0 0 10px 2px #fff;
-                    animation: ignite 2.5s cubic-bezier(0.8, 0, 1, 1) forwards;
-                    opacity: 0;
-                }}
-
-                /* LAYER 4: THE BIG BANG (Screen Flash) */
+                /* LAYER 3: The Flash */
                 .blind-flash {{
                     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-                    background: #FFF;
-                    opacity: 0;
-                    /* This timing is critical: Fast up, slow fade down */
+                    background: #FFF; opacity: 0;
                     animation: cameraFlash 0.8s cubic-bezier(0.1, 0.9, 0.2, 1) 2.5s forwards;
                     z-index: 100;
                 }}
 
-                /* LAYER 5: LOGO REVEAL */
+                /* LAYER 4: Content */
                 .logo-container {{
                     z-index: 200; display: flex; flex-direction: column; align-items: center;
                     opacity: 0;
-                    /* Starts slightly zoomed IN, then relaxes out */
                     transform: scale(1.4);
                     animation: logoSettle 3s cubic-bezier(0.22, 1, 0.36, 1) 2.6s forwards;
                 }}
-                
-                .main-logo {{ width: 140px; filter: drop-shadow(0 0 20px rgba(181, 255, 95, 0.3)); }}
-                
-                .text-block {{ text-align: center; margin-top: 25px; color: #FFF; }}
+                .main-logo {{ width: 120px; margin-bottom: 20px; filter: drop-shadow(0 0 20px rgba(181, 255, 95, 0.3)); }}
                 .title-text {{ 
-                    font-family: 'Inter', sans-serif; font-size: 38px; font-weight: 800; letter-spacing: 4px; 
+                    font-family: 'Inter', sans-serif; font-size: 40px; font-weight: 800; color: white; letter-spacing: 5px; 
                     text-shadow: 0 0 10px rgba(255,255,255,0.3);
                 }}
-                .sub-text {{ 
-                    font-family: 'Inter', sans-serif; font-size: 14px; color: #B5FF5F; 
-                    letter-spacing: 2px; text-transform: uppercase; margin-top: 8px; opacity: 0.8; 
-                }}
 
-                /* --- ANIMATION TIMELINES --- */
+                /* ANIMATIONS */
                 @keyframes spaceDrift {{ from {{ transform: scale(1.0) rotate(0deg); }} to {{ transform: scale(1.1) rotate(2deg); }} }}
-                @keyframes orbitSlow {{ from {{ transform: rotate(0deg) translate(50px) rotate(0deg); }} to {{ transform: rotate(360deg) translate(50px) rotate(-360deg); }} }}
-                @keyframes orbitReverse {{ from {{ transform: rotate(360deg) translate(40px) rotate(-360deg); }} to {{ transform: rotate(0deg) translate(40px) rotate(0deg); }} }}
-                
-                @keyframes ignite {{
-                    0% {{ opacity: 0; transform: scale(0); }}
-                    80% {{ opacity: 1; transform: scale(1); }}
-                    100% {{ opacity: 1; transform: scale(3); }}
-                }}
-
-                @keyframes cameraFlash {{
-                    0% {{ opacity: 0; }}
-                    10% {{ opacity: 1; }} /* INSTANT WHITE */
-                    100% {{ opacity: 0; }} /* Fade out to show logo */
-                }}
-
-                @keyframes logoSettle {{
-                    0% {{ opacity: 0; transform: scale(3.5); filter: blur(20px); }}
-                    10% {{ opacity: 1; filter: blur(0px); }}
-                    100% {{ opacity: 1; transform: scale(1.0); }}
-                }}
-
+                @keyframes orbitSlow {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(360deg); }} }}
+                @keyframes cameraFlash {{ 0% {{ opacity: 0; }} 10% {{ opacity: 1; }} 100% {{ opacity: 0; }} }}
+                @keyframes logoSettle {{ 0% {{ opacity: 0; transform: scale(3.5); filter: blur(20px); }} 10% {{ opacity: 1; filter: blur(0px); }} 100% {{ opacity: 1; transform: scale(1.0); }} }}
                 @keyframes globalFadeOut {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
-
             </style>
 
             <div class="intro-container">
                 <div class="space-layer"></div>
                 <div class="nebula-1"></div>
-                <div class="nebula-2"></div>
-                
-                <div class="ignition-core"></div>
-                
                 <div class="blind-flash"></div>
-                
                 <div class="logo-container">
-                    <img src="data:image/png;base64,{logo_b64}" class="main-logo">
-                    <div class="text-block">
-                        <div class="title-text">TIME HUNT</div>
-                        <div class="sub-text">Productivity Intelligence</div>
-                    </div>
+                    {logo_html}
+                    <div class="title-text">TIME HUNT</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # Wait for animation loop
             time.sleep(7.0)
         
         placeholder.empty()
@@ -2391,7 +2335,7 @@ def page_help():
         with st.expander(q):
             st.write(a)
 
-# --- 11. VISUAL STYLING (Restoring the missing function) ---
+# --- 11. VISUAL STYLING (Restores the missing function) ---
 def inject_custom_css():
     """
     Injects global CSS styles to handle the theme (Dark/Light) and colors.
@@ -2425,24 +2369,26 @@ def inject_custom_css():
             .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
             section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
             
-            /* Buttons */
+            /* Clean Buttons */
             div.stButton > button {{ 
                 background-color: {card_bg}; border: 1px solid rgba(255,255,255,0.1); 
                 color: {btn_text} !important; border-radius: 8px; 
             }}
             div.stButton > button:hover {{ border-color: {accent}; color: {accent} !important; }}
+            
+            /* Primary Button */
             div.stButton > button[kind="primary"] {{ 
                 background-color: {accent} !important; border: none; 
                 color: #000 !important; font-weight: bold;
             }}
             
-            /* Inputs */
-            .stTextInput > div > div > input {{ color: {text_color}; }}
+            /* Remove white backgrounds from columns */
+            div[data-testid="column"] {{ background: transparent !important; }}
         </style>
     """, unsafe_allow_html=True)
 
 # --- 20. MAIN APPLICATION ROUTER ---
-# --- 20. MAIN APPLICATION ROUTER ---
+
 def main():
     # 1. Initialize Variables
     initialize_session_state()
