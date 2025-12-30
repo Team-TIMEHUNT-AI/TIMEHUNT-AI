@@ -492,7 +492,6 @@ def initialize_session_state():
         'user_goal': "Productivity", 
         'user_avatar': "🏹", 
         'xp_history': [], 
-        # Theme Defaults - These connect to the Settings Page
         'theme_mode': 'Dark', 
         'theme_color': 'Green (Default)'
     }
@@ -502,15 +501,25 @@ def initialize_session_state():
         if key not in st.session_state:
             st.session_state[key] = default_val
 
-    # API Key Setup (Safe Load)
+    # --- API KEY FIX FOR LISTS ---
     if 'gemini_api_keys' not in st.session_state or not st.session_state['gemini_api_keys']:
         # Check standard Streamlit secret names
+        keys = []
         if "GEMINI_API_KEY" in st.secrets:
-            st.session_state['gemini_api_keys'] = [st.secrets["GEMINI_API_KEY"]]
+            raw_keys = st.secrets["GEMINI_API_KEY"]
+            # If secrets file has a list ["key1", "key2"], use it directly
+            if isinstance(raw_keys, list):
+                keys = raw_keys
+            else:
+                keys = [raw_keys]
         elif "GOOGLE_API_KEY" in st.secrets:
-            st.session_state['gemini_api_keys'] = [st.secrets["GOOGLE_API_KEY"]]
-        else:
-            st.session_state['gemini_api_keys'] = []
+            raw_keys = st.secrets["GOOGLE_API_KEY"]
+            if isinstance(raw_keys, list):
+                keys = raw_keys
+            else:
+                keys = [raw_keys]
+        
+        st.session_state['gemini_api_keys'] = keys
 
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
 def show_comet_splash():
@@ -1565,8 +1574,8 @@ def page_ai_assistant():
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
     """
-    Injects CSS variables for colors to ensure consistency and readability
-    in both Light and Dark modes.
+    Injects CSS variables for colors to ensure consistency and readability.
+    Forces button text color to ensure visibility in Dark Mode.
     """
     theme_color = st.session_state.get('theme_color', 'Green (Default)')
     theme_mode = st.session_state.get('theme_mode', 'Dark')
@@ -1587,14 +1596,14 @@ def inject_custom_css():
         card_bg = "#FFFFFF"
         text_color = "#1A1A1A"
         border_color = "#E0E0E0"
-        btn_text = "#000000"
+        btn_text_color = "#000000" # Black text on light buttons
     else:
         main_bg = "#0E1117"
         sidebar_bg = "#262730"
         card_bg = "#1E1E1E"
         text_color = "#FAFAFA"
         border_color = "#333333"
-        btn_text = "#FFFFFF"
+        btn_text_color = "#FFFFFF" # White text on dark buttons
 
     st.markdown(f"""
         <style>
@@ -1609,26 +1618,10 @@ def inject_custom_css():
             .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
             section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
             
-            /* Clean Typography */
-            .big-title {{ 
-                font-family: 'Inter', sans-serif;
-                font-size: 38px !important; 
-                font-weight: 800 !important; 
-                color: {text_color} !important; 
-                margin-bottom: 10px; 
-            }}
+            /* Typography */
+            h1, h2, h3, h4, h5, h6, p, li, span {{ color: {text_color} !important; }}
             
-            /* Universal Card Style */
-            .css-card {{ 
-                background-color: {card_bg}; 
-                border: 1px solid {border_color};
-                border-radius: 16px; 
-                padding: 24px; 
-                margin-bottom: 16px; 
-                box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
-            }}
-            
-            /* Input Visibility Fix */
+            /* Inputs */
             .stTextInput input, .stSelectbox div, .stTextArea textarea {{ 
                 background-color: {sidebar_bg} !important; 
                 color: {text_color} !important; 
@@ -1636,31 +1629,33 @@ def inject_custom_css():
                 border: 1px solid {border_color} !important;
             }}
             
-            /* BUTTON VISIBILITY FIX */
+            /* --- BUTTON VISIBILITY FIX --- */
+            /* Force text color on all buttons */
+            div.stButton > button p {{
+                color: {btn_text_color} !important;
+            }}
+            
             div.stButton > button {{ 
-                color: {btn_text} !important;
                 background-color: {card_bg};
                 border: 1px solid {border_color};
                 border-radius: 10px; 
-                font-weight: 600; 
-                transition: all 0.2s;
             }}
             
+            /* Hover Effect */
             div.stButton > button:hover {{
                 border-color: {accent};
+            }}
+            div.stButton > button:hover p {{
                 color: {accent} !important;
             }}
-            
-            /* Primary Buttons (Filled) - Force Black Text for readability on bright accents */
+
+            /* Primary Action Buttons */
             div.stButton > button[kind="primary"] {{
                 background-color: {accent} !important;
-                color: #000000 !important;
                 border: none;
             }}
-            
-            /* Checkbox & Radio Text */
-            label {{
-                color: {text_color} !important;
+            div.stButton > button[kind="primary"] p {{
+                color: #000000 !important; /* Always black text on bright accent buttons */
             }}
         </style>
     """, unsafe_allow_html=True)
