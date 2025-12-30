@@ -758,11 +758,10 @@ def check_reminders():
                 </script>
             """, unsafe_allow_html=True)
 
-# --- NEW: AI IMAGE GENERATION ENGINE (Imagen 4.0) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Fixed Stability) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 4.0 to generate images based on text prompts.
-    Cycles through API keys for robust connection.
+    Uses Google's Imagen 3.0 to generate images.
     Returns: Base64 string of the image, or None if failed.
     """
     try:
@@ -770,7 +769,7 @@ def generate_visual_intel(prompt_text):
         from google.genai import types
         import base64
     except ImportError:
-        st.error("System Error: Missing required libraries for image generation.")
+        st.error("System Error: Missing libraries.")
         return None
 
     api_keys = st.session_state.get('gemini_api_keys', [])
@@ -778,41 +777,37 @@ def generate_visual_intel(prompt_text):
         st.error("Auth Error: No API Keys found.")
         return None
 
-    # Use the latest Imagen model available to your keys
-    imagen_model = 'imagen-4.0-generate-001'
+    # Use Imagen 3.0 which is currently the most stable for public keys
+    # We will try 3.0 first, then 2.0 as backup
+    models_to_try = ['imagen-3.0-generate-001', 'imagen-2.0-generate-001']
 
     for key in api_keys:
         if not isinstance(key, str): continue
-        try:
-            client = genai.Client(api_key=key)
-            
-            # Generate the image
-            response = client.models.generate_image(
-                model=imagen_model,
-                prompt=prompt_text,
-                config=types.GenerateImageConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9" # cinematic look for productivity visuals
+        
+        client = genai.Client(api_key=key)
+        
+        for model_name in models_to_try:
+            try:
+                # Generate the image
+                response = client.models.generate_image(
+                    model=model_name,
+                    prompt=prompt_text,
+                    config=types.GenerateImageConfig(
+                        number_of_images=1,
+                        aspect_ratio="16:9" 
+                    )
                 )
-            )
-            
-            if response.generated_images:
-                # Get raw bytes and convert to base64 for easy storage in session state
-                img_bytes = response.generated_images[0].image.image_bytes
-                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                return img_b64
-            else:
-                 print(f"Key {key[:5]} worked but returned no image.")
-                 continue
-
-        except Exception as e:
-            print(f"Image Gen Error on Key {key[:5]}: {e}")
-            # If 429 (Quota) or 404, try next key. Otherwise stop.
-            if "429" in str(e) or "404" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                continue
-            else:
-                break
                 
+                if response.generated_images:
+                    img_bytes = response.generated_images[0].image.image_bytes
+                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                    return img_b64
+            
+            except Exception as e:
+                # Print error to terminal for debugging
+                print(f"Image Gen Error ({model_name}): {e}")
+                continue # Try next model or key
+
     return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
@@ -1520,122 +1515,88 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Multimodal Update) ---
-
+# --- 10. PAGE: AI COMPANION (Fixed Logic) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
-    from PIL import Image 
-    import io
     import base64
     
-    # --- Helper: Process Message (Handles Text & Image Requests) ---
-    def process_message(prompt_text, generate_image=False):
-        # 1. Init Session if needed
-        if not st.session_state.get('current_session_id'):
-            st.session_state['current_session_id'] = str(uuid.uuid4())
-            short_name = " ".join(prompt_text.split()[:4])
-            st.session_state['current_session_name'] = short_name
-
-        # 2. Add User Message to History
-        st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        # (Optional: Add save_chat_to_cloud here if you want cloud sync)
-        
-        # 3. Generate Response based on mode
-        with st.spinner("Processing intelligence..."):
-            if generate_image:
-                # --- IMAGE GENERATION PATH ---
-                img_b64 = generate_visual_intel(prompt_text)
-                if img_b64:
-                    response_block = {
-                        "role": "model", 
-                        "text": f"Visual intel generated for: '{prompt_text}'",
-                        "image": img_b64 # Store base64 image data
-                    }
-                else:
-                    response_block = {"role": "model", "text": "⚠️ Visual generation failed. Please try a different prompt."}
-            else:
-                # --- TEXT GENERATION PATH ---
-                response_text, _ = perform_ai_analysis(prompt_text)
-                response_block = {"role": "model", "text": response_text}
-                
-                # Audio Playback for text
-                clean_text = response_text.replace('\n', ' ').replace('#', '').replace('*', '')[:200]
-                tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
-                st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
-
-        # 4. Save AI Response to History & Rerun
-        st.session_state['chat_history'].append(response_block)
-        # (Optional: Add save_chat_to_cloud here)
-        st.rerun()
-
-    # --- PAGE HEADER ---
+    # Header
     c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
     with c_title:
-        st.markdown(f'<div class="big-title">TimeHunt AI 🤖</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
     
     with c_mic:
-        # Voice Input Icon
         audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
-        if audio_data: st.toast("Voice received...", icon="🎧")
 
-    # --- CHAT HISTORY DISPLAY (Multimodal) ---
+    # --- CHAT LOGIC ---
     if not st.session_state.get('chat_history'):
-        # Welcome Screen
         user_name = st.session_state.get('user_name', 'Hunter').split()[0]
         st.markdown(f"""
         <div style="margin: 30px 0;">
             <div style="font-size: 32px; font-weight: 700; color: var(--primary-color);">Hello, {user_name}</div>
-            <div style="font-size: 20px; opacity: 0.8;">I am ready. Do you need a plan, an explanation, or a visual diagram?</div>
+            <div style="font-size: 20px; opacity: 0.8;">Ready to execute. What is the plan?</div>
         </div>
         """, unsafe_allow_html=True)
 
-        c1, c2, c3, c4 = st.columns(4)
-        if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a productive hourly schedule for today.")
-        if c2.button("🧠 Explain Topic", use_container_width=True): process_message("Explain a complex concept simply.")
-        if c3.button("🎨 Generate Visual", use_container_width=True, help="Type a prompt below first!"): st.toast("Please type a prompt in the box below first.", icon="ℹ️")
-        if c4.button("📝 Study Tips", use_container_width=True): process_message("Give me scientific study techniques.")
+    # 1. Render Chat History
+    chat_container = st.container()
+    with chat_container:
+        for msg in st.session_state['chat_history']:
+            role = str(msg.get('role')).lower()
+            content_text = msg.get('text', '')
+            content_img_b64 = msg.get('image')
+            
+            # Avatar Setup
+            if role in ["model", "assistant", "ai"]:
+                ui_role = "assistant"
+                avatar_icon = "🤖"
+            else:
+                ui_role = "user"
+                avatar_icon = "👤"
 
-    else:
-        # Scrollable Chat Container
-        chat_container = st.container()
-        with chat_container:
-            for msg in st.session_state['chat_history']:
-                role = str(msg.get('role')).lower()
-                content_text = msg.get('text', '')
-                content_img_b64 = msg.get('image') # Check for image data
-                
-                # Define Avatar
-                if role in ["model", "assistant", "ai"]:
-                    ui_role = "assistant"
-                    avatar_icon = "🤖"
-                else:
-                    ui_role = "user"
-                    avatar_icon = "👤"
+            with st.chat_message(ui_role, avatar=avatar_icon):
+                if content_text: st.write(content_text)
+                if content_img_b64:
+                    try:
+                        img_bytes = base64.b64decode(content_img_b64)
+                        st.image(img_bytes, use_container_width=True)
+                    except: st.error("Image Error")
 
-                with st.chat_message(ui_role, avatar=avatar_icon):
-                    # Render Text if present
-                    if content_text:
-                        st.write(content_text)
-                    
-                    # Render Image if present
-                    if content_img_b64:
-                        try:
-                            # Decode base64 string back to image bytes
-                            img_bytes = base64.b64decode(content_img_b64)
-                            st.image(img_bytes, use_container_width=True)
-                        except Exception:
-                            st.error("Error rendering image.")
-
-    # --- MAIN INPUT FIELD ---
-    # Check if image generation mode was triggered from sidebar
-    gen_mode = st.session_state.get('trigger_image_gen', False)
-    placeholder_txt = "Describe visual..." if gen_mode else "Ask TimeHunt AI..."
+    # 2. Input Handling (Crucial Fix)
+    # Check if image mode is active
+    is_img_mode = st.session_state.get('trigger_image_gen', False)
     
-    if prompt := st.chat_input(placeholder_txt):
-        # Reset trigger flag
-        if gen_mode: st.session_state['trigger_image_gen'] = False
-        # Process message with correct mode
-        process_message(prompt, generate_image=gen_mode)
+    # Change placeholder to indicate mode
+    placeholder = "🎨 Describe the image you want..." if is_img_mode else "Ask TimeHunt AI..."
+    
+    if prompt := st.chat_input(placeholder):
+        # User Message
+        st.session_state['chat_history'].append({"role": "user", "text": prompt})
+        
+        # Processing UI
+        with st.spinner("Processing..."):
+            if is_img_mode:
+                # --- IMAGE PATH ---
+                img_b64 = generate_visual_intel(prompt)
+                if img_b64:
+                    st.session_state['chat_history'].append({
+                        "role": "model", 
+                        "text": f"Visual generated: '{prompt}'",
+                        "image": img_b64
+                    })
+                else:
+                    st.session_state['chat_history'].append({
+                        "role": "model", 
+                        "text": "⚠️ Visual generation failed. Try a simpler prompt (e.g., 'A sunset over a futuristic city')."
+                    })
+                # Turn off image mode after one attempt
+                st.session_state['trigger_image_gen'] = False
+            else:
+                # --- TEXT PATH ---
+                response_text, _ = perform_ai_analysis(prompt)
+                st.session_state['chat_history'].append({"role": "model", "text": response_text})
+        
+        st.rerun()
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
