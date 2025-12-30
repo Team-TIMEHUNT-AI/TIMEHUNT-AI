@@ -682,16 +682,17 @@ def get_system_context():
     """
     return system_prompt
 
-# --- 13. AI ANALYSIS ENGINE (Debug Version) ---
+# --- 13. AI ANALYSIS ENGINE (Updated for Gemini 2.5) ---
 def perform_ai_analysis(user_query):
     """
-    Connects to Google Gemini to generate responses.
+    Connects to Google Gemini (v2.5) to generate responses.
+    Prioritizes the smartest models available in your specific list.
     """
     try:
         from google import genai
         from google.genai import types
     except ImportError:
-        return "⚠️ System Error: `google-genai` library missing. Add it to requirements.txt", "System"
+        return "⚠️ System Error: `google-genai` library missing.", "System"
 
     # Get API Keys
     api_keys = st.session_state.get('gemini_api_keys', [])
@@ -699,15 +700,20 @@ def perform_ai_analysis(user_query):
     if not api_keys:
         return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
 
-    # Models to try
-    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
+    # --- UPDATE: USING YOUR AVAILABLE MODELS ---
+    # We prioritize 2.5 Flash for speed/intelligence, then 2.0 Flash as backup
+    models = [
+        "gemini-2.5-flash",          # Newest & Smartest Fast Model
+        "gemini-2.0-flash",          # Very Stable Standard
+        "gemini-2.0-flash-lite",     # Ultra Fast Backup
+        "gemini-1.5-flash"           # Old Reliable
+    ]
     
     system_instruction = get_system_context()
     last_error_msg = "No attempt made"
 
     # Try each key until one works
     for key in api_keys:
-        # Safety Check: Ensure key is a clean string
         if not isinstance(key, str): continue 
         
         try:
@@ -723,14 +729,14 @@ def perform_ai_analysis(user_query):
                         text = str(msg.get('text', ''))
                         history.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
 
-                    # Generate
+                    # Generate Response
                     chat = client.chats.create(
                         model=model,
                         history=history,
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
                             temperature=0.7,
-                            max_output_tokens=500
+                            max_output_tokens=800 # Increased for better detailed answers
                         )
                     )
                     
@@ -739,19 +745,18 @@ def perform_ai_analysis(user_query):
 
                 except Exception as model_err:
                     last_error_msg = str(model_err)
-                    # If 429 (Quota) or 404 (Not Found), keep trying loops
-                    if "429" in last_error_msg or "404" in last_error_msg:
+                    # If model not found or quota full, try next model
+                    if "404" in last_error_msg or "429" in last_error_msg:
                         continue
                     else:
-                        # If it's a real error (like Auth), break inner loop to try next key
-                        break
+                        break # Break to try next key if it's an Auth error
                         
         except Exception as key_err:
             last_error_msg = str(key_err)
             continue
 
     # If all fail, show the SPECIFIC error
-    return f"⚠️ Connection Failed. Error Details: {last_error_msg}", "System"
+    return f"⚠️ AI Connection Failed. Details: {last_error_msg}", "System"
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
 def check_reminders():
