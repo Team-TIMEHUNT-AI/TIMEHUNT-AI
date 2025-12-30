@@ -1510,7 +1510,7 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Fixed Layout) ---
+# --- 10. PAGE: AI COMPANION (Fixed Saving & Welcome Screen) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import base64
@@ -1526,36 +1526,65 @@ def page_ai_assistant():
     # 2. Logic to Process Message
     def process_message(prompt_text):
         mode = st.session_state.get('chat_mode', 'text')
+        
+        # A. Append User Message to State
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        
+        # B. SAVE TO CLOUD (USER) <--- ADDED THIS
+        save_chat_to_cloud("user", prompt_text)
         
         with st.chat_message("assistant", avatar=ai_img):
             with st.spinner("⚡ Processing..."):
                 if mode == 'image':
                     result = generate_visual_intel(prompt_text)
                     
-                    # Check if result is an Error String (starts with ERROR:)
                     if result and result.startswith("ERROR:"):
-                        response = {"role": "model", "text": f"⚠️ {result}"}
+                        response_text = f"⚠️ {result}"
+                        response = {"role": "model", "text": response_text}
                     elif result:
-                        response = {"role": "model", "image": result, "text": f"🎨 Generated: '{prompt_text}'"}
+                        response_text = f"🎨 Generated Visual for: '{prompt_text}'"
+                        response = {"role": "model", "image": result, "text": response_text}
                     else:
-                        response = {"role": "model", "text": "⚠️ Unknown error."}
+                        response_text = "⚠️ Unknown error."
+                        response = {"role": "model", "text": response_text}
                 else:
+                    # Text Mode
                     txt, _ = perform_ai_analysis(prompt_text)
+                    response_text = txt
                     response = {"role": "model", "text": txt}
         
+        # C. Append AI Message to State
         st.session_state['chat_history'].append(response)
+
+        # D. SAVE TO CLOUD (AI) <--- ADDED THIS
+        # If it's an image, we save a text placeholder, otherwise the actual text
+        content_to_save = response.get('text', 'Image Generated')
+        save_chat_to_cloud("model", content_to_save)
+        
         if mode == 'image': st.session_state['chat_mode'] = 'text' # Reset
         st.rerun()
 
-    # 3. Render Header & History
+    # 3. Render Header
     st.markdown('<div class="big-title">AI Companion</div>', unsafe_allow_html=True)
     
     chat_container = st.container()
     with chat_container:
+        # --- WELCOME SCREEN LOGIC ---
         if not st.session_state.get('chat_history'):
-            st.info("👋 Select **Image Mode** (🎨) below to create visuals.")
+            # This HTML block restores the Welcome Screen
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 50px; animation: fadeIn 1s;">
+                <h1 style="color: #B5FF5F; font-family: 'Inter', sans-serif;">Good Morning, {st.session_state.get('user_name', 'Achiever')}! 🏹</h1>
+                <p style="color: #888; font-size: 18px;">I'm ready to help you hunt down your goals.</p>
+                <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                    <span style="background: #333; padding: 8px 15px; border-radius: 20px; font-size: 12px; color: #fff;">📅 Plan Schedule</span>
+                    <span style="background: #333; padding: 8px 15px; border-radius: 20px; font-size: 12px; color: #fff;">🧠 Brainstorm Ideas</span>
+                    <span style="background: #333; padding: 8px 15px; border-radius: 20px; font-size: 12px; color: #fff;">🎨 Create Art</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         
+        # --- RENDER HISTORY ---
         for msg in st.session_state['chat_history']:
             role = msg.get('role')
             if role == 'user':
@@ -1572,7 +1601,6 @@ def page_ai_assistant():
     st.write("")
     st.write("")
     
-    # Create a 3-column toolbar layout
     c1, c2, c3 = st.columns([1, 6, 1], vertical_alignment="bottom")
     
     with c1:
@@ -1583,8 +1611,7 @@ def page_ai_assistant():
             st.rerun()
             
     with c3:
-        # Microphone (Using container width to align)
-        # We can't easily style the mic_recorder button, so we place it cleanly here
+        # Microphone
         c_mic = st.container()
         with c_mic:
             audio = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
@@ -1594,6 +1621,7 @@ def page_ai_assistant():
     placeholder = "🎨 Describe the image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
     if prompt := st.chat_input(placeholder):
         process_message(prompt)
+
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
