@@ -649,27 +649,22 @@ def perform_ai_analysis(user_query):
     except ImportError:
         return "⚠️ System Error: `google-genai` library missing.", "System"
 
-    # Get API Keys
     api_keys = st.session_state.get('gemini_api_keys', [])
-    
     if not api_keys:
-        return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
+        return "⚠️ Auth Error: No API Keys found.", "System"
 
-    # --- UPDATE: USING YOUR AVAILABLE MODELS ---
-    # We prioritize 2.5 Flash for speed/intelligence, then 2.0 Flash as backup
+    # UPDATED MODEL LIST BASED ON YOUR LOGS
     models = [
-        "gemini-2.5-flash",          # Newest & Smartest Fast Model
-        "gemini-2.0-flash",          # Very Stable Standard
-        "gemini-2.0-flash-lite",     # Ultra Fast Backup
-        "gemini-1.5-flash"           # Old Reliable
+        "gemini-2.5-flash",          # Priority 1: Newest Fast Model
+        "gemini-2.0-flash",          # Priority 2: Standard V2
+        "gemini-1.5-flash"           # Priority 3: Fallback
     ]
     
     system_instruction = get_system_context()
     last_error_msg = "No attempt made"
 
-    # Try each key until one works
     for key in api_keys:
-        if not isinstance(key, str): continue 
+        if not isinstance(key, str): continue
         
         try:
             client = genai.Client(api_key=key)
@@ -680,6 +675,9 @@ def perform_ai_analysis(user_query):
                     history = []
                     recent_chats = st.session_state.get('chat_history', [])[-6:]
                     for msg in recent_chats:
+                        # Skip image messages in text history to avoid errors
+                        if msg.get('image'): continue
+                        
                         role = "user" if msg.get('role') == "user" else "model"
                         text = str(msg.get('text', ''))
                         history.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
@@ -691,7 +689,7 @@ def perform_ai_analysis(user_query):
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
                             temperature=0.7,
-                            max_output_tokens=800 # Increased for better detailed answers
+                            max_output_tokens=800
                         )
                     )
                     
@@ -700,17 +698,15 @@ def perform_ai_analysis(user_query):
 
                 except Exception as model_err:
                     last_error_msg = str(model_err)
-                    # If model not found or quota full, try next model
                     if "404" in last_error_msg or "429" in last_error_msg:
                         continue
                     else:
-                        break # Break to try next key if it's an Auth error
+                        break # Stop trying models if key is bad
                         
         except Exception as key_err:
             last_error_msg = str(key_err)
             continue
 
-    # If all fail, show the SPECIFIC error
     return f"⚠️ AI Connection Failed. Details: {last_error_msg}", "System"
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
@@ -761,10 +757,11 @@ def check_reminders():
             """, unsafe_allow_html=True)
 
 # --- NEW: AI IMAGE GENERATION ENGINE (Fixed Stability) ---
-# --- NEW: AI IMAGE GENERATION ENGINE (Targeting Your Available Models) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Updated for Imagen 4.0) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 4.0 Fast to generate images.
+    Uses Google's Imagen 4.0 (Fast) to generate images.
+    Targeting specific models found in user's access list.
     """
     try:
         from google import genai
@@ -779,35 +776,40 @@ def generate_visual_intel(prompt_text):
         st.error("Auth Error: No API Keys found.")
         return None
 
-    # TARGET THE MODEL FROM YOUR LOGS
-    # We use 'fast' because it has the highest success rate for standard keys
-    model_name = 'imagen-4.0-fast-generate-001'
+    # PRIORITY LIST BASED ON YOUR LOGS
+    # 1. Fast 4.0 (Best for speed)
+    # 2. Standard 4.0 (Best for quality)
+    models_to_try = [
+        'imagen-4.0-fast-generate-001',
+        'imagen-4.0-generate-001'
+    ]
 
     for key in api_keys:
         if not isinstance(key, str): continue
         
-        try:
-            client = genai.Client(api_key=key)
-            
-            # Generate
-            response = client.models.generate_image(
-                model=model_name,
-                prompt=prompt_text,
-                config=types.GenerateImageConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9"
+        client = genai.Client(api_key=key)
+        
+        for model_name in models_to_try:
+            try:
+                # Generate Image
+                response = client.models.generate_image(
+                    model=model_name,
+                    prompt=prompt_text,
+                    config=types.GenerateImageConfig(
+                        number_of_images=1,
+                        aspect_ratio="16:9"
+                    )
                 )
-            )
+                
+                if response.generated_images:
+                    img_bytes = response.generated_images[0].image.image_bytes
+                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                    return img_b64
             
-            if response.generated_images:
-                img_bytes = response.generated_images[0].image.image_bytes
-                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                return img_b64
-            
-        except Exception as e:
-            # This will print to your "Manage App" logs so we can see the real error
-            print(f"❌ Image Gen Error ({model_name}): {e}")
-            continue
+            except Exception as e:
+                # Print specific error to terminal for debugging
+                print(f"❌ {model_name} Failed: {e}")
+                continue
 
     return None
 
