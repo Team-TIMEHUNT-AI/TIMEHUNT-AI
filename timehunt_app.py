@@ -807,55 +807,6 @@ def check_reminders():
                 </script>
             """, unsafe_allow_html=True)
 
-# --- NEW: AI IMAGE GENERATION ENGINE (Fixed Stability) ---
-# --- NEW: AI IMAGE GENERATION ENGINE (Debug Mode) ---
-def generate_visual_intel(prompt_text):
-    """
-    Uses Google's Imagen 4.0. Returns Base64 image OR an error string.
-    """
-    try:
-        from google import genai
-        from google.genai import types
-        import base64
-    except ImportError:
-        return "ERROR: Missing google-genai library."
-
-    api_keys = st.session_state.get('gemini_api_keys', [])
-    if not api_keys:
-        return "ERROR: No API Keys found in secrets."
-
-    # Specific Model Name from your logs
-    model_name = 'imagen-4.0-fast-generate-001'
-
-    for key in api_keys:
-        if not isinstance(key, str): continue
-        
-        try:
-            client = genai.Client(api_key=key)
-            
-            response = client.models.generate_image(
-                model=model_name,
-                prompt=prompt_text,
-                config=types.GenerateImageConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9"
-                )
-            )
-            
-            if response.generated_images:
-                img_bytes = response.generated_images[0].image.image_bytes
-                return base64.b64encode(img_bytes).decode('utf-8')
-            
-        except Exception as e:
-            # Return the actual error so we can show it to the user
-            error_msg = str(e)
-            if "403" in error_msg: return f"ERROR: Key permission denied for {model_name}"
-            if "404" in error_msg: return f"ERROR: Model {model_name} not found."
-            print(f"Key failed: {e}")
-            continue
-
-    return "ERROR: All API keys failed to generate image."
-
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
 
 def page_onboarding():
@@ -2393,9 +2344,57 @@ def page_help():
         with st.expander(q):
             st.write(a)
 
-# --- 20. MAIN APPLICATION ROUTER (FIXED) ---
+# --- 11. VISUAL STYLING (Restoring the missing function) ---
+def inject_custom_css():
+    """
+    Injects global CSS styles to handle the theme (Dark/Light) and colors.
+    """
+    # 1. Get Theme Settings
+    theme_color = st.session_state.get('theme_color', 'Green (Default)')
+    theme_mode = st.session_state.get('theme_mode', 'Dark')
+    
+    # 2. Define Palette
+    colors = {"Green (Default)": "#B5FF5F", "Blue": "#00E5FF", "Red": "#FF4B4B", "Grey": "#A0A0A0"}
+    accent = colors.get(theme_color, "#B5FF5F")
+    
+    # 3. Define Backgrounds based on Mode
+    if theme_mode == "Light":
+        main_bg = "#FFFFFF"
+        sidebar_bg = "#F8F9FB"
+        card_bg = "#FFFFFF"
+        text_color = "#1A1A1A"
+        btn_text = "#000000"
+    else:
+        main_bg = "#0E1117"
+        sidebar_bg = "#262730"
+        card_bg = "#1E1E1E"
+        text_color = "#FAFAFA"
+        btn_text = "#FFFFFF"
 
-# --- 20. MAIN APPLICATION ROUTER (FINAL FIX) ---
+    # 4. Inject CSS
+    st.markdown(f"""
+        <style>
+            :root {{ --accent: {accent}; --text: {text_color}; --card-bg: {card_bg}; }}
+            .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
+            section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
+            
+            /* Buttons */
+            div.stButton > button {{ 
+                background-color: {card_bg}; border: 1px solid rgba(255,255,255,0.1); 
+                color: {btn_text} !important; border-radius: 8px; 
+            }}
+            div.stButton > button:hover {{ border-color: {accent}; color: {accent} !important; }}
+            div.stButton > button[kind="primary"] {{ 
+                background-color: {accent} !important; border: none; 
+                color: #000 !important; font-weight: bold;
+            }}
+            
+            /* Inputs */
+            .stTextInput > div > div > input {{ color: {text_color}; }}
+        </style>
+    """, unsafe_allow_html=True)
+
+# --- 20. MAIN APPLICATION ROUTER ---
 
 def main():
     # 1. Initialize System State
