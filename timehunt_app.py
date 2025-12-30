@@ -493,7 +493,9 @@ def initialize_session_state():
         'user_avatar': "🏹", 
         'xp_history': [], 
         'theme_mode': 'Dark', 
-        'theme_color': 'Green (Default)'
+        'theme_color': 'Green (Default)',
+        # --- NEW STATE VARIABLE FOR CHAT ---
+        'chat_mode': 'text' # Controls the toggle state (text vs image)
     }
 
     # Initialize missing keys
@@ -1515,94 +1517,159 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Fixed Logic) ---
+# --- 10. PAGE: AI COMPANION (Gemini-Style Redesign) ---
+
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import base64
-    
-    # Header
-    c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
-    with c_title:
-        st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
-    
-    with c_mic:
-        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
+    from PIL import Image
+    import io
 
-    # --- CHAT LOGIC ---
-    if not st.session_state.get('chat_history'):
-        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
-        st.markdown(f"""
-        <div style="margin: 30px 0;">
-            <div style="font-size: 32px; font-weight: 700; color: var(--primary-color);">Hello, {user_name}</div>
-            <div style="font-size: 20px; opacity: 0.8;">Ready to execute. What is the plan?</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # --- LOAD AVATARS ---
+    # User Avatar
+    user_av_path = st.session_state.get('user_avatar', '')
+    if os.path.exists(user_av_path):
+        user_avatar = Image.open(user_av_path)
+    else:
+        user_avatar = "👤" # Fallback
 
-    # 1. Render Chat History
+    # AI Avatar (Your Custom Logo)
+    ai_logo_path = "1000592991.png"
+    if os.path.exists(ai_logo_path):
+        ai_avatar = Image.open(ai_logo_path)
+    else:
+        ai_avatar = "🤖" # Fallback
+
+    # --- HELPER: PROCESS MESSAGE WITH LIVE LOADING STATE ---
+    def process_message(prompt_text):
+        mode = st.session_state.get('chat_mode', 'text')
+        
+        # 1. Add User Message
+        st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        
+        # 2. Create Loading Placeholder
+        with st.chat_message("assistant", avatar=ai_avatar):
+            loading_placeholder = st.empty()
+            
+            # Show animated logo and status text based on mode
+            status_text = "🎨 Generating visual..." if mode == 'image' else "🧠 Analyzing request..."
+            loading_html = f"""
+                <div style="display: flex; align-items: center; gap: 15px; color: var(--text);">
+                    <div class="loading-logo" style="width: 30px; height: 30px;">
+                        {f'<img src="data:image/png;base64,{base64.b64encode(open(ai_logo_path, "rb").read()).decode()}" width="100%">' if os.path.exists(ai_logo_path) else '🤖'}
+                    </div>
+                    <div style="font-weight: 500; font-family: 'Inter', sans-serif;">{status_text}</div>
+                </div>
+            """
+            loading_placeholder.markdown(loading_html, unsafe_allow_html=True)
+            
+            # 3. Generate Response
+            if mode == 'image':
+                img_b64 = generate_visual_intel(prompt_text)
+                if img_b64:
+                    response_block = {"role": "model", "image": img_b64, "text": f"Generated image for: '{prompt_text}'"}
+                else:
+                    response_block = {"role": "model", "text": "⚠️ Visual generation failed. Please try a different prompt."}
+            else:
+                response_text, _ = perform_ai_analysis(prompt_text)
+                response_block = {"role": "model", "text": response_text}
+            
+            # 4. Clear Loading & Save Response
+            loading_placeholder.empty()
+            st.session_state['chat_history'].append(response_block)
+            
+        # Reset back to text mode after image gen
+        if mode == 'image':
+            st.session_state['chat_mode'] = 'text'
+        st.rerun()
+
+
+    # --- MAIN PAGE LAYOUT ---
+    st.markdown('<div class="big-title">AI Companion</div>', unsafe_allow_html=True)
+
+    # --- CHAT HISTORY ---
     chat_container = st.container()
     with chat_container:
+        if not st.session_state.get('chat_history'):
+            # Welcome Screen
+            user_name = st.session_state.get('user_name', 'Hunter').split()[0]
+            st.markdown(f"""
+            <div style="text-align: center; margin: 50px 0; opacity: 0.8;">
+                <div style="font-size: 40px;">👋</div>
+                <h2>Hello, {user_name}</h2>
+                <p>How can I help you achieve your goals today?</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Render Messages
         for msg in st.session_state['chat_history']:
-            role = str(msg.get('role')).lower()
-            content_text = msg.get('text', '')
-            content_img_b64 = msg.get('image')
+            role = msg.get('role')
+            content_text = msg.get('text')
+            content_img = msg.get('image')
             
-            # Avatar Setup
-            if role in ["model", "assistant", "ai"]:
-                ui_role = "assistant"
-                avatar_icon = "🤖"
+            if role == 'user':
+                with st.chat_message("user", avatar=user_avatar):
+                    st.write(content_text)
             else:
-                ui_role = "user"
-                avatar_icon = "👤"
+                with st.chat_message("assistant", avatar=ai_avatar):
+                    if content_text and not content_img: st.write(content_text)
+                    if content_img:
+                        try:
+                            img_bytes = base64.b64decode(content_img)
+                            st.image(img_bytes, use_container_width=True)
+                        except: st.error("Image Error")
 
-            with st.chat_message(ui_role, avatar=avatar_icon):
-                if content_text: st.write(content_text)
-                if content_img_b64:
-                    try:
-                        img_bytes = base64.b64decode(content_img_b64)
-                        st.image(img_bytes, use_container_width=True)
-                    except: st.error("Image Error")
+    # --- BOTTOM INPUT BAR (Gemini Style) ---
+    st.write("") # Spacer
+    
+    # Container for the input bar at the bottom
+    with st.container():
+        # Use columns to layout buttons and input field
+        c_img_btn, c_input, c_mic_btn = st.columns([1, 8, 1], vertical_alignment="bottom")
+        
+        # 1. Image Generation Toggle Button (Left)
+        with c_img_btn:
+            is_img_mode = st.session_state.get('chat_mode') == 'image'
+            btn_class = "chat-bar-btn img-mode-active" if is_img_mode else "chat-bar-btn"
+            
+            # Use HTML button for custom styling and icon
+            st.markdown(f"""
+                <button class="{btn_class}" onclick="document.getElementById('img_toggle').click()" title="Toggle Image Generation">
+                    🎨
+                </button>
+            """, unsafe_allow_html=True)
+            
+            # Hidden Streamlit button to handle the click event
+            if st.button("Image Toggle", key="img_toggle", help="Generate Images", label_visibility="collapsed"):
+                new_mode = 'text' if is_img_mode else 'image'
+                st.session_state['chat_mode'] = new_mode
+                st.rerun()
 
-    # 2. Input Handling (Crucial Fix)
-    # Check if image mode is active
-    is_img_mode = st.session_state.get('trigger_image_gen', False)
-    
-    # Change placeholder to indicate mode
-    placeholder = "🎨 Describe the image you want..." if is_img_mode else "Ask TimeHunt AI..."
-    
-    if prompt := st.chat_input(placeholder):
-        # User Message
-        st.session_state['chat_history'].append({"role": "user", "text": prompt})
-        
-        # Processing UI
-        with st.spinner("Processing..."):
-            if is_img_mode:
-                # --- IMAGE PATH ---
-                img_b64 = generate_visual_intel(prompt)
-                if img_b64:
-                    st.session_state['chat_history'].append({
-                        "role": "model", 
-                        "text": f"Visual generated: '{prompt}'",
-                        "image": img_b64
-                    })
-                else:
-                    st.session_state['chat_history'].append({
-                        "role": "model", 
-                        "text": "⚠️ Visual generation failed. Try a simpler prompt (e.g., 'A sunset over a futuristic city')."
-                    })
-                # Turn off image mode after one attempt
-                st.session_state['trigger_image_gen'] = False
-            else:
-                # --- TEXT PATH ---
-                response_text, _ = perform_ai_analysis(prompt)
-                st.session_state['chat_history'].append({"role": "model", "text": response_text})
-        
-        st.rerun()
+        # 2. Main Chat Input (Center)
+        with c_input:
+            placeholder = "🎨 Describe image..." if is_img_mode else "Ask anything..."
+            if prompt := st.chat_input(placeholder):
+                process_message(prompt)
+
+        # 3. Microphone Input Button (Right)
+        with c_mic_btn:
+            # Use a container to style the mic button like the others
+            st.markdown('<div class="chat-bar-btn">', unsafe_allow_html=True)
+            audio_data = mic_recorder(start_prompt="🎤", stop_prompt="🔴", just_once=True, key="voice_input")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            if audio_data:
+                st.toast("Processing voice...", icon="🎧")
+                # You would need a speech-to-text function here to get text
+                # For now, we'll just show a toast. 
+                # process_message(transcribed_text)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
     """
     Injects CSS variables for colors to ensure consistency and readability.
     Forces button text color to ensure visibility in Dark Mode.
+    Includes styles for the Gemini-like chat interface.
     """
     theme_color = st.session_state.get('theme_color', 'Green (Default)')
     theme_mode = st.session_state.get('theme_mode', 'Dark')
@@ -1683,6 +1750,57 @@ def inject_custom_css():
             }}
             div.stButton > button[kind="primary"] p {{
                 color: #000000 !important; /* Always black text on bright accent buttons */
+            }}
+
+            /* --- NEW GEMINI-STYLE CHAT STYLES --- */
+            
+            /* Chat Input Container Spacing */
+            .stChatInputContainer {{
+                padding-bottom: 20px !important;
+            }}
+            
+            /* Integrated Buttons in Input Bar */
+            .chat-bar-btn {{
+                border: none !important;
+                background: transparent !important;
+                font-size: 20px;
+                padding: 10px !important;
+                color: {text_color} !important;
+                cursor: pointer;
+                transition: color 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+            }}
+            .chat-bar-btn:hover {{
+                color: {accent} !important;
+                background: rgba(255,255,255,0.05) !important;
+                border-radius: 50%;
+            }}
+            
+            /* Active Image Mode Button */
+            .img-mode-active {{
+                color: {accent} !important;
+                text-shadow: 0 0 10px {accent};
+            }}
+            
+            /* Custom Avatar Styling */
+            .stChatMessageAvatarImage {{
+                border-radius: 50%;
+                border: 2px solid {border_color};
+                padding: 2px;
+                background: {card_bg};
+            }}
+            
+            /* Loading Animation for AI Logo */
+            @keyframes pulse-logo {{
+                0% {{ transform: scale(1); opacity: 0.8; }}
+                50% {{ transform: scale(1.1); opacity: 1; }}
+                100% {{ transform: scale(1); opacity: 0.8; }}
+            }}
+            .loading-logo {{
+                animation: pulse-logo 1.5s infinite ease-in-out;
             }}
         </style>
     """, unsafe_allow_html=True)
