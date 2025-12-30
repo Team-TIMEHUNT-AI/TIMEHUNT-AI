@@ -528,99 +528,52 @@ def initialize_session_state():
         
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
 def show_comet_splash():
-    """
-    Displays a high-quality introductory animation.
-    Now styled to be inspiring and modern, rather than military.
-    """
     if not st.session_state['splash_played']:
         placeholder = st.empty()
         
-        # 1. Image Safety Check
         encoded_img = ""
         has_image = False
         try:
-            if os.path.exists("1000592991.png"):
-                with open("1000592991.png", "rb") as f:
-                    encoded_img = base64.b64encode(f.read()).decode()
-                    has_image = True
-        except Exception: 
-            pass
+            with open("1000592991.png", "rb") as f:
+                encoded_img = base64.b64encode(f.read()).decode()
+                has_image = True
+        except: pass
 
-        # 2. Render Animation
         with placeholder.container():
+            # TEXTWRAP.DEDENT IS CRITICAL - DO NOT REMOVE
+            # I have updated the text in the HTML below
             st.markdown(textwrap.dedent(f"""
-            <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;700&display=swap');
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=Inter:wght@300;600&display=swap');
+div[data-testid="stVerticalBlock"] > div:has(.main-void) {{ gap: 0 !important; }}
+.stMarkdown {{ background: transparent !important; }}
+.main-void {{ position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: #000000 !important; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999999; overflow: hidden; animation: mainFadeOut 1.2s cubic-bezier(0.7, 0, 0.3, 1) 6.0s forwards; }}
+.orbital-track {{ position: relative; width: 380px; height: 380px; display: flex; justify-content: center; align-items: center; }}
+.comet-engine {{ position: absolute; width: 100%; height: 100%; animation: cometWhip 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }}
+.comet-engine::after {{ content: ''; position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 16px; height: 16px; background: #B5FF5F; border-radius: 50%; box-shadow: 0 0 35px 8px #B5FF5F, 0 0 70px 20px #00E5FF, 0 30px 100px 30px rgba(181, 255, 95, 0.8); }}
+.logo-core {{ position: absolute; width: 200px; height: 200px; background: #000; border-radius: 50%; z-index: 10; display: flex; justify-content: center; align-items: center; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 0 80px rgba(0, 0, 0, 0.8); animation: coreBloom 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }}
+.core-img {{ width: 95%; height: 95%; border-radius: 50%; object-fit: cover; filter: brightness(1.2) contrast(1.1); }}
+.branding-container {{ margin-top: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; background: transparent !important; animation: textReveal 2.8s ease-out 1.4s forwards; opacity: 0; }}
+.main-tagline {{ font-family: 'Syncopate', sans-serif; color: #FFFFFF !important; font-size: 24px; font-weight: 700; letter-spacing: 18px; text-transform: uppercase; margin-bottom: 22px; background: transparent !important; }}
+.sub-tagline {{ font-family: 'Inter', sans-serif; color: #B5FF5F !important; font-size: 14px; letter-spacing: 6px; text-transform: uppercase; font-weight: 500; background: transparent !important; opacity: 0.9; }}
+@keyframes cometWhip {{ 0% {{ transform: rotate(0deg); opacity: 0.4; }} 50% {{ transform: rotate(180deg); opacity: 1; scale: 1.15; }} 100% {{ transform: rotate(360deg); opacity: 0.4; }} }}
+@keyframes coreBloom {{ 0% {{ transform: scale(0.2); opacity: 0; filter: blur(30px); }} 70% {{ transform: scale(1.1); opacity: 1; filter: blur(0px); }} 100% {{ transform: scale(1); opacity: 1; }} }}
+@keyframes textReveal {{ 0% {{ transform: translateY(50px); opacity: 0; filter: blur(15px); }} 100% {{ transform: translateY(0); opacity: 1; filter: blur(0); }} }}
+@keyframes mainFadeOut {{ to {{ opacity: 0; visibility: hidden; transform: scale(1.1); filter: blur(20px); }} }}
+</style>
+<div class="main-void">
+<div class="orbital-track">
+<div class="comet-engine"></div>
+<div class="logo-core">{'<img src="data:image/png;base64,' + encoded_img + '" class="core-img">' if has_image else '<div style="font-size:70px;">🎯</div>'}</div>
+</div>
+<div class="branding-container">
+<div class="main-tagline">TIME HUNT AI</div>
+<div class="sub-tagline">Redefine Productivity • Execute With Precision</div>
+</div>
+</div>
+"""), unsafe_allow_html=True)
             
-            .main-void {{ 
-                position: fixed; top: 0; left: 0; width: 100%; height: 100vh; 
-                background: #0E1117 !important; 
-                display: flex; flex-direction: column; 
-                justify-content: center; align-items: center; 
-                z-index: 999999; 
-                animation: fadeOut 1.0s ease-in-out 4.5s forwards; 
-            }}
-            
-            .logo-container {{
-                width: 150px; height: 150px;
-                border-radius: 50%;
-                background: linear-gradient(135deg, #B5FF5F, #00E5FF);
-                padding: 3px; /* Border width */
-                box-shadow: 0 0 40px rgba(0, 229, 255, 0.3);
-                animation: pulse 2s infinite;
-                display: flex; justify-content: center; align-items: center;
-            }}
-            
-            .logo-inner {{
-                width: 100%; height: 100%;
-                border-radius: 50%;
-                background: #000;
-                display: flex; justify-content: center; align-items: center;
-                overflow: hidden;
-            }}
-            
-            .logo-img {{ width: 100%; height: 100%; object-fit: cover; }}
-            
-            .title-text {{
-                font-family: 'Inter', sans-serif;
-                color: #FFFFFF;
-                font-size: 32px;
-                font-weight: 700;
-                letter-spacing: 4px;
-                margin-top: 30px;
-                opacity: 0;
-                animation: slideUp 0.8s ease-out 0.5s forwards;
-            }}
-            
-            .subtitle-text {{
-                font-family: 'Inter', sans-serif;
-                color: #B5FF5F;
-                font-size: 14px;
-                letter-spacing: 2px;
-                text-transform: uppercase;
-                margin-top: 10px;
-                opacity: 0;
-                animation: slideUp 0.8s ease-out 1.0s forwards;
-            }}
-            
-            @keyframes pulse {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.05); }} 100% {{ transform: scale(1); }} }}
-            @keyframes slideUp {{ from {{ transform: translateY(20px); opacity: 0; }} to {{ transform: translateY(0); opacity: 1; }} }}
-            @keyframes fadeOut {{ to {{ opacity: 0; visibility: hidden; }} }}
-            </style>
-            
-            <div class="main-void">
-                <div class="logo-container">
-                    <div class="logo-inner">
-                        {f'<img src="data:image/png;base64,{encoded_img}" class="logo-img">' if has_image else '<span style="font-size:50px;">⏳</span>'}
-                    </div>
-                </div>
-                <div class="title-text">TIME HUNT AI</div>
-                <div class="subtitle-text">Focus • Execute • Achieve</div>
-            </div>
-            """), unsafe_allow_html=True)
-            
-            # Shorter wait time for better UX
-            time.sleep(5.0)
+            time.sleep(6.5)
         
         placeholder.empty()
         st.session_state['splash_played'] = True
