@@ -501,26 +501,31 @@ def initialize_session_state():
         if key not in st.session_state:
             st.session_state[key] = default_val
 
-    # --- API KEY FIX FOR LISTS ---
+    # --- CRITICAL API KEY FIX ---
+    # This logic prevents "List inside a List" errors
     if 'gemini_api_keys' not in st.session_state or not st.session_state['gemini_api_keys']:
-        # Check standard Streamlit secret names
         keys = []
-        if "GEMINI_API_KEY" in st.secrets:
-            raw_keys = st.secrets["GEMINI_API_KEY"]
-            # If secrets file has a list ["key1", "key2"], use it directly
-            if isinstance(raw_keys, list):
-                keys = raw_keys
-            else:
-                keys = [raw_keys]
-        elif "GOOGLE_API_KEY" in st.secrets:
-            raw_keys = st.secrets["GOOGLE_API_KEY"]
-            if isinstance(raw_keys, list):
-                keys = raw_keys
-            else:
-                keys = [raw_keys]
         
-        st.session_state['gemini_api_keys'] = keys
-
+        # Check GEMINI_API_KEY
+        if "GEMINI_API_KEY" in st.secrets:
+            raw = st.secrets["GEMINI_API_KEY"]
+            if isinstance(raw, list):
+                keys.extend(raw) # Add items from list, don't nest the list
+            else:
+                keys.append(raw)
+        
+        # Check GOOGLE_API_KEY (Backup)
+        elif "GOOGLE_API_KEY" in st.secrets:
+            raw = st.secrets["GOOGLE_API_KEY"]
+            if isinstance(raw, list):
+                keys.extend(raw)
+            else:
+                keys.append(raw)
+                
+        # Remove duplicates and empty strings
+        unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
+        st.session_state['gemini_api_keys'] = unique_keys
+        
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
 def show_comet_splash():
     """
@@ -677,38 +682,40 @@ def get_system_context():
     """
     return system_prompt
 
-# --- 13. AI ANALYSIS ENGINE (Robust Connection) ---
+# --- 13. AI ANALYSIS ENGINE (Debug Version) ---
 def perform_ai_analysis(user_query):
     """
     Connects to Google Gemini to generate responses.
-    Includes smart fallback logic to handle API limits.
     """
-    # Check for library
     try:
         from google import genai
         from google.genai import types
     except ImportError:
-        return "⚠️ System Error: `google-genai` library missing.", "System"
+        return "⚠️ System Error: `google-genai` library missing. Add it to requirements.txt", "System"
 
     # Get API Keys
     api_keys = st.session_state.get('gemini_api_keys', [])
+    
     if not api_keys:
-        return "⚠️ Authentication Error: No API Keys found in settings.", "System"
+        return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
 
-    # Models (Prioritize standard Flash for speed)
-    models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    # Models to try
+    models = ["gemini-2.0-flash", "gemini-1.5-flash"]
     
     system_instruction = get_system_context()
-    last_error = ""
+    last_error_msg = "No attempt made"
 
-    # Attempt connection (Key Rotation)
+    # Try each key until one works
     for key in api_keys:
+        # Safety Check: Ensure key is a clean string
+        if not isinstance(key, str): continue 
+        
         try:
             client = genai.Client(api_key=key)
             
             for model in models:
                 try:
-                    # Build Chat History
+                    # Build History
                     history = []
                     recent_chats = st.session_state.get('chat_history', [])[-6:]
                     for msg in recent_chats:
@@ -716,7 +723,7 @@ def perform_ai_analysis(user_query):
                         text = str(msg.get('text', ''))
                         history.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
 
-                    # Generate Response
+                    # Generate
                     chat = client.chats.create(
                         model=model,
                         history=history,
@@ -730,14 +737,21 @@ def perform_ai_analysis(user_query):
                     response = chat.send_message(user_query)
                     return response.text, "TimeHunt AI"
 
-                except Exception as e:
-                    # If model fails (429/404), try next model
-                    last_error = str(e)
-                    continue
-        except Exception:
+                except Exception as model_err:
+                    last_error_msg = str(model_err)
+                    # If 429 (Quota) or 404 (Not Found), keep trying loops
+                    if "429" in last_error_msg or "404" in last_error_msg:
+                        continue
+                    else:
+                        # If it's a real error (like Auth), break inner loop to try next key
+                        break
+                        
+        except Exception as key_err:
+            last_error_msg = str(key_err)
             continue
 
-    return f"⚠️ Connection Unstable. Please try again. ({last_error})", "System"
+    # If all fail, show the SPECIFIC error
+    return f"⚠️ Connection Failed. Error Details: {last_error_msg}", "System"
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
 def check_reminders():
