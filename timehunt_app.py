@@ -1571,7 +1571,7 @@ def page_ai_assistant():
     # --- PAGE HEADER ---
     c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
     with c_title:
-        st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="big-title">TimeHunt AI 🤖</div>', unsafe_allow_html=True)
     
     with c_mic:
         # Voice Input Icon
@@ -2627,7 +2627,7 @@ def main():
             # Main Nav
             nav = option_menu(
                 menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "AI Companion", "Timer", "Analytics", "Help Center", "About", "Settings"], 
+                options=["Home", "Scheduler", "Calendar", "Chat With AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
                 icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
                 default_index=0,
                 styles={
@@ -2644,7 +2644,7 @@ def main():
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
-        elif nav == "AI Companion": 
+        elif nav == "Chat With AI": 
             st.session_state['page_mode'] = 'chat'
             st.rerun()
         elif nav == "Timer": page_timer()  
