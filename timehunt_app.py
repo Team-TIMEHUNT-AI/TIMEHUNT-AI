@@ -1553,10 +1553,19 @@ def page_ai_assistant():
             
             # Show animated logo and status text based on mode
             status_text = "🎨 Generating visual..." if mode == 'image' else "🧠 Analyzing request..."
+            
+            # Encode logo for HTML if exists
+            logo_b64 = ""
+            if os.path.exists(ai_logo_path):
+                with open(ai_logo_path, "rb") as f:
+                    logo_b64 = base64.b64encode(f.read()).decode()
+            
+            img_tag = f'<img src="data:image/png;base64,{logo_b64}" width="100%">' if logo_b64 else '🤖'
+
             loading_html = f"""
                 <div style="display: flex; align-items: center; gap: 15px; color: var(--text);">
                     <div class="loading-logo" style="width: 30px; height: 30px;">
-                        {f'<img src="data:image/png;base64,{base64.b64encode(open(ai_logo_path, "rb").read()).decode()}" width="100%">' if os.path.exists(ai_logo_path) else '🤖'}
+                        {img_tag}
                     </div>
                     <div style="font-weight: 500; font-family: 'Inter', sans-serif;">{status_text}</div>
                 </div>
@@ -1633,14 +1642,16 @@ def page_ai_assistant():
             btn_class = "chat-bar-btn img-mode-active" if is_img_mode else "chat-bar-btn"
             
             # Use HTML button for custom styling and icon
+            # We use a hidden checkbox hack or just the button logic without label_visibility
             st.markdown(f"""
                 <button class="{btn_class}" onclick="document.getElementById('img_toggle').click()" title="Toggle Image Generation">
                     🎨
                 </button>
             """, unsafe_allow_html=True)
             
-            # Hidden Streamlit button to handle the click event
-            if st.button("Image Toggle", key="img_toggle", help="Generate Images", label_visibility="collapsed"):
+            # Use standard button, we hide the text via CSS in inject_custom_css if needed
+            # OR we just use an emoji as the label which is fine
+            if st.button("🖼️", key="img_toggle", help="Toggle Image Mode"):
                 new_mode = 'text' if is_img_mode else 'image'
                 st.session_state['chat_mode'] = new_mode
                 st.rerun()
@@ -1660,9 +1671,6 @@ def page_ai_assistant():
             
             if audio_data:
                 st.toast("Processing voice...", icon="🎧")
-                # You would need a speech-to-text function here to get text
-                # For now, we'll just show a toast. 
-                # process_message(transcribed_text)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
