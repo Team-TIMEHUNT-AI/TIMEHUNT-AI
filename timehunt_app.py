@@ -761,10 +761,10 @@ def check_reminders():
             """, unsafe_allow_html=True)
 
 # --- NEW: AI IMAGE GENERATION ENGINE (Fixed Stability) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Targeting Your Available Models) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 3.0 to generate images.
-    Returns: Base64 string of the image, or None if failed.
+    Uses Google's Imagen 4.0 Fast to generate images.
     """
     try:
         from google import genai
@@ -779,36 +779,35 @@ def generate_visual_intel(prompt_text):
         st.error("Auth Error: No API Keys found.")
         return None
 
-    # Use Imagen 3.0 which is currently the most stable for public keys
-    # We will try 3.0 first, then 2.0 as backup
-    models_to_try = ['imagen-3.0-generate-001', 'imagen-2.0-generate-001']
+    # TARGET THE MODEL FROM YOUR LOGS
+    # We use 'fast' because it has the highest success rate for standard keys
+    model_name = 'imagen-4.0-fast-generate-001'
 
     for key in api_keys:
         if not isinstance(key, str): continue
         
-        client = genai.Client(api_key=key)
-        
-        for model_name in models_to_try:
-            try:
-                # Generate the image
-                response = client.models.generate_image(
-                    model=model_name,
-                    prompt=prompt_text,
-                    config=types.GenerateImageConfig(
-                        number_of_images=1,
-                        aspect_ratio="16:9" 
-                    )
-                )
-                
-                if response.generated_images:
-                    img_bytes = response.generated_images[0].image.image_bytes
-                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                    return img_b64
+        try:
+            client = genai.Client(api_key=key)
             
-            except Exception as e:
-                # Print error to terminal for debugging
-                print(f"Image Gen Error ({model_name}): {e}")
-                continue # Try next model or key
+            # Generate
+            response = client.models.generate_image(
+                model=model_name,
+                prompt=prompt_text,
+                config=types.GenerateImageConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9"
+                )
+            )
+            
+            if response.generated_images:
+                img_bytes = response.generated_images[0].image.image_bytes
+                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                return img_b64
+            
+        except Exception as e:
+            # This will print to your "Manage App" logs so we can see the real error
+            print(f"❌ Image Gen Error ({model_name}): {e}")
+            continue
 
     return None
 
@@ -1517,160 +1516,95 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Gemini-Style Redesign) ---
-
+# --- 10. PAGE: AI COMPANION (Fixed UI & Logic) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import base64
     from PIL import Image
     import io
 
-    # --- LOAD AVATARS ---
-    # User Avatar
+    # --- SETUP AVATARS ---
     user_av_path = st.session_state.get('user_avatar', '')
-    if os.path.exists(user_av_path):
-        user_avatar = Image.open(user_av_path)
-    else:
-        user_avatar = "👤" # Fallback
-
-    # AI Avatar (Your Custom Logo)
+    user_avatar = Image.open(user_av_path) if os.path.exists(user_av_path) else "👤"
+    
     ai_logo_path = "1000592991.png"
-    if os.path.exists(ai_logo_path):
-        ai_avatar = Image.open(ai_logo_path)
-    else:
-        ai_avatar = "🤖" # Fallback
+    ai_avatar = Image.open(ai_logo_path) if os.path.exists(ai_logo_path) else "🤖"
 
-    # --- HELPER: PROCESS MESSAGE WITH LIVE LOADING STATE ---
+    # --- HELPER: PROCESS MESSAGE ---
     def process_message(prompt_text):
+        # Determine Mode
         mode = st.session_state.get('chat_mode', 'text')
         
-        # 1. Add User Message
+        # 1. Show User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
         
-        # 2. Create Loading Placeholder
+        # 2. Generate Response
         with st.chat_message("assistant", avatar=ai_avatar):
-            loading_placeholder = st.empty()
-            
-            # Show animated logo and status text based on mode
-            status_text = "🎨 Generating visual..." if mode == 'image' else "🧠 Analyzing request..."
-            
-            # Encode logo for HTML if exists
-            logo_b64 = ""
-            if os.path.exists(ai_logo_path):
-                with open(ai_logo_path, "rb") as f:
-                    logo_b64 = base64.b64encode(f.read()).decode()
-            
-            img_tag = f'<img src="data:image/png;base64,{logo_b64}" width="100%">' if logo_b64 else '🤖'
-
-            loading_html = f"""
-                <div style="display: flex; align-items: center; gap: 15px; color: var(--text);">
-                    <div class="loading-logo" style="width: 30px; height: 30px;">
-                        {img_tag}
-                    </div>
-                    <div style="font-weight: 500; font-family: 'Inter', sans-serif;">{status_text}</div>
-                </div>
-            """
-            loading_placeholder.markdown(loading_html, unsafe_allow_html=True)
-            
-            # 3. Generate Response
-            if mode == 'image':
-                img_b64 = generate_visual_intel(prompt_text)
-                if img_b64:
-                    response_block = {"role": "model", "image": img_b64, "text": f"Generated image for: '{prompt_text}'"}
+            with st.spinner("⚡ Activating Neural Network..."):
+                if mode == 'image':
+                    # Image Path
+                    img_b64 = generate_visual_intel(prompt_text)
+                    if img_b64:
+                        response = {"role": "model", "image": img_b64, "text": f"Visual generated: '{prompt_text}'"}
+                    else:
+                        response = {"role": "model", "text": "⚠️ Visual generation failed. Check the 'Manage App' logs for details."}
                 else:
-                    response_block = {"role": "model", "text": "⚠️ Visual generation failed. Please try a different prompt."}
-            else:
-                response_text, _ = perform_ai_analysis(prompt_text)
-                response_block = {"role": "model", "text": response_text}
-            
-            # 4. Clear Loading & Save Response
-            loading_placeholder.empty()
-            st.session_state['chat_history'].append(response_block)
-            
-        # Reset back to text mode after image gen
-        if mode == 'image':
-            st.session_state['chat_mode'] = 'text'
+                    # Text Path
+                    txt, _ = perform_ai_analysis(prompt_text)
+                    response = {"role": "model", "text": txt}
+        
+        # 3. Save & Reset
+        st.session_state['chat_history'].append(response)
+        if mode == 'image': st.session_state['chat_mode'] = 'text' # Reset to text mode
         st.rerun()
 
-
-    # --- MAIN PAGE LAYOUT ---
+    # --- UI HEADER ---
     st.markdown('<div class="big-title">AI Companion</div>', unsafe_allow_html=True)
 
     # --- CHAT HISTORY ---
     chat_container = st.container()
     with chat_container:
         if not st.session_state.get('chat_history'):
-            # Welcome Screen
-            user_name = st.session_state.get('user_name', 'Hunter').split()[0]
-            st.markdown(f"""
-            <div style="text-align: center; margin: 50px 0; opacity: 0.8;">
-                <div style="font-size: 40px;">👋</div>
-                <h2>Hello, {user_name}</h2>
-                <p>How can I help you achieve your goals today?</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.info("👋 Ready to help. Select 'Image Mode' (🎨) below to generate visuals, or just type to chat.")
         
-        # Render Messages
         for msg in st.session_state['chat_history']:
             role = msg.get('role')
-            content_text = msg.get('text')
-            content_img = msg.get('image')
-            
             if role == 'user':
                 with st.chat_message("user", avatar=user_avatar):
-                    st.write(content_text)
+                    st.write(msg.get('text'))
             else:
                 with st.chat_message("assistant", avatar=ai_avatar):
-                    if content_text and not content_img: st.write(content_text)
-                    if content_img:
+                    if msg.get('text'): st.write(msg.get('text'))
+                    if msg.get('image'):
                         try:
-                            img_bytes = base64.b64decode(content_img)
-                            st.image(img_bytes, use_container_width=True)
-                        except: st.error("Image Error")
+                            st.image(base64.b64decode(msg.get('image')), use_container_width=True)
+                        except: st.error("Image render error")
 
-    # --- BOTTOM INPUT BAR (Gemini Style) ---
-    st.write("") # Spacer
-    
-    # Container for the input bar at the bottom
+    # --- CONTROL BAR (The Gemini Style Toolbar) ---
+    st.write("")
     with st.container():
-        # Use columns to layout buttons and input field
-        c_img_btn, c_input, c_mic_btn = st.columns([1, 8, 1], vertical_alignment="bottom")
+        c1, c2, c3 = st.columns([1, 6, 1], vertical_alignment="bottom")
         
-        # 1. Image Generation Toggle Button (Left)
-        with c_img_btn:
-            is_img_mode = st.session_state.get('chat_mode') == 'image'
-            btn_class = "chat-bar-btn img-mode-active" if is_img_mode else "chat-bar-btn"
-            
-            # Use HTML button for custom styling and icon
-            # We use a hidden checkbox hack or just the button logic without label_visibility
-            st.markdown(f"""
-                <button class="{btn_class}" onclick="document.getElementById('img_toggle').click()" title="Toggle Image Generation">
-                    🎨
-                </button>
-            """, unsafe_allow_html=True)
-            
-            # Use standard button, we hide the text via CSS in inject_custom_css if needed
-            # OR we just use an emoji as the label which is fine
-            if st.button("🖼️", key="img_toggle", help="Toggle Image Mode"):
-                new_mode = 'text' if is_img_mode else 'image'
-                st.session_state['chat_mode'] = new_mode
+        # 1. Image Toggle (Left)
+        with c1:
+            is_img = st.session_state.get('chat_mode') == 'image'
+            # Button changes color if active
+            btn_type = "primary" if is_img else "secondary"
+            if st.button("🎨", key="img_toggle", type=btn_type, help="Toggle Image Generation"):
+                st.session_state['chat_mode'] = 'image' if not is_img else 'text'
                 st.rerun()
 
-        # 2. Main Chat Input (Center)
-        with c_input:
-            placeholder = "🎨 Describe image..." if is_img_mode else "Ask anything..."
-            if prompt := st.chat_input(placeholder):
-                process_message(prompt)
+        # 2. Voice Input (Right - Middle is empty spacing)
+        with c3:
+            audio = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
+            if audio: st.toast("Voice logic not connected yet", icon="ℹ️")
 
-        # 3. Microphone Input Button (Right)
-        with c_mic_btn:
-            # Use a container to style the mic button like the others
-            st.markdown('<div class="chat-bar-btn">', unsafe_allow_html=True)
-            audio_data = mic_recorder(start_prompt="🎤", stop_prompt="🔴", just_once=True, key="voice_input")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            if audio_data:
-                st.toast("Processing voice...", icon="🎧")
+    # --- MAIN INPUT (Bottom) ---
+    # Dynamic Placeholder
+    place_txt = "🎨 Describe the image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
+    
+    if prompt := st.chat_input(place_txt):
+        process_message(prompt)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
