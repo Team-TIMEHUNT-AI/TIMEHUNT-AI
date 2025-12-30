@@ -2536,7 +2536,7 @@ def page_help():
         with st.expander(q):
             st.write(a)
 
-# --- 20. MAIN APPLICATION ROUTER ---
+# --- 20. MAIN APPLICATION ROUTER (FIXED) ---
 
 def main():
     # 1. Initialize System State
@@ -2575,14 +2575,13 @@ def main():
             
             st.divider()
 
-            # --- NEW: IMAGE GENERATION TRIGGER ---
+            # --- IMAGE GENERATION TRIGGER ---
             st.markdown("#### 🎨 Visual Studio")
             st.caption("Generate diagrams or motivational images.")
             
-            # This button sets a flag. The next input in the chat box will be treated as an image prompt.
             if st.button("✨ Generate Visual from Text", type="primary", use_container_width=True):
                 st.session_state['trigger_image_gen'] = True
-                st.toast("Image Mode Active. Type your description in the chat box below.", icon="🎨")
+                st.toast("Image Mode Active. Type description below.", icon="🎨")
 
             st.divider()
             
@@ -2595,8 +2594,45 @@ def main():
 
             st.write("") # Spacer
             
-            # Session List Logic (Kept same as before for brevity, ensure you have the corrected version with enumerate)
-            # ... [Insert your corrected session list loop here] ...
+            # Session List Logic (FIXED FOR DUPLICATE KEYS)
+            sessions = load_chat_sessions()
+            
+            if st.session_state['delete_mode']:
+                # Delete Mode UI
+                st.caption("Select chats to delete:")
+                with st.form("del_form"):
+                    selected_ids = []
+                    # Enumerate ensures every checkbox key is unique even if session IDs repeat
+                    for i, s in enumerate(sessions):
+                        unique_key = f"del_{s['SessionID']}_{i}"
+                        if st.checkbox(f"{s['SessionName']}", key=unique_key):
+                            selected_ids.append(s['SessionID'])
+                    
+                    if st.form_submit_button("🗑️ Delete Selected", type="primary", use_container_width=True):
+                        for sid in selected_ids:
+                            delete_chat_session(sid)
+                        st.session_state['delete_mode'] = False
+                        if st.session_state.get('current_session_id') in selected_ids:
+                            st.session_state['current_session_id'] = None
+                            st.session_state['chat_history'] = []
+                        st.rerun()
+            else:
+                # Normal Mode UI
+                if not sessions:
+                    st.caption("No history found.")
+                
+                for i, s in enumerate(sessions):
+                    is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
+                    b_type = "primary" if is_active else "secondary"
+                    # Unique Key Fix
+                    unique_btn_key = f"sess_{s['SessionID']}_{i}"
+                    
+                    if st.button(f"📄 {s['SessionName']}", key=unique_btn_key, type=b_type, use_container_width=True):
+                        st.session_state['current_session_id'] = s['SessionID']
+                        st.session_state['current_session_name'] = s['SessionName']
+                        msgs = load_messages_for_session(s['SessionID'])
+                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in msgs]
+                        st.rerun()
         
         # Render Chat Page
         page_ai_assistant()
