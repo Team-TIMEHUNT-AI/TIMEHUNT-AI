@@ -498,8 +498,6 @@ def initialize_session_state():
         'xp_history': [], 
         'theme_mode': 'Dark', 
         'theme_color': 'Green (Default)',
-        # --- NEW STATE VARIABLE FOR CHAT ---
-        'chat_mode': 'text' # Controls the toggle state (text vs image)
     }
 
     # Initialize missing keys
@@ -533,53 +531,102 @@ def initialize_session_state():
         st.session_state['gemini_api_keys'] = unique_keys
         
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
-def show_comet_splash():
+def show_cinematic_intro():
+    """
+    Recreates the 'Comet Browser' intro video using CSS Keyframes.
+    Phases: Nebula Drift -> Solar Flash -> Logo Reveal.
+    """
     if not st.session_state['splash_played']:
         placeholder = st.empty()
         
-        encoded_img = ""
-        has_image = False
+        # Load the logo (Using your file 1000592991.png)
+        logo_b64 = ""
         try:
             with open("1000592991.png", "rb") as f:
-                encoded_img = base64.b64encode(f.read()).decode()
-                has_image = True
+                logo_b64 = base64.b64encode(f.read()).decode()
         except: pass
 
         with placeholder.container():
-            # TEXTWRAP.DEDENT IS CRITICAL - DO NOT REMOVE
-            # I have updated the text in the HTML below
-            st.markdown(textwrap.dedent(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=Inter:wght@300;600&display=swap');
-div[data-testid="stVerticalBlock"] > div:has(.main-void) {{ gap: 0 !important; }}
-.stMarkdown {{ background: transparent !important; }}
-.main-void {{ position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background: #000000 !important; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 999999; overflow: hidden; animation: mainFadeOut 1.2s cubic-bezier(0.7, 0, 0.3, 1) 6.0s forwards; }}
-.orbital-track {{ position: relative; width: 380px; height: 380px; display: flex; justify-content: center; align-items: center; }}
-.comet-engine {{ position: absolute; width: 100%; height: 100%; animation: cometWhip 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }}
-.comet-engine::after {{ content: ''; position: absolute; top: -8px; left: 50%; transform: translateX(-50%); width: 16px; height: 16px; background: #B5FF5F; border-radius: 50%; box-shadow: 0 0 35px 8px #B5FF5F, 0 0 70px 20px #00E5FF, 0 30px 100px 30px rgba(181, 255, 95, 0.8); }}
-.logo-core {{ position: absolute; width: 200px; height: 200px; background: #000; border-radius: 50%; z-index: 10; display: flex; justify-content: center; align-items: center; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 0 80px rgba(0, 0, 0, 0.8); animation: coreBloom 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }}
-.core-img {{ width: 95%; height: 95%; border-radius: 50%; object-fit: cover; filter: brightness(1.2) contrast(1.1); }}
-.branding-container {{ margin-top: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; background: transparent !important; animation: textReveal 2.8s ease-out 1.4s forwards; opacity: 0; }}
-.main-tagline {{ font-family: 'Syncopate', sans-serif; color: #FFFFFF !important; font-size: 24px; font-weight: 700; letter-spacing: 18px; text-transform: uppercase; margin-bottom: 22px; background: transparent !important; }}
-.sub-tagline {{ font-family: 'Inter', sans-serif; color: #B5FF5F !important; font-size: 14px; letter-spacing: 6px; text-transform: uppercase; font-weight: 500; background: transparent !important; opacity: 0.9; }}
-@keyframes cometWhip {{ 0% {{ transform: rotate(0deg); opacity: 0.4; }} 50% {{ transform: rotate(180deg); opacity: 1; scale: 1.15; }} 100% {{ transform: rotate(360deg); opacity: 0.4; }} }}
-@keyframes coreBloom {{ 0% {{ transform: scale(0.2); opacity: 0; filter: blur(30px); }} 70% {{ transform: scale(1.1); opacity: 1; filter: blur(0px); }} 100% {{ transform: scale(1); opacity: 1; }} }}
-@keyframes textReveal {{ 0% {{ transform: translateY(50px); opacity: 0; filter: blur(15px); }} 100% {{ transform: translateY(0); opacity: 1; filter: blur(0); }} }}
-@keyframes mainFadeOut {{ to {{ opacity: 0; visibility: hidden; transform: scale(1.1); filter: blur(20px); }} }}
-</style>
-<div class="main-void">
-<div class="orbital-track">
-<div class="comet-engine"></div>
-<div class="logo-core">{'<img src="data:image/png;base64,' + encoded_img + '" class="core-img">' if has_image else '<div style="font-size:70px;">🎯</div>'}</div>
-</div>
-<div class="branding-container">
-<div class="main-tagline">TIME HUNT AI</div>
-<div class="sub-tagline">Redefine Productivity • Execute With Precision</div>
-</div>
-</div>
-"""), unsafe_allow_html=True)
+            st.markdown(f"""
+            <style>
+                /* 1. CONTAINER: Fixed Fullscreen Overlay */
+                .intro-container {{
+                    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                    background: #000000; z-index: 999999;
+                    display: flex; flex-direction: column; justify-content: center; align-items: center;
+                    overflow: hidden;
+                    animation: fadeOutContainer 1s ease-in-out 5.5s forwards;
+                }}
+
+                /* 2. PHASE 1: NEBULA BACKGROUND (The drifting lights) */
+                .nebula-bg {{
+                    position: absolute; width: 200%; height: 200%;
+                    background: 
+                        radial-gradient(circle at 50% 50%, rgba(255, 100, 50, 0.15), transparent 40%), /* Red/Orange Orb */
+                        radial-gradient(circle at 20% 80%, rgba(50, 200, 255, 0.1), transparent 30%); /* Blue Orb */
+                    filter: blur(40px);
+                    animation: nebulaMove 6s infinite alternate;
+                    opacity: 0.8;
+                }}
+
+                /* 3. PHASE 2: SOLAR FLASH (The white explosion) */
+                .solar-flash {{
+                    position: absolute; top: 50%; left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 10px; height: 10px;
+                    background: white;
+                    border-radius: 50%;
+                    box-shadow: 0 0 50px 20px white;
+                    opacity: 0;
+                    animation: flashExplode 1.2s cubic-bezier(0.1, 0.7, 1.0, 0.1) 2.2s forwards;
+                    z-index: 10;
+                }}
+
+                /* 4. PHASE 3: LOGO REVEAL */
+                .logo-wrapper {{
+                    z-index: 20; opacity: 0;
+                    transform: scale(1.4);
+                    animation: logoEmergence 2s cubic-bezier(0.2, 0.8, 0.2, 1) 3.2s forwards;
+                    display: flex; flex-direction: column; align-items: center;
+                }}
+                .main-logo {{ width: 150px; height: 150px; margin-bottom: 20px; }}
+                .app-name {{ 
+                    font-family: 'Inter', sans-serif; color: white; 
+                    font-size: 32px; font-weight: 700; letter-spacing: 2px; 
+                    opacity: 0;
+                    animation: textFadeIn 1s ease-out 3.8s forwards;
+                }}
+
+                /* --- KEYFRAMES --- */
+                @keyframes nebulaMove {{
+                    0% {{ transform: translate(-10%, -10%) rotate(0deg); }}
+                    100% {{ transform: translate(0%, 0%) rotate(5deg); }}
+                }}
+                @keyframes flashExplode {{
+                    0% {{ opacity: 0; transform: translate(-50%, -50%) scale(0.1); }}
+                    40% {{ opacity: 1; transform: translate(-50%, -50%) scale(150); }}
+                    100% {{ opacity: 0; transform: translate(-50%, -50%) scale(200); }}
+                }}
+                @keyframes logoEmergence {{
+                    0% {{ opacity: 0; transform: scale(3.0); filter: blur(20px); }}
+                    100% {{ opacity: 1; transform: scale(1.0); filter: blur(0px); }}
+                }}
+                @keyframes textFadeIn {{ to {{ opacity: 1; transform: translateY(0); }} }}
+                @keyframes fadeOutContainer {{ to {{ opacity: 0; visibility: hidden; }} }}
+            </style>
+
+            <div class="intro-container">
+                <div class="nebula-bg"></div>
+                <div class="solar-flash"></div>
+                <div class="logo-wrapper">
+                    <img src="data:image/png;base64,{logo_b64}" class="main-logo">
+                    <div class="app-name">TIME HUNT</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
-            time.sleep(6.5)
+            # Pause execution to let animation play
+            time.sleep(6.0)
         
         placeholder.empty()
         st.session_state['splash_played'] = True
@@ -1514,138 +1561,74 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
+# --- 10. PAGE: AI COMPANION (Text Only Version) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
-    import base64
     from PIL import Image
+    import base64
     
     # 1. Setup Avatars
     user_av = st.session_state.get('user_avatar', '')
     user_img = Image.open(user_av) if os.path.exists(user_av) else "👤"
+    
     ai_logo = "1000592991.png"
     ai_img = Image.open(ai_logo) if os.path.exists(ai_logo) else "🤖"
 
-    # 2. Logic to Process Message
+    # 2. Logic to Process Message (TEXT ONLY)
     def process_message(prompt_text):
-        mode = st.session_state.get('chat_mode', 'text')
-        
         # A. Save User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        save_chat_to_cloud("user", prompt_text) # <--- Calls the new function
+        save_chat_to_cloud("user", prompt_text)
         
         # B. Generate AI Response
         with st.chat_message("assistant", avatar=ai_img):
-            with st.spinner("⚡ Processing..."):
-                if mode == 'image':
-                    result = generate_visual_intel(prompt_text)
-                    if result and result.startswith("ERROR:"):
-                        response = {"role": "model", "text": f"⚠️ {result}"}
-                    elif result:
-                        response = {"role": "model", "image": result, "text": f"🎨 Visual: '{prompt_text}'"}
-                    else:
-                        response = {"role": "model", "text": "⚠️ Error generating image."}
-                else:
-                    txt, _ = perform_ai_analysis(prompt_text)
-                    response = {"role": "model", "text": txt}
+            with st.spinner("⚡ Thinking..."):
+                # Call only the text analysis function
+                txt, _ = perform_ai_analysis(prompt_text)
+                response = {"role": "model", "text": txt}
         
         # C. Save AI Response
         st.session_state['chat_history'].append(response)
-        save_chat_to_cloud("model", response.get('text', 'Image Generated'))
-        
-        if mode == 'image': st.session_state['chat_mode'] = 'text'
+        save_chat_to_cloud("model", txt)
         st.rerun()
 
-    # 3. Render UI
+    # 3. Render Header
     st.markdown('<div class="big-title">AI Companion</div>', unsafe_allow_html=True)
     
-    # --- WELCOME SCREEN LOGIC ---
-    # Only shows if history is strictly empty
-    if len(st.session_state.get('chat_history', [])) == 0:
-        st.markdown(f"""
-        <div style="text-align: center; margin-top: 50px; animation: fadeIn 1s;">
-            <h1 style="color: #B5FF5F; font-family: 'Inter', sans-serif;">Good Morning, {st.session_state.get('user_name', 'Achiever')}!</h1>
-            <p style="color: #888; font-size: 18px;">Ready to hunt down your goals?</p>
-            <div style="margin-top: 20px; font-size: 50px;">🏹</div>
-        </div>
-        """, unsafe_allow_html=True)
+    chat_container = st.container()
+    with chat_container:
+        # WELCOME SCREEN (If chat is empty)
+        if not st.session_state.get('chat_history'):
+            st.markdown(f"""
+            <div style="text-align: center; margin-top: 50px; animation: fadeIn 1s;">
+                <h1 style="color: #B5FF5F; font-family: 'Inter', sans-serif;">Good Morning, {st.session_state.get('user_name', 'Achiever')}!</h1>
+                <p style="color: #888; font-size: 18px;">Ready to hunt down your goals?</p>
+                <div style="margin-top: 20px; font-size: 50px;">🏹</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # RENDER HISTORY (Text only)
+        for msg in st.session_state['chat_history']:
+            role = msg.get('role')
+            if role == 'user':
+                with st.chat_message("user", avatar=user_img):
+                    st.write(msg.get('text'))
+            else:
+                with st.chat_message("assistant", avatar=ai_img):
+                    st.write(msg.get('text'))
 
-    # --- CHAT HISTORY ---
-    for msg in st.session_state['chat_history']:
-        role = msg.get('role')
-        if role == 'user':
-            with st.chat_message("user", avatar=user_img):
-                st.write(msg.get('text'))
-        else:
-            with st.chat_message("assistant", avatar=ai_img):
-                if msg.get('text'): st.write(msg.get('text'))
-                if msg.get('image'):
-                    try: st.image(base64.b64decode(msg.get('image')), use_container_width=True)
-                    except: pass
-
-    # 4. Input Area
+    # 4. Input Area (Simplified)
     st.write("")
-    c1, c2, c3 = st.columns([1, 6, 1], vertical_alignment="bottom")
-    with c1:
-        is_img = st.session_state.get('chat_mode') == 'image'
-        if st.button("🎨", type="primary" if is_img else "secondary", use_container_width=True):
-            st.session_state['chat_mode'] = 'image' if not is_img else 'text'
-            st.rerun()
-    with c3:
+    c1, c2 = st.columns([6, 1], vertical_alignment="bottom")
+    
+    # Microphone Button
+    with c2:
         mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
 
-    placeholder = "🎨 Describe image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
-    if prompt := st.chat_input(placeholder):
-        process_message(prompt)
-
-# --- 11. VISUAL STYLING (THEME ENGINE) ---
-def inject_custom_css():
-    theme_color = st.session_state.get('theme_color', 'Green (Default)')
-    theme_mode = st.session_state.get('theme_mode', 'Dark')
-    
-    # Colors
-    colors = {"Green (Default)": "#B5FF5F", "Blue": "#00E5FF", "Red": "#FF4B4B", "Grey": "#A0A0A0"}
-    accent = colors.get(theme_color, "#B5FF5F")
-    
-    # Dark/Light Logic
-    if theme_mode == "Light":
-        main_bg, sidebar_bg, card_bg, text_color = "#FFFFFF", "#F8F9FB", "#FFFFFF", "#1A1A1A"
-        btn_text_color = "#000000"
-    else:
-        main_bg, sidebar_bg, card_bg, text_color = "#0E1117", "#262730", "#1E1E1E", "#FAFAFA"
-        btn_text_color = "#FFFFFF"
-
-    st.markdown(f"""
-        <style>
-            :root {{ --accent: {accent}; --text: {text_color}; --card-bg: {card_bg}; }}
-            .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
-            section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
-            
-            /* Clean Buttons */
-            div.stButton > button {{ 
-                background-color: {card_bg}; border: 1px solid rgba(255,255,255,0.1); 
-                color: {btn_text_color} !important; border-radius: 8px; 
-            }}
-            div.stButton > button:hover {{ border-color: {accent}; color: {accent} !important; }}
-            
-            /* Primary Button */
-            div.stButton > button[kind="primary"] {{ 
-                background-color: {accent} !important; border: none; 
-                color: #000 !important; 
-            }}
-            
-            /* --- GEMINI CHAT BAR STYLES --- */
-            .stChatInputContainer {{ padding-bottom: 10px !important; }}
-            
-            /* Remove white backgrounds from columns */
-            div[data-testid="column"] {{ background: transparent !important; }}
-            
-            /* Toolbar Icons */
-            .toolbar-btn {{ font-size: 24px; cursor: pointer; text-align: center; }}
-            
-            /* Avatars */
-            .stChatMessageAvatarImage {{ border-radius: 50%; border: 2px solid {accent}; }}
-        </style>
-    """, unsafe_allow_html=True)
+    # Main Input
+    with c1:
+        if prompt := st.chat_input("Ask TimeHunt AI..."):
+            process_message(prompt)
 
 # --- 12. PDF REPORT GENERATOR ---
 def create_mission_report(user_name, level, xp, history):
