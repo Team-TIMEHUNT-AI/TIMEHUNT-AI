@@ -533,12 +533,13 @@ def initialize_session_state():
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
 def show_cinematic_intro():
     """
-    Exact replica of the 'Comet Browser' intro video.
+    High-Fidelity reproduction of the 'Comet' intro.
+    Uses Parallax layers and Camera Exposure effects.
     """
     if not st.session_state['splash_played']:
         placeholder = st.empty()
         
-        # Try to load your logo
+        # Load Logo safely
         logo_b64 = ""
         try:
             with open("1000592991.png", "rb") as f:
@@ -548,88 +549,131 @@ def show_cinematic_intro():
         with placeholder.container():
             st.markdown(f"""
             <style>
-                /* CONTAINER */
+                /* CORE CONTAINER */
                 .intro-container {{
                     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
                     background: #000; z-index: 999999;
-                    display: flex; flex-direction: column; justify-content: center; align-items: center;
+                    display: flex; justify-content: center; align-items: center;
                     overflow: hidden;
-                    animation: fadeOutAll 0.8s ease-in-out 6.5s forwards;
+                    animation: globalFadeOut 0.5s ease-in-out 6.5s forwards;
                 }}
 
-                /* 1. NEBULA (The colored clouds) */
-                .nebula-layer {{
-                    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-                    background: 
-                        radial-gradient(circle at 50% 50%, rgba(255, 80, 80, 0.2), transparent 50%),
-                        radial-gradient(circle at 80% 20%, rgba(50, 255, 200, 0.15), transparent 40%);
-                    filter: blur(60px);
-                    animation: spinNebula 8s linear infinite;
-                    opacity: 1;
-                }}
-
-                /* 2. THE STARRY FIELD */
-                .star-field {{
-                    position: absolute; width: 100%; height: 100%;
+                /* LAYER 1: DEEP SPACE (Stars) */
+                .space-layer {{
+                    position: absolute; width: 120%; height: 120%;
                     background-image: 
                         radial-gradient(white 1px, transparent 1px),
-                        radial-gradient(white 2px, transparent 2px);
-                    background-size: 50px 50px, 100px 100px;
-                    opacity: 0.5;
+                        radial-gradient(rgba(255,255,255,0.5) 1px, transparent 1px);
+                    background-size: 50px 50px, 150px 150px;
+                    opacity: 0.6;
+                    animation: spaceDrift 10s linear infinite;
                 }}
 
-                /* 3. THE WHITE FLASH (Explosion) */
-                .flash-bang {{
-                    position: absolute; top: 50%; left: 50%;
-                    transform: translate(-50%, -50%);
-                    width: 5px; height: 5px;
-                    background: white;
-                    border-radius: 50%;
-                    box-shadow: 0 0 40px 10px white;
+                /* LAYER 2: NEBULA CLOUDS (The colored lights) */
+                /* We use two gradients moving in opposite directions for 'liquid' feel */
+                .nebula-1 {{
+                    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+                    background: radial-gradient(circle at center, rgba(255, 60, 0, 0.15), transparent 40%);
+                    filter: blur(80px);
+                    animation: orbitSlow 12s linear infinite;
+                    mix-blend-mode: screen;
+                }}
+                .nebula-2 {{
+                    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+                    background: radial-gradient(circle at center, rgba(0, 200, 255, 0.1), transparent 45%);
+                    filter: blur(60px);
+                    animation: orbitReverse 15s linear infinite;
+                    mix-blend-mode: screen;
+                }}
+
+                /* LAYER 3: THE IGNITION POINT (Tiny dot before explosion) */
+                .ignition-core {{
+                    position: absolute; width: 4px; height: 4px;
+                    background: #fff; border-radius: 50%;
+                    box-shadow: 0 0 10px 2px #fff;
+                    animation: ignite 2.5s cubic-bezier(0.8, 0, 1, 1) forwards;
                     opacity: 0;
-                    animation: flashSequence 1.5s cubic-bezier(0.7, 0, 0.3, 1) 2.2s forwards;
-                    z-index: 50;
                 }}
 
-                /* 4. LOGO & TEXT */
-                .content-layer {{
-                    z-index: 60; display: flex; flex-direction: column; align-items: center;
+                /* LAYER 4: THE BIG BANG (Screen Flash) */
+                .blind-flash {{
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                    background: #FFF;
                     opacity: 0;
-                    animation: revealContent 1s ease-out 3.2s forwards;
-                }}
-                .logo-img {{ width: 120px; margin-bottom: 20px; }}
-                .app-title {{ font-family: sans-serif; font-size: 32px; font-weight: bold; color: white; letter-spacing: -1px; }}
-                .slide-text {{ 
-                    margin-top: 200px; color: #888; font-size: 14px; 
-                    animation: slideUp 1s ease-out 4.0s forwards; opacity: 0;
+                    /* This timing is critical: Fast up, slow fade down */
+                    animation: cameraFlash 0.8s cubic-bezier(0.1, 0.9, 0.2, 1) 2.5s forwards;
+                    z-index: 100;
                 }}
 
-                /* ANIMATIONS */
-                @keyframes spinNebula {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(20deg); }} }}
-                @keyframes flashSequence {{
-                    0% {{ opacity: 0; transform: translate(-50%, -50%) scale(0.1); }}
-                    20% {{ opacity: 1; transform: translate(-50%, -50%) scale(1); }}
-                    50% {{ opacity: 1; transform: translate(-50%, -50%) scale(300); }} 
-                    100% {{ opacity: 0; transform: translate(-50%, -50%) scale(350); }}
+                /* LAYER 5: LOGO REVEAL */
+                .logo-container {{
+                    z-index: 200; display: flex; flex-direction: column; align-items: center;
+                    opacity: 0;
+                    /* Starts slightly zoomed IN, then relaxes out */
+                    transform: scale(1.4);
+                    animation: logoSettle 3s cubic-bezier(0.22, 1, 0.36, 1) 2.6s forwards;
                 }}
-                @keyframes revealContent {{ to {{ opacity: 1; }} }}
-                @keyframes slideUp {{ from {{ transform: translateY(20px); opacity: 0; }} to {{ transform: translateY(0); opacity: 1; }} }}
-                @keyframes fadeOutAll {{ to {{ opacity: 0; visibility: hidden; }} }}
+                
+                .main-logo {{ width: 140px; filter: drop-shadow(0 0 20px rgba(181, 255, 95, 0.3)); }}
+                
+                .text-block {{ text-align: center; margin-top: 25px; color: #FFF; }}
+                .title-text {{ 
+                    font-family: 'Inter', sans-serif; font-size: 38px; font-weight: 800; letter-spacing: 4px; 
+                    text-shadow: 0 0 10px rgba(255,255,255,0.3);
+                }}
+                .sub-text {{ 
+                    font-family: 'Inter', sans-serif; font-size: 14px; color: #B5FF5F; 
+                    letter-spacing: 2px; text-transform: uppercase; margin-top: 8px; opacity: 0.8; 
+                }}
+
+                /* --- ANIMATION TIMELINES --- */
+                @keyframes spaceDrift {{ from {{ transform: scale(1.0) rotate(0deg); }} to {{ transform: scale(1.1) rotate(2deg); }} }}
+                @keyframes orbitSlow {{ from {{ transform: rotate(0deg) translate(50px) rotate(0deg); }} to {{ transform: rotate(360deg) translate(50px) rotate(-360deg); }} }}
+                @keyframes orbitReverse {{ from {{ transform: rotate(360deg) translate(40px) rotate(-360deg); }} to {{ transform: rotate(0deg) translate(40px) rotate(0deg); }} }}
+                
+                @keyframes ignite {{
+                    0% {{ opacity: 0; transform: scale(0); }}
+                    80% {{ opacity: 1; transform: scale(1); }}
+                    100% {{ opacity: 1; transform: scale(3); }}
+                }}
+
+                @keyframes cameraFlash {{
+                    0% {{ opacity: 0; }}
+                    10% {{ opacity: 1; }} /* INSTANT WHITE */
+                    100% {{ opacity: 0; }} /* Fade out to show logo */
+                }}
+
+                @keyframes logoSettle {{
+                    0% {{ opacity: 0; transform: scale(3.5); filter: blur(20px); }}
+                    10% {{ opacity: 1; filter: blur(0px); }}
+                    100% {{ opacity: 1; transform: scale(1.0); }}
+                }}
+
+                @keyframes globalFadeOut {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
+
             </style>
 
             <div class="intro-container">
-                <div class="nebula-layer"></div>
-                <div class="star-field"></div>
-                <div class="flash-bang"></div>
-                <div class="content-layer">
-                    <img src="data:image/png;base64,{logo_b64}" class="logo-img">
-                    <div class="app-title">TIMEHUNT</div>
-                    <div class="slide-text">The browser that works for you</div>
+                <div class="space-layer"></div>
+                <div class="nebula-1"></div>
+                <div class="nebula-2"></div>
+                
+                <div class="ignition-core"></div>
+                
+                <div class="blind-flash"></div>
+                
+                <div class="logo-container">
+                    <img src="data:image/png;base64,{logo_b64}" class="main-logo">
+                    <div class="text-block">
+                        <div class="title-text">TIME HUNT</div>
+                        <div class="sub-text">Productivity Intelligence</div>
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            time.sleep(7.0) # Wait for animation to finish
+            # Wait for animation loop
+            time.sleep(7.0)
         
         placeholder.empty()
         st.session_state['splash_played'] = True
