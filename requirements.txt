@@ -3,7 +3,7 @@ pandas
 fpdf
 streamlit-option-menu
 streamlit-mic-recorder
-streamlit-gsheets
+st-gsheets-connection
 gtts
 google-genai
 Pillow
