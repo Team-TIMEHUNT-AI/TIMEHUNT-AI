@@ -533,13 +533,12 @@ def initialize_session_state():
 # --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
 def show_cinematic_intro():
     """
-    Recreates the 'Comet Browser' intro video using CSS Keyframes.
-    Phases: Nebula Drift -> Solar Flash -> Logo Reveal.
+    Exact replica of the 'Comet Browser' intro video.
     """
     if not st.session_state['splash_played']:
         placeholder = st.empty()
         
-        # Load the logo (Using your file 1000592991.png)
+        # Try to load your logo
         logo_b64 = ""
         try:
             with open("1000592991.png", "rb") as f:
@@ -549,84 +548,88 @@ def show_cinematic_intro():
         with placeholder.container():
             st.markdown(f"""
             <style>
-                /* 1. CONTAINER: Fixed Fullscreen Overlay */
+                /* CONTAINER */
                 .intro-container {{
                     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                    background: #000000; z-index: 999999;
+                    background: #000; z-index: 999999;
                     display: flex; flex-direction: column; justify-content: center; align-items: center;
                     overflow: hidden;
-                    animation: fadeOutContainer 1s ease-in-out 5.5s forwards;
+                    animation: fadeOutAll 0.8s ease-in-out 6.5s forwards;
                 }}
 
-                /* 2. PHASE 1: NEBULA BACKGROUND (The drifting lights) */
-                .nebula-bg {{
-                    position: absolute; width: 200%; height: 200%;
+                /* 1. NEBULA (The colored clouds) */
+                .nebula-layer {{
+                    position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
                     background: 
-                        radial-gradient(circle at 50% 50%, rgba(255, 100, 50, 0.15), transparent 40%), /* Red/Orange Orb */
-                        radial-gradient(circle at 20% 80%, rgba(50, 200, 255, 0.1), transparent 30%); /* Blue Orb */
-                    filter: blur(40px);
-                    animation: nebulaMove 6s infinite alternate;
-                    opacity: 0.8;
+                        radial-gradient(circle at 50% 50%, rgba(255, 80, 80, 0.2), transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(50, 255, 200, 0.15), transparent 40%);
+                    filter: blur(60px);
+                    animation: spinNebula 8s linear infinite;
+                    opacity: 1;
                 }}
 
-                /* 3. PHASE 2: SOLAR FLASH (The white explosion) */
-                .solar-flash {{
+                /* 2. THE STARRY FIELD */
+                .star-field {{
+                    position: absolute; width: 100%; height: 100%;
+                    background-image: 
+                        radial-gradient(white 1px, transparent 1px),
+                        radial-gradient(white 2px, transparent 2px);
+                    background-size: 50px 50px, 100px 100px;
+                    opacity: 0.5;
+                }}
+
+                /* 3. THE WHITE FLASH (Explosion) */
+                .flash-bang {{
                     position: absolute; top: 50%; left: 50%;
                     transform: translate(-50%, -50%);
-                    width: 10px; height: 10px;
+                    width: 5px; height: 5px;
                     background: white;
                     border-radius: 50%;
-                    box-shadow: 0 0 50px 20px white;
+                    box-shadow: 0 0 40px 10px white;
                     opacity: 0;
-                    animation: flashExplode 1.2s cubic-bezier(0.1, 0.7, 1.0, 0.1) 2.2s forwards;
-                    z-index: 10;
+                    animation: flashSequence 1.5s cubic-bezier(0.7, 0, 0.3, 1) 2.2s forwards;
+                    z-index: 50;
                 }}
 
-                /* 4. PHASE 3: LOGO REVEAL */
-                .logo-wrapper {{
-                    z-index: 20; opacity: 0;
-                    transform: scale(1.4);
-                    animation: logoEmergence 2s cubic-bezier(0.2, 0.8, 0.2, 1) 3.2s forwards;
-                    display: flex; flex-direction: column; align-items: center;
-                }}
-                .main-logo {{ width: 150px; height: 150px; margin-bottom: 20px; }}
-                .app-name {{ 
-                    font-family: 'Inter', sans-serif; color: white; 
-                    font-size: 32px; font-weight: 700; letter-spacing: 2px; 
+                /* 4. LOGO & TEXT */
+                .content-layer {{
+                    z-index: 60; display: flex; flex-direction: column; align-items: center;
                     opacity: 0;
-                    animation: textFadeIn 1s ease-out 3.8s forwards;
+                    animation: revealContent 1s ease-out 3.2s forwards;
+                }}
+                .logo-img {{ width: 120px; margin-bottom: 20px; }}
+                .app-title {{ font-family: sans-serif; font-size: 32px; font-weight: bold; color: white; letter-spacing: -1px; }}
+                .slide-text {{ 
+                    margin-top: 200px; color: #888; font-size: 14px; 
+                    animation: slideUp 1s ease-out 4.0s forwards; opacity: 0;
                 }}
 
-                /* --- KEYFRAMES --- */
-                @keyframes nebulaMove {{
-                    0% {{ transform: translate(-10%, -10%) rotate(0deg); }}
-                    100% {{ transform: translate(0%, 0%) rotate(5deg); }}
-                }}
-                @keyframes flashExplode {{
+                /* ANIMATIONS */
+                @keyframes spinNebula {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(20deg); }} }}
+                @keyframes flashSequence {{
                     0% {{ opacity: 0; transform: translate(-50%, -50%) scale(0.1); }}
-                    40% {{ opacity: 1; transform: translate(-50%, -50%) scale(150); }}
-                    100% {{ opacity: 0; transform: translate(-50%, -50%) scale(200); }}
+                    20% {{ opacity: 1; transform: translate(-50%, -50%) scale(1); }}
+                    50% {{ opacity: 1; transform: translate(-50%, -50%) scale(300); }} 
+                    100% {{ opacity: 0; transform: translate(-50%, -50%) scale(350); }}
                 }}
-                @keyframes logoEmergence {{
-                    0% {{ opacity: 0; transform: scale(3.0); filter: blur(20px); }}
-                    100% {{ opacity: 1; transform: scale(1.0); filter: blur(0px); }}
-                }}
-                @keyframes textFadeIn {{ to {{ opacity: 1; transform: translateY(0); }} }}
-                @keyframes fadeOutContainer {{ to {{ opacity: 0; visibility: hidden; }} }}
+                @keyframes revealContent {{ to {{ opacity: 1; }} }}
+                @keyframes slideUp {{ from {{ transform: translateY(20px); opacity: 0; }} to {{ transform: translateY(0); opacity: 1; }} }}
+                @keyframes fadeOutAll {{ to {{ opacity: 0; visibility: hidden; }} }}
             </style>
 
             <div class="intro-container">
-                <div class="nebula-bg"></div>
-                <div class="solar-flash"></div>
-                <div class="logo-wrapper">
-                    <img src="data:image/png;base64,{logo_b64}" class="main-logo">
-                    <div class="app-name">TIME HUNT</div>
+                <div class="nebula-layer"></div>
+                <div class="star-field"></div>
+                <div class="flash-bang"></div>
+                <div class="content-layer">
+                    <img src="data:image/png;base64,{logo_b64}" class="logo-img">
+                    <div class="app-title">TIMEHUNT</div>
+                    <div class="slide-text">The browser that works for you</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # Pause execution to let animation play
-            time.sleep(6.0)
+            time.sleep(7.0) # Wait for animation to finish
         
         placeholder.empty()
         st.session_state['splash_played'] = True
@@ -2395,170 +2398,63 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 # --- 20. MAIN APPLICATION ROUTER ---
-
+# --- 20. MAIN APPLICATION ROUTER ---
 def main():
-    # 1. Initialize System State
+    # 1. Initialize Variables
     initialize_session_state()
     
-    # 2. CHECK GLOBAL ALARMS (Code Red Overlay)
+    # 2. Check Alarms
     check_reminders()
     render_alarm_ui()
 
-    # 3. Load Styles & Splash
+    # 3. Load Styles (Fixes NameError)
     inject_custom_css()
-    show_comet_splash()
+    
+    # 4. SHOW THE NEW CINEMATIC ANIMATION
+    # This replaces the old show_comet_splash()
+    show_cinematic_intro()
 
-    # 4. Onboarding Gate
+    # 5. Onboarding Gate
     if not st.session_state['onboarding_complete']:
         page_onboarding()
         return 
 
-    # 5. CHAT MODE SIDEBAR (Special Layout)
-    if st.session_state.get('page_mode') == 'chat':
-        with st.sidebar:
-            st.markdown("### 💬 AI Controls")
-            
-            # Navigation Buttons
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("🏠 Home", use_container_width=True):
-                    st.session_state['page_mode'] = 'main'
-                    st.rerun()
-            with c2:
-                if st.button("➕ New Chat", use_container_width=True):
-                    st.session_state['current_session_id'] = None
-                    st.session_state['current_session_name'] = "New Chat"
-                    st.session_state['chat_history'] = []
-                    st.session_state['chat_mode'] = 'text' # Reset mode
-                    st.rerun()
-            
-            st.divider()
-
-            # REMOVED: Old "Generate Visual" button (It is now inside the page!)
-            
-            # Chat Management (Delete)
-            if 'delete_mode' not in st.session_state: st.session_state['delete_mode'] = False
-            toggle_label = "Done Managing" if st.session_state['delete_mode'] else "🗑️ Manage Chats"
-            if st.button(toggle_label, use_container_width=True):
-                st.session_state['delete_mode'] = not st.session_state['delete_mode']
-                st.rerun()
-
-            st.write("") # Spacer
-            
-            # Session List Logic
-            sessions = load_chat_sessions()
-            
-            if st.session_state['delete_mode']:
-                # Delete Mode UI
-                st.caption("Select chats to delete:")
-                with st.form("del_form"):
-                    selected_ids = []
-                    for i, s in enumerate(sessions):
-                        unique_key = f"del_{s['SessionID']}_{i}"
-                        if st.checkbox(f"{s['SessionName']}", key=unique_key):
-                            selected_ids.append(s['SessionID'])
-                    
-                    if st.form_submit_button("🗑️ Delete Selected", type="primary", use_container_width=True):
-                        for sid in selected_ids:
-                            delete_chat_session(sid)
-                        st.session_state['delete_mode'] = False
-                        if st.session_state.get('current_session_id') in selected_ids:
-                            st.session_state['current_session_id'] = None
-                            st.session_state['chat_history'] = []
-                        st.rerun()
-            else:
-                # Normal Mode UI
-                if not sessions:
-                    st.caption("No history found.")
-                
-                for i, s in enumerate(sessions):
-                    is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
-                    b_type = "primary" if is_active else "secondary"
-                    unique_btn_key = f"sess_{s['SessionID']}_{i}"
-                    
-                    if st.button(f"📄 {s['SessionName']}", key=unique_btn_key, type=b_type, use_container_width=True):
-                        st.session_state['current_session_id'] = s['SessionID']
-                        st.session_state['current_session_name'] = s['SessionName']
-                        msgs = load_messages_for_session(s['SessionID'])
-                        # Format messages for display
-                        formatted_msgs = []
-                        for m in msgs:
-                            formatted_msgs.append({
-                                "role": m["Role"], 
-                                "text": m["Content"] if m["Role"] != "model" or "Visual generated" not in m["Content"] else m["Content"],
-                                "image": m.get("Content") if "Visual generated" in str(m.get("Content")) else None # Simple heuristic, usually we store image separately in cloud or base64 text
-                            })
-                            # Note: Cloud sync for images is tricky with just text columns. 
-                            # For now, this loads text history properly.
-                        
-                        st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in msgs]
-                        st.rerun()
+    # 6. APP ROUTING
+    # Sidebar Setup
+    with st.sidebar:
+        st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
+        render_live_clock()
         
-        # Render Chat Page
-        page_ai_assistant()
+        # Navigation
+        nav = option_menu(
+            menu_title=None,
+            options=["Home", "Scheduler", "Calendar", "Chat With AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
+            icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important", "background-color": "transparent"},
+                "nav-link": {"font-size": "14px", "text-align": "left", "margin":"2px"},
+                "nav-link-selected": {"background-color": "var(--primary-color)", "color": "#000"},
+            }
+        )
+        
+        # Audio Player
+        st.markdown("---")
+        music = st.selectbox("🎧 Focus Sound", ["Off", "Rain", "Binaural", "Lofi"], label_visibility="collapsed")
+        if music != "Off":
+             # Placeholder for audio logic
+             st.caption(f"Playing: {music}")
 
-    # 6. STANDARD SIDEBAR (Main Menu)
-    else:
-        with st.sidebar:
-            st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
-            render_live_clock()
-            
-            # Audio Player
-            st.markdown("### 🎧 Focus Audio")
-            with st.container():
-                music_mode = st.selectbox("Soundscape", 
-                    ["Om Chanting", "Binaural Beats", "Flute Flow", "Rainfall"], 
-                    label_visibility="collapsed"
-                )
-                local_map = {
-                    "Om Chanting": "om.mp3", 
-                    "Binaural Beats": "binaural.mp3", 
-                    "Flute Flow": "flute.mp3", 
-                    "Rainfall": "rain.mp3"
-                }
-                target_file = local_map.get(music_mode)
-                if target_file and os.path.exists(target_file):
-                    st.audio(target_file, format="audio/mp3", loop=True)
-            
-            st.markdown("---")
-            
-            # Location Setting
-            with st.expander("📍 Location Settings"):
-                city_input = st.text_input("Current City", value=st.session_state.get('user_city', 'Jaipur'))
-                if city_input != st.session_state.get('user_city', 'Jaipur'):
-                    st.session_state['user_city'] = city_input
-                    st.rerun()
-
-            st.markdown("---")
-            
-            # Main Nav
-            nav = option_menu(
-                menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "Chat With AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
-                icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
-                default_index=0,
-                styles={
-                    "container": {"padding": "0!important", "background-color": "transparent"},
-                    "icon": {"color": "var(--primary-color)", "font-size": "16px"}, 
-                    "nav-link": {"font-size": "15px", "text-align": "left", "margin":"2px", "--hover-color": "#333"},
-                    "nav-link-selected": {"background-color": "var(--primary-color)", "color": "#000"},
-                }
-            )
-            
-            st.caption(f"👤 **{st.session_state.get('user_name', 'User')}**")
-
-        # Page Routing
-        if nav == "Home": page_home()
-        elif nav == "Scheduler": page_scheduler()
-        elif nav == "Calendar": page_calendar()
-        elif nav == "Chat With AI": 
-            st.session_state['page_mode'] = 'chat'
-            st.rerun()
-        elif nav == "Timer": page_timer()  
-        elif nav == "Analytics": page_dashboard()
-        elif nav == "Help Center": page_help()
-        elif nav == "About": page_about()
-        elif nav == "Settings": page_settings()
+    # Page Logic
+    if nav == "Home": page_home()
+    elif nav == "Scheduler": page_scheduler()
+    elif nav == "Calendar": page_calendar()
+    elif nav == "Chat With AI": page_ai_assistant() # Text-only version
+    elif nav == "Timer": page_timer()  
+    elif nav == "Analytics": page_dashboard()
+    elif nav == "Help Center": page_help()
+    elif nav == "About": page_about()
+    elif nav == "Settings": page_settings()
 
 if __name__ == "__main__":
     main()
