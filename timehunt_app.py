@@ -298,43 +298,47 @@ def get_all_chats():
 
 def save_chat_to_cloud(role, content):
     """
-    Saves a single chat message to the cloud.
-    Includes robust error handling for schema mismatches.
+    Saves a single chat message to the cloud with VISIBLE error handling.
     """
     try:
         from streamlit_gsheets import GSheetsConnection
+        # Establishes connection using the secrets you configured
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Prepare Data Points
+        # 1. Prepare Data
         uid = str(st.session_state.get('user_id', 'Unknown'))
-        sid = str(st.session_state.get('current_session_id', 'Unknown'))
+        sid = str(st.session_state.get('current_session_id', 'Session-1'))
         sname = str(st.session_state.get('current_session_name', 'New Chat'))
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # 2. Get Existing Data
-        try:
-            df_existing = conn.read(worksheet="ChatHistory", ttl=0)
-        except Exception:
-            df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
-        
-        # 3. Create New Row
-        new_row = pd.DataFrame([{
+        # 2. Create the new row
+        new_data = pd.DataFrame([{
             "UserID": uid, 
             "SessionID": sid, 
             "SessionName": sname,
             "Role": role, 
-            "Content": content, 
+            "Content": str(content), 
             "Timestamp": ts
         }])
         
-        # 4. Append & Update
-        df_final = pd.concat([df_existing, new_row], ignore_index=True)
+        # 3. Read & Update
+        # We try to read the existing sheet. If it fails (empty), we start a new dataframe.
+        try:
+            df_existing = conn.read(worksheet="ChatHistory", ttl=0)
+            if df_existing.empty:
+                df_final = new_data
+            else:
+                # Ensure columns match to prevent schema errors
+                df_final = pd.concat([df_existing, new_data], ignore_index=True)
+        except:
+            df_final = new_data
+
+        # 4. Write back to Google Sheets
         conn.update(worksheet="ChatHistory", data=df_final)
         
     except Exception as e:
-        # User-friendly error notification
-        st.warning("Chat sync paused. Check internet or Sheet permissions.")
-        print(f"Chat Save Error: {e}")
+        # THIS IS THE FIX: It will show you exactly why it's failing
+        st.error(f"⚠️ Cloud Save Error: {e}")
 
 def load_chat_sessions():
     """Returns a list of unique chat sessions for the sidebar."""
@@ -1510,7 +1514,6 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Fixed Saving & Welcome Screen) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import base64
@@ -1519,7 +1522,6 @@ def page_ai_assistant():
     # 1. Setup Avatars
     user_av = st.session_state.get('user_avatar', '')
     user_img = Image.open(user_av) if os.path.exists(user_av) else "👤"
-    
     ai_logo = "1000592991.png"
     ai_img = Image.open(ai_logo) if os.path.exists(ai_logo) else "🤖"
 
@@ -1527,101 +1529,73 @@ def page_ai_assistant():
     def process_message(prompt_text):
         mode = st.session_state.get('chat_mode', 'text')
         
-        # A. Append User Message to State
+        # A. Save User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        save_chat_to_cloud("user", prompt_text) # <--- Calls the new function
         
-        # B. SAVE TO CLOUD (USER) <--- ADDED THIS
-        save_chat_to_cloud("user", prompt_text)
-        
+        # B. Generate AI Response
         with st.chat_message("assistant", avatar=ai_img):
             with st.spinner("⚡ Processing..."):
                 if mode == 'image':
                     result = generate_visual_intel(prompt_text)
-                    
                     if result and result.startswith("ERROR:"):
-                        response_text = f"⚠️ {result}"
-                        response = {"role": "model", "text": response_text}
+                        response = {"role": "model", "text": f"⚠️ {result}"}
                     elif result:
-                        response_text = f"🎨 Generated Visual for: '{prompt_text}'"
-                        response = {"role": "model", "image": result, "text": response_text}
+                        response = {"role": "model", "image": result, "text": f"🎨 Visual: '{prompt_text}'"}
                     else:
-                        response_text = "⚠️ Unknown error."
-                        response = {"role": "model", "text": response_text}
+                        response = {"role": "model", "text": "⚠️ Error generating image."}
                 else:
-                    # Text Mode
                     txt, _ = perform_ai_analysis(prompt_text)
-                    response_text = txt
                     response = {"role": "model", "text": txt}
         
-        # C. Append AI Message to State
+        # C. Save AI Response
         st.session_state['chat_history'].append(response)
-
-        # D. SAVE TO CLOUD (AI) <--- ADDED THIS
-        # If it's an image, we save a text placeholder, otherwise the actual text
-        content_to_save = response.get('text', 'Image Generated')
-        save_chat_to_cloud("model", content_to_save)
+        save_chat_to_cloud("model", response.get('text', 'Image Generated'))
         
-        if mode == 'image': st.session_state['chat_mode'] = 'text' # Reset
+        if mode == 'image': st.session_state['chat_mode'] = 'text'
         st.rerun()
 
-    # 3. Render Header
+    # 3. Render UI
     st.markdown('<div class="big-title">AI Companion</div>', unsafe_allow_html=True)
     
-    chat_container = st.container()
-    with chat_container:
-        # --- WELCOME SCREEN LOGIC ---
-        if not st.session_state.get('chat_history'):
-            # This HTML block restores the Welcome Screen
-            st.markdown(f"""
-            <div style="text-align: center; margin-top: 50px; animation: fadeIn 1s;">
-                <h1 style="color: #B5FF5F; font-family: 'Inter', sans-serif;">Good Morning, {st.session_state.get('user_name', 'Achiever')}! 🏹</h1>
-                <p style="color: #888; font-size: 18px;">I'm ready to help you hunt down your goals.</p>
-                <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
-                    <span style="background: #333; padding: 8px 15px; border-radius: 20px; font-size: 12px; color: #fff;">📅 Plan Schedule</span>
-                    <span style="background: #333; padding: 8px 15px; border-radius: 20px; font-size: 12px; color: #fff;">🧠 Brainstorm Ideas</span>
-                    <span style="background: #333; padding: 8px 15px; border-radius: 20px; font-size: 12px; color: #fff;">🎨 Create Art</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # --- RENDER HISTORY ---
-        for msg in st.session_state['chat_history']:
-            role = msg.get('role')
-            if role == 'user':
-                with st.chat_message("user", avatar=user_img):
-                    st.write(msg.get('text'))
-            else:
-                with st.chat_message("assistant", avatar=ai_img):
-                    if msg.get('text'): st.write(msg.get('text'))
-                    if msg.get('image'):
-                        try: st.image(base64.b64decode(msg.get('image')), use_container_width=True)
-                        except: pass
+    # --- WELCOME SCREEN LOGIC ---
+    # Only shows if history is strictly empty
+    if len(st.session_state.get('chat_history', [])) == 0:
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 50px; animation: fadeIn 1s;">
+            <h1 style="color: #B5FF5F; font-family: 'Inter', sans-serif;">Good Morning, {st.session_state.get('user_name', 'Achiever')}!</h1>
+            <p style="color: #888; font-size: 18px;">Ready to hunt down your goals?</p>
+            <div style="margin-top: 20px; font-size: 50px;">🏹</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # 4. TOOLBAR & INPUT (Clean Layout)
+    # --- CHAT HISTORY ---
+    for msg in st.session_state['chat_history']:
+        role = msg.get('role')
+        if role == 'user':
+            with st.chat_message("user", avatar=user_img):
+                st.write(msg.get('text'))
+        else:
+            with st.chat_message("assistant", avatar=ai_img):
+                if msg.get('text'): st.write(msg.get('text'))
+                if msg.get('image'):
+                    try: st.image(base64.b64decode(msg.get('image')), use_container_width=True)
+                    except: pass
+
+    # 4. Input Area
     st.write("")
-    st.write("")
-    
     c1, c2, c3 = st.columns([1, 6, 1], vertical_alignment="bottom")
-    
     with c1:
-        # Image Toggle Button
         is_img = st.session_state.get('chat_mode') == 'image'
-        if st.button("🎨", type="primary" if is_img else "secondary", help="Toggle Image Mode", use_container_width=True):
+        if st.button("🎨", type="primary" if is_img else "secondary", use_container_width=True):
             st.session_state['chat_mode'] = 'image' if not is_img else 'text'
             st.rerun()
-            
     with c3:
-        # Microphone
-        c_mic = st.container()
-        with c_mic:
-            audio = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
-            if audio: st.toast("Voice input detected (Not connected to logic yet).")
+        mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
 
-    # Input Bar
-    placeholder = "🎨 Describe the image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
+    placeholder = "🎨 Describe image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
     if prompt := st.chat_input(placeholder):
         process_message(prompt)
-
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
