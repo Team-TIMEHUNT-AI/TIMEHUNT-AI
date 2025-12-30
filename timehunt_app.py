@@ -757,61 +757,53 @@ def check_reminders():
             """, unsafe_allow_html=True)
 
 # --- NEW: AI IMAGE GENERATION ENGINE (Fixed Stability) ---
-# --- NEW: AI IMAGE GENERATION ENGINE (Updated for Imagen 4.0) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Debug Mode) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 4.0 (Fast) to generate images.
-    Targeting specific models found in user's access list.
+    Uses Google's Imagen 4.0. Returns Base64 image OR an error string.
     """
     try:
         from google import genai
         from google.genai import types
         import base64
     except ImportError:
-        st.error("System Error: Missing libraries.")
-        return None
+        return "ERROR: Missing google-genai library."
 
     api_keys = st.session_state.get('gemini_api_keys', [])
     if not api_keys:
-        st.error("Auth Error: No API Keys found.")
-        return None
+        return "ERROR: No API Keys found in secrets."
 
-    # PRIORITY LIST BASED ON YOUR LOGS
-    # 1. Fast 4.0 (Best for speed)
-    # 2. Standard 4.0 (Best for quality)
-    models_to_try = [
-        'imagen-4.0-fast-generate-001',
-        'imagen-4.0-generate-001'
-    ]
+    # Specific Model Name from your logs
+    model_name = 'imagen-4.0-fast-generate-001'
 
     for key in api_keys:
         if not isinstance(key, str): continue
         
-        client = genai.Client(api_key=key)
-        
-        for model_name in models_to_try:
-            try:
-                # Generate Image
-                response = client.models.generate_image(
-                    model=model_name,
-                    prompt=prompt_text,
-                    config=types.GenerateImageConfig(
-                        number_of_images=1,
-                        aspect_ratio="16:9"
-                    )
-                )
-                
-                if response.generated_images:
-                    img_bytes = response.generated_images[0].image.image_bytes
-                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                    return img_b64
+        try:
+            client = genai.Client(api_key=key)
             
-            except Exception as e:
-                # Print specific error to terminal for debugging
-                print(f"❌ {model_name} Failed: {e}")
-                continue
+            response = client.models.generate_image(
+                model=model_name,
+                prompt=prompt_text,
+                config=types.GenerateImageConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9"
+                )
+            )
+            
+            if response.generated_images:
+                img_bytes = response.generated_images[0].image.image_bytes
+                return base64.b64encode(img_bytes).decode('utf-8')
+            
+        except Exception as e:
+            # Return the actual error so we can show it to the user
+            error_msg = str(e)
+            if "403" in error_msg: return f"ERROR: Key permission denied for {model_name}"
+            if "404" in error_msg: return f"ERROR: Model {model_name} not found."
+            print(f"Key failed: {e}")
+            continue
 
-    return None
+    return "ERROR: All API keys failed to generate image."
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
 
@@ -1518,234 +1510,138 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Fixed UI & Logic) ---
+# --- 10. PAGE: AI COMPANION (Fixed Layout) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import base64
     from PIL import Image
-    import io
-
-    # --- SETUP AVATARS ---
-    user_av_path = st.session_state.get('user_avatar', '')
-    user_avatar = Image.open(user_av_path) if os.path.exists(user_av_path) else "👤"
     
-    ai_logo_path = "1000592991.png"
-    ai_avatar = Image.open(ai_logo_path) if os.path.exists(ai_logo_path) else "🤖"
+    # 1. Setup Avatars
+    user_av = st.session_state.get('user_avatar', '')
+    user_img = Image.open(user_av) if os.path.exists(user_av) else "👤"
+    
+    ai_logo = "1000592991.png"
+    ai_img = Image.open(ai_logo) if os.path.exists(ai_logo) else "🤖"
 
-    # --- HELPER: PROCESS MESSAGE ---
+    # 2. Logic to Process Message
     def process_message(prompt_text):
-        # Determine Mode
         mode = st.session_state.get('chat_mode', 'text')
-        
-        # 1. Show User Message
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
         
-        # 2. Generate Response
-        with st.chat_message("assistant", avatar=ai_avatar):
-            with st.spinner("⚡ Activating Neural Network..."):
+        with st.chat_message("assistant", avatar=ai_img):
+            with st.spinner("⚡ Processing..."):
                 if mode == 'image':
-                    # Image Path
-                    img_b64 = generate_visual_intel(prompt_text)
-                    if img_b64:
-                        response = {"role": "model", "image": img_b64, "text": f"Visual generated: '{prompt_text}'"}
+                    result = generate_visual_intel(prompt_text)
+                    
+                    # Check if result is an Error String (starts with ERROR:)
+                    if result and result.startswith("ERROR:"):
+                        response = {"role": "model", "text": f"⚠️ {result}"}
+                    elif result:
+                        response = {"role": "model", "image": result, "text": f"🎨 Generated: '{prompt_text}'"}
                     else:
-                        response = {"role": "model", "text": "⚠️ Visual generation failed. Check the 'Manage App' logs for details."}
+                        response = {"role": "model", "text": "⚠️ Unknown error."}
                 else:
-                    # Text Path
                     txt, _ = perform_ai_analysis(prompt_text)
                     response = {"role": "model", "text": txt}
         
-        # 3. Save & Reset
         st.session_state['chat_history'].append(response)
-        if mode == 'image': st.session_state['chat_mode'] = 'text' # Reset to text mode
+        if mode == 'image': st.session_state['chat_mode'] = 'text' # Reset
         st.rerun()
 
-    # --- UI HEADER ---
+    # 3. Render Header & History
     st.markdown('<div class="big-title">AI Companion</div>', unsafe_allow_html=True)
-
-    # --- CHAT HISTORY ---
+    
     chat_container = st.container()
     with chat_container:
         if not st.session_state.get('chat_history'):
-            st.info("👋 Ready to help. Select 'Image Mode' (🎨) below to generate visuals, or just type to chat.")
+            st.info("👋 Select **Image Mode** (🎨) below to create visuals.")
         
         for msg in st.session_state['chat_history']:
             role = msg.get('role')
             if role == 'user':
-                with st.chat_message("user", avatar=user_avatar):
+                with st.chat_message("user", avatar=user_img):
                     st.write(msg.get('text'))
             else:
-                with st.chat_message("assistant", avatar=ai_avatar):
+                with st.chat_message("assistant", avatar=ai_img):
                     if msg.get('text'): st.write(msg.get('text'))
                     if msg.get('image'):
-                        try:
-                            st.image(base64.b64decode(msg.get('image')), use_container_width=True)
-                        except: st.error("Image render error")
+                        try: st.image(base64.b64decode(msg.get('image')), use_container_width=True)
+                        except: pass
 
-    # --- CONTROL BAR (The Gemini Style Toolbar) ---
+    # 4. TOOLBAR & INPUT (Clean Layout)
     st.write("")
-    with st.container():
-        c1, c2, c3 = st.columns([1, 6, 1], vertical_alignment="bottom")
-        
-        # 1. Image Toggle (Left)
-        with c1:
-            is_img = st.session_state.get('chat_mode') == 'image'
-            # Button changes color if active
-            btn_type = "primary" if is_img else "secondary"
-            if st.button("🎨", key="img_toggle", type=btn_type, help="Toggle Image Generation"):
-                st.session_state['chat_mode'] = 'image' if not is_img else 'text'
-                st.rerun()
-
-        # 2. Voice Input (Right - Middle is empty spacing)
-        with c3:
-            audio = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
-            if audio: st.toast("Voice logic not connected yet", icon="ℹ️")
-
-    # --- MAIN INPUT (Bottom) ---
-    # Dynamic Placeholder
-    place_txt = "🎨 Describe the image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
+    st.write("")
     
-    if prompt := st.chat_input(place_txt):
+    # Create a 3-column toolbar layout
+    c1, c2, c3 = st.columns([1, 6, 1], vertical_alignment="bottom")
+    
+    with c1:
+        # Image Toggle Button
+        is_img = st.session_state.get('chat_mode') == 'image'
+        if st.button("🎨", type="primary" if is_img else "secondary", help="Toggle Image Mode", use_container_width=True):
+            st.session_state['chat_mode'] = 'image' if not is_img else 'text'
+            st.rerun()
+            
+    with c3:
+        # Microphone (Using container width to align)
+        # We can't easily style the mic_recorder button, so we place it cleanly here
+        c_mic = st.container()
+        with c_mic:
+            audio = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="voice", just_once=True)
+            if audio: st.toast("Voice input detected (Not connected to logic yet).")
+
+    # Input Bar
+    placeholder = "🎨 Describe the image..." if st.session_state.get('chat_mode') == 'image' else "Ask TimeHunt..."
+    if prompt := st.chat_input(placeholder):
         process_message(prompt)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 def inject_custom_css():
-    """
-    Injects CSS variables for colors to ensure consistency and readability.
-    Forces button text color to ensure visibility in Dark Mode.
-    Includes styles for the Gemini-like chat interface.
-    """
     theme_color = st.session_state.get('theme_color', 'Green (Default)')
     theme_mode = st.session_state.get('theme_mode', 'Dark')
     
     # Colors
-    colors = {
-        "Green (Default)": "#B5FF5F", 
-        "Blue": "#00E5FF", 
-        "Red": "#FF4B4B", 
-        "Grey": "#A0A0A0"
-    }
+    colors = {"Green (Default)": "#B5FF5F", "Blue": "#00E5FF", "Red": "#FF4B4B", "Grey": "#A0A0A0"}
     accent = colors.get(theme_color, "#B5FF5F")
     
-    # High Contrast Settings
+    # Dark/Light Logic
     if theme_mode == "Light":
-        main_bg = "#FFFFFF"
-        sidebar_bg = "#F8F9FB"
-        card_bg = "#FFFFFF"
-        text_color = "#1A1A1A"
-        border_color = "#E0E0E0"
-        btn_text_color = "#000000" # Black text on light buttons
+        main_bg, sidebar_bg, card_bg, text_color = "#FFFFFF", "#F8F9FB", "#FFFFFF", "#1A1A1A"
+        btn_text_color = "#000000"
     else:
-        main_bg = "#0E1117"
-        sidebar_bg = "#262730"
-        card_bg = "#1E1E1E"
-        text_color = "#FAFAFA"
-        border_color = "#333333"
-        btn_text_color = "#FFFFFF" # White text on dark buttons
+        main_bg, sidebar_bg, card_bg, text_color = "#0E1117", "#262730", "#1E1E1E", "#FAFAFA"
+        btn_text_color = "#FFFFFF"
 
     st.markdown(f"""
         <style>
-            :root {{ 
-                --accent: {accent}; 
-                --text: {text_color}; 
-                --card-bg: {card_bg}; 
-                --border: {border_color};
-                --primary-color: {accent};
-            }}
-            
+            :root {{ --accent: {accent}; --text: {text_color}; --card-bg: {card_bg}; }}
             .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
             section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
             
-            /* Typography */
-            h1, h2, h3, h4, h5, h6, p, li, span {{ color: {text_color} !important; }}
-            
-            /* Inputs */
-            .stTextInput input, .stSelectbox div, .stTextArea textarea {{ 
-                background-color: {sidebar_bg} !important; 
-                color: {text_color} !important; 
-                border-radius: 8px;
-                border: 1px solid {border_color} !important;
-            }}
-            
-            /* --- BUTTON VISIBILITY FIX --- */
-            /* Force text color on all buttons */
-            div.stButton > button p {{
-                color: {btn_text_color} !important;
-            }}
-            
+            /* Clean Buttons */
             div.stButton > button {{ 
-                background-color: {card_bg};
-                border: 1px solid {border_color};
-                border-radius: 10px; 
+                background-color: {card_bg}; border: 1px solid rgba(255,255,255,0.1); 
+                color: {btn_text_color} !important; border-radius: 8px; 
+            }}
+            div.stButton > button:hover {{ border-color: {accent}; color: {accent} !important; }}
+            
+            /* Primary Button */
+            div.stButton > button[kind="primary"] {{ 
+                background-color: {accent} !important; border: none; 
+                color: #000 !important; 
             }}
             
-            /* Hover Effect */
-            div.stButton > button:hover {{
-                border-color: {accent};
-            }}
-            div.stButton > button:hover p {{
-                color: {accent} !important;
-            }}
-
-            /* Primary Action Buttons */
-            div.stButton > button[kind="primary"] {{
-                background-color: {accent} !important;
-                border: none;
-            }}
-            div.stButton > button[kind="primary"] p {{
-                color: #000000 !important; /* Always black text on bright accent buttons */
-            }}
-
-            /* --- NEW GEMINI-STYLE CHAT STYLES --- */
+            /* --- GEMINI CHAT BAR STYLES --- */
+            .stChatInputContainer {{ padding-bottom: 10px !important; }}
             
-            /* Chat Input Container Spacing */
-            .stChatInputContainer {{
-                padding-bottom: 20px !important;
-            }}
+            /* Remove white backgrounds from columns */
+            div[data-testid="column"] {{ background: transparent !important; }}
             
-            /* Integrated Buttons in Input Bar */
-            .chat-bar-btn {{
-                border: none !important;
-                background: transparent !important;
-                font-size: 20px;
-                padding: 10px !important;
-                color: {text_color} !important;
-                cursor: pointer;
-                transition: color 0.2s;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100%;
-            }}
-            .chat-bar-btn:hover {{
-                color: {accent} !important;
-                background: rgba(255,255,255,0.05) !important;
-                border-radius: 50%;
-            }}
+            /* Toolbar Icons */
+            .toolbar-btn {{ font-size: 24px; cursor: pointer; text-align: center; }}
             
-            /* Active Image Mode Button */
-            .img-mode-active {{
-                color: {accent} !important;
-                text-shadow: 0 0 10px {accent};
-            }}
-            
-            /* Custom Avatar Styling */
-            .stChatMessageAvatarImage {{
-                border-radius: 50%;
-                border: 2px solid {border_color};
-                padding: 2px;
-                background: {card_bg};
-            }}
-            
-            /* Loading Animation for AI Logo */
-            @keyframes pulse-logo {{
-                0% {{ transform: scale(1); opacity: 0.8; }}
-                50% {{ transform: scale(1.1); opacity: 1; }}
-                100% {{ transform: scale(1); opacity: 0.8; }}
-            }}
-            .loading-logo {{
-                animation: pulse-logo 1.5s infinite ease-in-out;
-            }}
+            /* Avatars */
+            .stChatMessageAvatarImage {{ border-radius: 50%; border: 2px solid {accent}; }}
         </style>
     """, unsafe_allow_html=True)
 
@@ -2514,6 +2410,8 @@ def page_help():
 
 # --- 20. MAIN APPLICATION ROUTER (FIXED) ---
 
+# --- 20. MAIN APPLICATION ROUTER (FINAL FIX) ---
+
 def main():
     # 1. Initialize System State
     initialize_session_state()
@@ -2547,19 +2445,12 @@ def main():
                     st.session_state['current_session_id'] = None
                     st.session_state['current_session_name'] = "New Chat"
                     st.session_state['chat_history'] = []
+                    st.session_state['chat_mode'] = 'text' # Reset mode
                     st.rerun()
             
             st.divider()
 
-            # --- IMAGE GENERATION TRIGGER ---
-            st.markdown("#### 🎨 Visual Studio")
-            st.caption("Generate diagrams or motivational images.")
-            
-            if st.button("✨ Generate Visual from Text", type="primary", use_container_width=True):
-                st.session_state['trigger_image_gen'] = True
-                st.toast("Image Mode Active. Type description below.", icon="🎨")
-
-            st.divider()
+            # REMOVED: Old "Generate Visual" button (It is now inside the page!)
             
             # Chat Management (Delete)
             if 'delete_mode' not in st.session_state: st.session_state['delete_mode'] = False
@@ -2570,7 +2461,7 @@ def main():
 
             st.write("") # Spacer
             
-            # Session List Logic (FIXED FOR DUPLICATE KEYS)
+            # Session List Logic
             sessions = load_chat_sessions()
             
             if st.session_state['delete_mode']:
@@ -2578,7 +2469,6 @@ def main():
                 st.caption("Select chats to delete:")
                 with st.form("del_form"):
                     selected_ids = []
-                    # Enumerate ensures every checkbox key is unique even if session IDs repeat
                     for i, s in enumerate(sessions):
                         unique_key = f"del_{s['SessionID']}_{i}"
                         if st.checkbox(f"{s['SessionName']}", key=unique_key):
@@ -2600,13 +2490,23 @@ def main():
                 for i, s in enumerate(sessions):
                     is_active = (s['SessionID'] == st.session_state.get('current_session_id'))
                     b_type = "primary" if is_active else "secondary"
-                    # Unique Key Fix
                     unique_btn_key = f"sess_{s['SessionID']}_{i}"
                     
                     if st.button(f"📄 {s['SessionName']}", key=unique_btn_key, type=b_type, use_container_width=True):
                         st.session_state['current_session_id'] = s['SessionID']
                         st.session_state['current_session_name'] = s['SessionName']
                         msgs = load_messages_for_session(s['SessionID'])
+                        # Format messages for display
+                        formatted_msgs = []
+                        for m in msgs:
+                            formatted_msgs.append({
+                                "role": m["Role"], 
+                                "text": m["Content"] if m["Role"] != "model" or "Visual generated" not in m["Content"] else m["Content"],
+                                "image": m.get("Content") if "Visual generated" in str(m.get("Content")) else None # Simple heuristic, usually we store image separately in cloud or base64 text
+                            })
+                            # Note: Cloud sync for images is tricky with just text columns. 
+                            # For now, this loads text history properly.
+                        
                         st.session_state['chat_history'] = [{"role": m["Role"], "text": m["Content"]} for m in msgs]
                         st.rerun()
         
