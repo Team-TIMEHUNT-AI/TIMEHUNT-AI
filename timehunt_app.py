@@ -42,63 +42,39 @@ initialize_session_state()
 def inject_custom_css():
     st.markdown("""
         <style>
-            /* --- GOOGLE MATERIAL COLOR SYSTEM --- */
-            :root {
-                --primary: #B5FF5F;       /* Neon Green (Growth) */
-                --surface: #121212;       /* Material Dark */
-                --surface-card: #1E1E1E;  /* Slightly lighter for cards */
-                --background: #000000;    /* Pure Black */
-                --text: #FFFFFF;
-            }
-
-            /* --- GLOBAL RESET --- */
-            .stApp {
-                background-color: var(--background) !important;
-                font-family: 'Inter', sans-serif;
-            }
+            /* 1. Global Reset */
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+            .stApp { background-color: #000000 !important; font-family: 'Inter', sans-serif; }
             
-            /* HIDE DEFAULT STREAMLIT ELEMENTS */
-            [data-testid="stSidebarNav"], [data-testid="collapsedControl"], 
-            section[data-testid="stSidebar"], header, footer, #MainMenu {
-                display: none;
-            }
+            /* 2. Hide Defaults */
+            [data-testid="stSidebarNav"], [data-testid="collapsedControl"], header, footer, #MainMenu { display: none; }
 
-            /* --- MOBILE GRID FIX (The "Notion" Layout) --- */
+            /* 3. Mobile Grid Fix */
             [data-testid="column"] {
                 width: calc(50% - 10px) !important;
                 flex: 1 1 calc(50% - 10px) !important;
                 min-width: 150px !important;
             }
 
-            /* --- GOOGLE "PILL" BUTTONS --- */
+            /* 4. Google "Pill" Buttons */
             div.stButton > button {
-                background-color: var(--surface-card);
-                color: var(--text);
-                border: 1px solid rgba(255,255,255,0.05);
-                border-radius: 50px; /* Pill Shape */
-                padding: 10px 20px;
-                font-size: 14px;
+                background-color: #1A1A1A;
+                color: #FFF;
+                border: 1px solid #333;
+                border-radius: 50px;
+                padding: 12px 24px;
                 font-weight: 600;
-                transition: all 0.2s ease;
+                transition: 0.2s;
                 width: 100%;
             }
             div.stButton > button:hover {
+                border-color: #B5FF5F;
+                color: #B5FF5F;
                 transform: translateY(-2px);
-                border-color: var(--primary);
-                color: var(--primary);
-                box-shadow: 0 5px 15px rgba(181, 255, 95, 0.2);
-            }
-
-            /* --- XP PROGRESS BAR --- */
-            .xp-bar-bg {
-                width: 100%; height: 6px; background: #333; border-radius: 10px; margin-top: 8px; overflow: hidden;
-            }
-            .xp-bar-fill {
-                height: 100%; background: linear-gradient(90deg, #B5FF5F, #00E5FF); border-radius: 10px;
             }
             
-            /* --- MOOD TRACKER SPACING --- */
-            div[data-testid="stHorizontalBlock"] { gap: 8px !important; }
+            /* 5. Horizontal Layout Spacing */
+            div[data-testid="stHorizontalBlock"] { gap: 10px !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -106,69 +82,76 @@ def inject_custom_css():
 
 def ui_grid_card(title, icon, subtitle, color):
     """
-    The 'Notion Block' Card. 
-    Clean, rectangular, with a glowing accent color on hover.
+    Renders a Notion-style card.
     """
-    st.markdown(f"""
+    html_code = textwrap.dedent(f"""
     <div style="
-        background-color: #1E1E1E;
-        border-radius: 20px;
+        background-color: #161616;
+        border-radius: 24px;
         padding: 20px;
-        height: 140px;
+        height: 150px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        border: 1px solid rgba(255,255,255,0.05);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        cursor: pointer;
+        border: 1px solid #222;
+        transition: all 0.3s ease;
         position: relative;
         overflow: hidden;
-        margin-bottom: 10px;
-    " onmouseover="this.style.transform='scale(1.02)'; this.style.borderColor='{color}';" 
-       onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(255,255,255,0.05)';">
-        
-        <div style="position: absolute; top: -30px; right: -30px; width: 80px; height: 80px; background: {color}; filter: blur(40px); opacity: 0.15;"></div>
+        margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    ">
+        <div style="position: absolute; top: -40px; right: -40px; width: 100px; height: 100px; background: {color}; filter: blur(50px); opacity: 0.15;"></div>
 
-        <div style="font-size: 32px; margin-bottom: 10px;">{icon}</div>
-        <div>
-            <div style="font-size: 15px; font-weight: 700; color: #FFF;">{title}</div>
-            <div style="font-size: 11px; font-weight: 500; color: #888;">{subtitle}</div>
+        <div style="font-size: 32px; z-index: 1;">{icon}</div>
+        <div style="z-index: 1;">
+            <div style="font-size: 16px; font-weight: 700; color: #EEE; letter-spacing: -0.3px;">{title}</div>
+            <div style="font-size: 11px; font-weight: 500; color: #666; margin-top: 4px;">{subtitle}</div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """)
+    st.markdown(html_code, unsafe_allow_html=True)
 
 def render_hero_header():
     """
-    The 'Gamified' Profile Header. 
-    Shows Avatar + XP Bar (Psychology Hook).
+    Renders the Gamified Profile Header. 
     """
-    xp = st.session_state['user_xp']
-    lvl = st.session_state['user_level']
-    progress = (xp % 1000) / 10  # Simple % calc
+    xp = st.session_state.get('user_xp', 0)
+    lvl = st.session_state.get('user_level', 1)
+    # Simple progress calculation (0 to 100%)
+    progress = min(100, (xp % 1000) / 10) 
     
-    st.markdown(f"""
-    <div style="padding: 20px; background: linear-gradient(180deg, rgba(30,30,30,0.5) 0%, rgba(0,0,0,0) 100%); border-radius: 0 0 30px 30px; margin-bottom: 20px;">
+    # We use textwrap.dedent to prevent the HTML from breaking
+    html_code = textwrap.dedent(f"""
+    <div style="padding: 20px; background: linear-gradient(180deg, #161616 0%, #000000 100%); border-radius: 0 0 24px 24px; border-bottom: 1px solid #222; margin-bottom: 25px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap: 15px;">
-                <div style="font-size: 32px; background: #111; width: 55px; height: 55px; border-radius: 18px; display:flex; align-items:center; justify-content:center; border: 1px solid #333;">
-                    {st.session_state['user_avatar']}
+                <div style="font-size: 32px; background: #1A1A1A; width: 60px; height: 60px; border-radius: 20px; display:flex; align-items:center; justify-content:center; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+                    {st.session_state.get('user_avatar', '🏹')}
                 </div>
                 <div>
-                    <div style="font-size: 18px; font-weight: 800; color: white;">{st.session_state['user_name']}</div>
-                    <div style="font-size: 11px; color: #B5FF5F; font-weight: 600;">LVL {lvl} • {xp} XP</div>
+                    <div style="font-size: 20px; font-weight: 800; color: white; letter-spacing: -0.5px;">{st.session_state.get('user_name', 'Achiever')}</div>
+                    <div style="font-size: 11px; color: #B5FF5F; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Level {lvl} • {xp} XP</div>
                 </div>
             </div>
             <div style="text-align:right;">
-                <div style="font-size: 12px; color: #666; font-weight:700; letter-spacing:1px;">TODAY</div>
-                <div style="font-size: 24px; font-weight: 700; color: #FFF;">{datetime.datetime.now().strftime('%H:%M')}</div>
+                <div style="font-size: 10px; color: #666; font-weight:700; letter-spacing:1px; text-transform: uppercase;">TimeHunt</div>
+                <div style="font-size: 24px; font-weight: 700; color: #FFF; font-family: monospace;">{datetime.datetime.now().strftime('%H:%M')}</div>
             </div>
         </div>
         
-        <div class="xp-bar-bg">
-            <div class="xp-bar-fill" style="width: {progress}%;"></div>
+        <div style="margin-top: 20px;">
+            <div style="display:flex; justify-content: space-between; font-size: 10px; color: #555; margin-bottom: 6px; font-weight: 600;">
+                <span>PROGRESS TO LVL {lvl + 1}</span>
+                <span>{int(progress)}%</span>
+            </div>
+            <div style="width: 100%; height: 8px; background: #222; border-radius: 10px; overflow: hidden;">
+                <div style="width: {progress}%; height: 100%; background: linear-gradient(90deg, #B5FF5F, #00E5FF); border-radius: 10px; box-shadow: 0 0 10px rgba(181, 255, 95, 0.4);"></div>
+            </div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """)
+    st.markdown(html_code, unsafe_allow_html=True)
+
 
 # --- 5. PAGES ---
 
