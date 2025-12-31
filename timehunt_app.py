@@ -530,33 +530,43 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (Apple-Style SVG Engine) ---
+# --- 11. CINEMATIC SPLASH SCREEN (V5: Auto-Scaling Fix) ---
 def show_cinematic_intro():
     """
-    V4 Fix: Uses fill-opacity to ensure the drawing animation 
-    is visible even if the SVG has hardcoded colors.
-    Reads from 'logo_data.txt'.
+    V5 Fix: Automatically injects a 'viewBox' to fix the zooming issue.
+    Forces the large 1080x1386 logo to fit inside the screen.
     """
-    # UNCOMMENT THE NEXT LINE TO FORCE REPLAY FOR TESTING:
-    # st.session_state['splash_played'] = False 
+    
+    # st.session_state['splash_played'] = False # Uncomment to test again
     
     if not st.session_state.get('splash_played', False):
         
-        # 1. Load SVG
+        # 1. Load and Fix the SVG
         svg_content = ""
         try:
             with open("logo_data.txt", "r") as f:
-                svg_content = f.read()
-                # Clean up XML tags that might break HTML
-                svg_content = re.sub(r'<\?xml.*?\?>', '', svg_content)
-                svg_content = re.sub(r'<!DOCTYPE.*?>', '', svg_content)
+                raw_svg = f.read()
+                
+                # A. Remove XML header (<?xml...>)
+                clean_svg = re.sub(r'<\?xml.*?>', '', raw_svg)
+                
+                # B. CRITICAL: Replace the opening <svg> tag with one that scales correctly
+                # We overwrite the original width/height with a viewBox
+                svg_content = re.sub(
+                    r'<svg.*?>', 
+                    '<svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet">', 
+                    clean_svg, 
+                    count=1, 
+                    flags=re.DOTALL
+                )
+                
         except FileNotFoundError:
-            # Silent fallback if file is missing
             st.session_state['splash_played'] = True
             return
 
         placeholder = st.empty()
         
+        # 2. Render Animation
         with placeholder.container():
             intro_html = f"""
             <!DOCTYPE html>
@@ -574,29 +584,33 @@ def show_cinematic_intro():
 
                 .intro-wrapper {{
                     display: flex; flex-direction: column; align-items: center;
+                    width: 100%; max-width: 400px; /* Constraints the container width */
                     animation: fadeOut 1s ease-in-out 6s forwards;
                 }}
 
+                /* LOGO STYLING */
                 svg {{
-                    width: 280px; height: auto;
+                    width: 100%; /* Fills the max-width container */
+                    height: auto;
+                    max-height: 50vh; /* Prevents it from being too tall on mobile */
                     filter: drop-shadow(0 0 0px #4061FD);
                     animation: glowPulse 2s ease-out 3.5s forwards;
                 }}
 
-                /* Hides the fill initially using Opacity */
+                /* ANIMATION LOGIC */
                 path {{
                     fill-opacity: 0; 
-                    stroke: #4061FD; /* The Drawing Line Color */
-                    stroke-width: 2;
-                    stroke-dasharray: 3000;
-                    stroke-dashoffset: 3000;
+                    stroke: #4061FD;
+                    stroke-width: 3; /* Thicker line for visibility */
+                    stroke-dasharray: 4000;
+                    stroke-dashoffset: 4000;
                     stroke-linecap: round;
                     animation: drawLine 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards,
                                revealColor 1.5s ease 3.2s forwards;
                 }}
 
                 .brand-text {{
-                    margin-top: 30px;
+                    margin-top: 20px;
                     font-family: 'Orbitron', sans-serif;
                     color: white;
                     font-size: 24px;
@@ -606,15 +620,10 @@ def show_cinematic_intro():
                     animation: textUp 1s ease 3.5s forwards;
                 }}
 
-                @keyframes drawLine {{
-                    to {{ stroke-dashoffset: 0; }}
-                }}
+                @keyframes drawLine {{ to {{ stroke-dashoffset: 0; }} }}
 
                 @keyframes revealColor {{
-                    to {{ 
-                        fill-opacity: 1; /* Bring back original colors */
-                        stroke-width: 0; /* Hide the stroke */
-                    }}
+                    to {{ fill-opacity: 1; stroke-width: 0; }}
                 }}
 
                 @keyframes glowPulse {{
@@ -623,29 +632,25 @@ def show_cinematic_intro():
                     100% {{ filter: drop-shadow(0 0 15px rgba(64, 97, 253, 0.3)); }}
                 }}
 
-                @keyframes textUp {{
-                    to {{ opacity: 1; transform: translateY(0); }}
-                }}
-
-                @keyframes fadeOut {{
-                    to {{ opacity: 0; visibility: hidden; }}
-                }}
+                @keyframes textUp {{ to {{ opacity: 1; transform: translateY(0); }} }}
+                @keyframes fadeOut {{ to {{ opacity: 0; visibility: hidden; }} }}
             </style>
             </head>
             <body>
                 <div class="intro-wrapper">
                     {svg_content}
-                    <div class="brand-text">TIMEHUNT</div>
+                    <div class="brand-text">TIMEHUNT AI</div>
                 </div>
             </body>
             </html>
             """
             
-            components.html(intro_html, height=1000)
-            time.sleep(7.0) # Wait for animation to finish
+            components.html(intro_html, height=900)
+            time.sleep(6.5) 
             
         placeholder.empty()
         st.session_state['splash_played'] = True
+
 
 # --- 12. AI CONTEXT GENERATOR (The "Brain Dump") ---
 def get_system_context():
