@@ -648,7 +648,7 @@ def show_cinematic_intro():
             <body>
                 <div class="intro-wrapper">
                     {svg_content}
-                    <div class="brand-text">TIMEHUNT AI</div>
+                    <div class="brand-text">TIMEHUNT</div>
                 </div>
             </body>
             </html>
