@@ -530,18 +530,16 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (V8: Glitch Protocol & Force Fix) ---
+# --- 11. CINEMATIC SPLASH SCREEN (V8: Glitch Protocol & Scale Fix) ---
 def show_cinematic_intro():
     """
-    V8 Update:
     1. FORCED RELOAD: Runs animation every time (for testing).
     2. GLITCH EFFECT: Infinity loop draws smoothly; Arrow flickers/fails before appearing.
-    3. MOBILE FIX: Uses 'viewBox' to force the logo inside the screen.
+    3. MOBILE FIX: Uses 'viewBox' to force the 1080p logo to fit any screen.
     """
     
-    # --- CRITICAL: TEMPORARILY RESET STATE SO YOU CAN SEE CHANGES ---
-    # Delete this line after you are happy with the animation!
-    st.session_state['splash_played'] = False 
+    # --- UNCOMMENT THIS LINE TO TEST ANIMATION REPEATEDLY ---
+    # st.session_state['splash_played'] = False 
     
     if not st.session_state.get('splash_played', False):
         
@@ -550,10 +548,10 @@ def show_cinematic_intro():
         try:
             with open("logo_data.txt", "r") as f:
                 raw = f.read()
-                # Clean XML headers so we can insert our own SVG tag
+                # Clean XML headers
                 raw = re.sub(r'<\?xml.*?\?>', '', raw)
                 raw = re.sub(r'<!DOCTYPE.*?>', '', raw)
-                # Extract JUST the paths (remove the old <svg> wrapper)
+                # Remove the existing <svg> wrapper so we can insert our own with correct sizing
                 svg_inner = re.sub(r'<svg.*?>', '', raw, count=1, flags=re.DOTALL)
                 svg_inner = svg_inner.replace('</svg>', '')
                 
@@ -575,7 +573,7 @@ def show_cinematic_intro():
                     margin: 0; padding: 0; 
                     background-color: #000;
                     height: 100vh; width: 100vw;
-                    overflow: hidden; /* STOP SCROLLING */
+                    overflow: hidden; /* DISABLE SCROLLBARS */
                     display: flex; flex-direction: column;
                     align-items: center; justify-content: center;
                 }}
@@ -587,7 +585,7 @@ def show_cinematic_intro():
                     animation: fadeOut 0.8s ease-in-out 7.5s forwards;
                 }}
 
-                /* --- SCALING ENGINE (Fixes the "Partial View") --- */
+                /* --- SCALING ENGINE (Fixes the "Partial View/Crop") --- */
                 svg {{
                     width: 85vw;       /* Responsive Width */
                     max-width: 450px;  /* Cap width for desktops */
@@ -640,15 +638,15 @@ def show_cinematic_intro():
                     0%   {{ opacity: 0; stroke-width: 0; }}
                     60%  {{ opacity: 0; stroke-width: 0; }}
                     
-                    /* 1. ATTEMPT TO APPEAR (Fail) */
+                    /* 1. ATTEMPT TO APPEAR (Fail Red) */
                     62%  {{ opacity: 0.6; stroke-width: 3; transform: scale(0.9) translate(-5px, 2px); stroke: #FF0000; }}
                     63%  {{ opacity: 0; }}
                     
-                    /* 2. SECOND ATTEMPT (Flicker) */
+                    /* 2. SECOND ATTEMPT (Flicker Green) */
                     70%  {{ opacity: 0.3; stroke: #B5FF5F; transform: translate(5px, -2px); }}
                     71%  {{ opacity: 0; }}
                     
-                    /* 3. SUCCESS (Boom) */
+                    /* 3. SUCCESS (Blue Boom) */
                     90%  {{ opacity: 1; transform: scale(1.1); filter: blur(0px); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
                     100% {{ opacity: 1; transform: scale(1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
                 }}
@@ -672,7 +670,7 @@ def show_cinematic_intro():
             </html>
             """
             
-            # Taller container to catch the whole screen, but CSS prevents scrolling
+            # Height matches screen, css prevents scrolling
             components.html(intro_html, height=900) 
             time.sleep(8.0) 
             
@@ -2449,6 +2447,7 @@ def inject_custom_css():
 def main():
     # 1. Initialize Session State
     initialize_session_state()
+    st.session_state['splash_played'] = False
     
     # 2. Run Background Tasks
     check_reminders()
@@ -2456,8 +2455,6 @@ def main():
 
     # 3. Load Styles
     inject_custom_css()
-    
-    # 4. SHOW INTRO (This will now run every time because of the fix in Section 11)
     show_cinematic_intro()
 
     # 5. Onboarding Gate
