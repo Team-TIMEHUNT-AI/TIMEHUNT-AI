@@ -530,51 +530,43 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (V5: Auto-Scaling Fix) ---
+# --- 11. CINEMATIC SPLASH SCREEN (V6: Perfect Mobile Fit) ---
 def show_cinematic_intro():
     """
-    V5 Fix: Automatically injects a 'viewBox' to fix the zooming issue.
-    Forces the large 1080x1386 logo to fit inside the screen.
+    V6 Fix: Forces logo to stay within 50% of screen height to prevent scrolling.
+    Uses aggressive SVG header replacement to fix the 'Zoomed In' crop issue.
     """
     
-    # Uncomment the next line ONLY for testing (to see intro every reload)
-    # st.session_state['splash_played'] = False 
+    # st.session_state['splash_played'] = False # Uncomment ONLY for testing
     
     if not st.session_state.get('splash_played', False):
         
-        # 1. Load and Fix the SVG
         svg_content = ""
         try:
             with open("logo_data.txt", "r") as f:
                 raw_svg = f.read()
                 
-                # A. Remove XML header (<?xml...>) to prevent HTML errors
+                # 1. Strip XML headers
                 clean_svg = re.sub(r'<\?xml.*?>', '', raw_svg)
                 clean_svg = re.sub(r'<!DOCTYPE.*?>', '', clean_svg)
                 
-                # B. CRITICAL FIX: Inject the correct scaling box
-                # We replace the opening <svg...> tag with one that forces resizing
-                if "<svg" in clean_svg:
-                    svg_content = re.sub(
-                        r'<svg.*?>', 
-                        # This tells the browser: "The image is 1080x1386, but shrink it to fit!"
-                        '<svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet">', 
-                        clean_svg, 
-                        count=1, 
-                        flags=re.DOTALL
-                    )
-                else:
-                    # Fallback if regex fails
-                    svg_content = clean_svg
+                # 2. AGGRESSIVE HEADER REPLACEMENT
+                # We delete the original <svg...> tag entirely and replace it with a clean, scaling one.
+                # This fixes the "Top Left Crop" issue by forcing the ViewBox.
+                svg_content = re.sub(
+                    r'<svg[^>]*>', 
+                    '<svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">', 
+                    clean_svg, 
+                    count=1, 
+                    flags=re.DOTALL
+                )
                 
         except FileNotFoundError:
-            st.error("⚠️ System Error: 'logo_data.txt' not found.")
             st.session_state['splash_played'] = True
             return
 
         placeholder = st.empty()
         
-        # 2. Render Animation
         with placeholder.container():
             intro_html = f"""
             <!DOCTYPE html>
@@ -583,34 +575,37 @@ def show_cinematic_intro():
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
                 
-                body {{
-                    margin: 0; padding: 0; background-color: #000;
+                html, body {{
+                    margin: 0; padding: 0; 
+                    background-color: #000;
+                    height: 100vh; width: 100vw;
+                    overflow: hidden; /* DISABLE SCROLLING */
                     display: flex; flex-direction: column;
                     align-items: center; justify-content: center;
-                    height: 100vh; overflow: hidden;
                 }}
 
                 .intro-wrapper {{
-                    display: flex; flex-direction: column; align-items: center;
-                    width: 100%; 
-                    max-width: 400px; /* Constraints width on large screens */
+                    display: flex; flex-direction: column; 
+                    align-items: center; justify-content: center;
+                    width: 100%; height: 100%;
                     animation: fadeOut 1s ease-in-out 6s forwards;
                 }}
 
-                /* LOGO STYLING */
+                /* LOGO SCALING - The Secret Sauce */
                 svg {{
-                    width: 100%; /* Force it to fit container */
-                    height: auto;
-                    max-height: 60vh; /* Never taller than 60% of screen */
+                    width: auto;       /* Let width adjust automatically */
+                    height: auto;      /* Let height adjust automatically */
+                    max-width: 80vw;   /* Never wider than 80% of screen */
+                    max-height: 50vh;  /* Never taller than 50% of screen (Fixes scrolling) */
+                    
                     filter: drop-shadow(0 0 0px #4061FD);
                     animation: glowPulse 2s ease-out 3.5s forwards;
                 }}
 
-                /* ANIMATION LOGIC */
                 path {{
                     fill-opacity: 0; 
                     stroke: #4061FD;
-                    stroke-width: 3;
+                    stroke-width: 4; /* Thicker lines for mobile visibility */
                     stroke-dasharray: 5000;
                     stroke-dashoffset: 5000;
                     stroke-linecap: round;
@@ -619,28 +614,23 @@ def show_cinematic_intro():
                 }}
 
                 .brand-text {{
-                    margin-top: 25px;
+                    margin-top: 20px;
                     font-family: 'Orbitron', sans-serif;
                     color: white;
-                    font-size: 24px;
-                    letter-spacing: 10px;
+                    font-size: 20px; /* Smaller font to fit mobile */
+                    letter-spacing: 8px;
                     opacity: 0;
                     transform: translateY(20px);
                     animation: textUp 1s ease 3.5s forwards;
                 }}
 
                 @keyframes drawLine {{ to {{ stroke-dashoffset: 0; }} }}
-
-                @keyframes revealColor {{
-                    to {{ fill-opacity: 1; stroke-width: 0; }}
-                }}
-
+                @keyframes revealColor {{ to {{ fill-opacity: 1; stroke-width: 0; }} }}
                 @keyframes glowPulse {{
                     0% {{ filter: drop-shadow(0 0 0px #4061FD); }}
                     50% {{ filter: drop-shadow(0 0 30px rgba(64, 97, 253, 0.6)); }}
                     100% {{ filter: drop-shadow(0 0 15px rgba(64, 97, 253, 0.3)); }}
                 }}
-
                 @keyframes textUp {{ to {{ opacity: 1; transform: translateY(0); }} }}
                 @keyframes fadeOut {{ to {{ opacity: 0; visibility: hidden; }} }}
             </style>
@@ -654,7 +644,8 @@ def show_cinematic_intro():
             </html>
             """
             
-            components.html(intro_html, height=900)
+            # Height matches typical mobile screen but 'overflow: hidden' prevents scrollbars
+            components.html(intro_html, height=800) 
             time.sleep(6.5) 
             
         placeholder.empty()
