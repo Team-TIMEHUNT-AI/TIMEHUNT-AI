@@ -1528,76 +1528,80 @@ def create_mission_report(user_name, level, xp, history):
     
     return pdf.output(dest='S').encode('latin-1')
 
-def ui_grid_card(title, icon, subtitle, accent):
-    """Helper function to create the grid squares in the home page"""
-    st.markdown(f"""
-        <div style="background: #161616; border: 1px solid #222; padding: 20px; border-radius: 16px; margin-bottom: 12px; transition: 0.3s;">
-            <div style="font-size: 28px; margin-bottom: 8px;">{icon}</div>
-            <div style="font-weight: 700; color: white; font-size: 14px;">{title}</div>
-            <div style="font-size: 11px; color: {accent}; opacity: 0.8; font-weight: 600;">{subtitle}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
 # --- 13. PAGE: HOME (Dashboard) ---
 def page_home():
-
-    st.markdown(f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <div style="font-size: 40px; background: #1A1A1A; border-radius: 50%; padding: 10px; border: 1px solid #333;">
+    # 1. HEADER
+    with st.container():
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="font-size: 35px; background: #1A1A1A; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; border: 1px solid #333;">
                     {st.session_state.get('user_avatar', '🏹')}
                 </div>
                 <div>
-                    <h2 style="margin:0; font-size: 22px; font-weight: 800; color: white;">{st.session_state['user_name']}</h2>
-                    <p style="margin:0; color: #B5FF5F; font-size: 12px; font-weight: 600;">LEVEL {st.session_state['user_level']} • {st.session_state['user_xp']} XP</p>
+                    <div style="font-weight: 800; font-size: 18px; color: white;">{st.session_state['user_name']}</div>
+                    <div style="font-size: 11px; color: #B5FF5F; font-weight: 600;">LEVEL {st.session_state['user_level']} • {st.session_state['user_xp']} XP</div>
                 </div>
             </div>
-            <div style="text-align: right;">
-                <div style="font-size: 18px; font-weight: 700; color: white;">{datetime.datetime.now().strftime('%H:%M')}</div>
-                <div style="font-size: 11px; opacity: 0.5;">{datetime.datetime.now().strftime('%d %b')}</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        with c2:
+            if st.button("⚙️", key="settings_btn"):
+                st.toast("Settings coming soon!", icon="⚙️")
 
-    # 2. EMOTIONAL PULSE (Emotional Support Feature)
-    with st.container():
-        st.markdown("<p style='font-size: 14px; font-weight: 600; margin-bottom: 10px; opacity: 0.8;'>How are you feeling today?</p>", unsafe_allow_html=True)
-        cols = st.columns(5)
-        emojis = ["🔥", "😊", "😐", "😔", "😫"]
-        moods = ["Energized", "Good", "Okay", "Low", "Burnt Out"]
-        
-        for i, col in enumerate(cols):
-            if col.button(emojis[i], help=moods[i], use_container_width=True):
-                st.session_state['current_mood'] = moods[i]
-                if moods[i] in ["Low", "Burnt Out"]:
-                    st.toast(f"I hear you. Let's take it slow today.", icon="🫂")
-                else:
-                    st.toast(f"Love that energy! Let's crush it.", icon="🚀")
-
-    # 3. MISSION CARD (Upcoming Task)
     st.write("")
+
+    # 2. MOOD TRACKER (Horizontal Row)
+    st.markdown("<div style='font-size: 12px; font-weight: 600; opacity: 0.7; margin-bottom: 5px; color: #888;'>HOW ARE YOU FEELING?</div>", unsafe_allow_html=True)
+    c_m1, c_m2, c_m3, c_m4, c_m5 = st.columns(5)
+    
+    # Tiny helper to make buttons fit
+    def mood_btn(col, emoji, state):
+        if col.button(emoji, use_container_width=True, key=f"m_{state}"):
+            st.session_state['current_mood'] = state
+            st.toast(f"Mood set to: {state}")
+
+    mood_btn(c_m1, "🔥", "Energized")
+    mood_btn(c_m2, "🙂", "Good")
+    mood_btn(c_m3, "😐", "Neutral")
+    mood_btn(c_m4, "😞", "Low")
+    mood_btn(c_m5, "😫", "Tired")
+
+    st.write("")
+
+    # 3. UPCOMING MISSION (Hero Card)
     slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
     pending = [s for s in slots if not s['Done']]
-    
-    if pending:
-        next_t = pending[0]
+    next_t = pending[0] if pending else None
+
+    if next_t:
         st.markdown(f"""
-        <div style="background: linear-gradient(90deg, #1E1E1E 0%, #121212 100%); border-left: 4px solid #B5FF5F; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-            <div style="color: #888; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">NEXT MISSION • {next_t['Time']}</div>
-            <div style="font-size: 18px; font-weight: 700; margin-top: 6px; color: white;">{next_t['Activity']}</div>
+        <div style="background: linear-gradient(135deg, #1E1E1E 0%, #000 100%); border: 1px solid #333; border-left: 4px solid #B5FF5F; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+            <div style="display:flex; justify-content:space-between;">
+                <span style="font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase;">UP NEXT • {next_t['Time']}</span>
+                <span style="font-size: 10px; background: #B5FF5F; color: black; padding: 2px 6px; border-radius: 4px; font-weight: bold;">{next_t['Difficulty']}</span>
+            </div>
+            <div style="font-size: 18px; font-weight: 700; color: white; margin-top: 8px;">{next_t['Activity']}</div>
+            <div style="font-size: 12px; color: #666; margin-top: 4px;">{next_t['Category']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background: #111; border: 1px dashed #333; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px;">
+            <div style="color: #666; font-size: 13px;">No active missions. You are free!</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # 4. FEATURE GRID (Study Zone style)
-    st.markdown("<p style='font-size: 16px; font-weight: 700; margin-bottom: 15px;'>My Systems</p>", unsafe_allow_html=True)
+    # 4. MY SYSTEMS (Grid)
+    st.markdown("<div style='font-size: 12px; font-weight: 600; opacity: 0.7; margin-bottom: 10px; color: #888;'>MY SYSTEMS</div>", unsafe_allow_html=True)
     
     g1, g2 = st.columns(2)
     with g1:
-        ui_grid_card("Daily Calendar", "📅", "View Schedule", "#00E5FF")
-        ui_grid_card("Mindfulness", "🧘", "Breathe & Reset", "#D050FF")
+        ui_grid_card("Calendar", "📅", "Schedule", "#00E5FF")
+        ui_grid_card("Mindfulness", "🧘", "Reset", "#D050FF")
     with g2:
-        ui_grid_card("Performance", "📈", "Check Progress", "#B5FF5F")
-        ui_grid_card("Library", "📚", "Saved Resources", "#FFD700")
+        ui_grid_card("Stats", "📊", "Growth", "#B5FF5F")
+        ui_grid_card("Library", "📚", "Files", "#FFD700")
 
 # --- 14. PAGE: ABOUT (System Info) ---
 def page_about():
@@ -2158,265 +2162,154 @@ def page_help():
             st.write(a)
 
 # --- 11. VISUAL STYLING (Restores the missing function) ---
-def inject_modern_ui_css():
+def inject_custom_css():
     st.markdown("""
         <style>
-            /* Main Background & Font */
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+            /* 1. FORCE MOBILE GRID (Crucial for App Look) */
+            [data-testid="column"] {
+                width: calc(50% - 10px) !important;
+                flex: 1 1 calc(50% - 10px) !important;
+                min-width: 140px !important; /* Prevents stacking on small screens */
+            }
             
+            /* 2. HIDE SIDEBAR & DEFAULT HEADER */
+            [data-testid="stSidebarNav"] {display: none;}
+            [data-testid="collapsedControl"] {display: none;}
+            section[data-testid="stSidebar"] {display: none;}
+            header, footer, #MainMenu {visibility: hidden;}
+
+            /* 3. BLACK THEME & FONTS */
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
             .stApp {
                 background-color: #000000 !important;
                 font-family: 'Inter', sans-serif;
             }
 
-            /* Hide Streamlit Header/Footer for clean App look */
-            header, footer, #MainMenu {visibility: hidden;}
-
-            /* Custom Card Styling */
-            .css-card {
-                background: #121212;
-                border-radius: 15px;
-                padding: 20px;
-                border: 1px solid #222;
-                margin-bottom: 15px;
+            /* 4. BUTTON STYLING (Make them look like cards) */
+            div.stButton > button {
+                background-color: #161616;
+                border: 1px solid #333;
+                color: white;
+                border-radius: 12px;
+                padding: 15px;
+                font-weight: 600;
+                width: 100%;
+            }
+            div.stButton > button:hover {
+                border-color: #B5FF5F;
+                color: #B5FF5F;
             }
 
-            /* Title Styling */
-            .big-title {
-                font-weight: 800;
-                font-size: 28px;
-                letter-spacing: -0.5px;
-                margin-bottom: 20px;
-            }
-
-            /* Adjust Column Padding for Mobile */
-            [data-testid="stHorizontalBlock"] {
-                gap: 10px !important;
+            /* 5. MOOD TRACKER HORIZONTAL FIX */
+            div[data-testid="stHorizontalBlock"] {
+                gap: 5px !important;
             }
             
-            /* Floating Action Button for AI Chat */
+            /* 6. FLOATING ACTION BUTTON */
             .fab {
-                position: fixed;
-                bottom: 85px;
-                right: 20px;
-                width: 60px;
-                height: 60px;
-                background: #B5FF5F;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 4px 15px rgba(181, 255, 95, 0.4);
-                z-index: 1000;
-                cursor: pointer;
+                position: fixed; bottom: 90px; right: 20px;
+                width: 55px; height: 55px;
+                background: #B5FF5F; border-radius: 50%;
+                display: flex; align-items: center; justify-content: center;
+                box-shadow: 0 4px 20px rgba(181, 255, 95, 0.4);
+                z-index: 1000; font-size: 24px;
             }
         </style>
-        
         <div class="fab">🤖</div>
     """, unsafe_allow_html=True)
 
 # --- 11. CINEMATIC SPLASH SCREEN (V9: Bulletproof Scaling & Glitch) ---
 def show_cinematic_intro():
-    """
-    V9 Update:
-    1. EXTRACTS only the paths from your file to remove the bad size limits.
-    2. INJECTS a new 1080x1386 ViewBox so it shrinks to fit any screen.
-    3. ANIMATES the Loop (Smooth) and Arrow (Glitch) separately.
-    """
-    
-    # Check session state
+    # Only play once per session
     if not st.session_state.get('splash_played', False):
         
-        svg_inner = ""
-        try:
-            with open("logo_data.txt", "r") as f:
-                raw = f.read()
-                # ROBUST EXTRACTION: Ignore the old <svg> tag entirely.
-                # We just want the <path> elements inside.
-                start = raw.find("<path")
-                end = raw.rfind("</svg>")
-                if start != -1 and end != -1:
-                    svg_inner = raw[start:end]
-                else:
-                    # Fallback: Just clean XML headers
-                    raw = re.sub(r'<\?xml.*?\?>', '', raw)
-                    raw = re.sub(r'<!DOCTYPE.*?>', '', raw)
-                    # Try to strip the svg tag if regex fails
-                    svg_inner = re.sub(r'<svg.*?>', '', raw, count=1, flags=re.DOTALL).replace('</svg>', '')
-                
-        except FileNotFoundError:
-            st.session_state['splash_played'] = True
-            return
+        # Hardcoded Logo (Infinity Loop) - Works without external file
+        svg_inner = """
+        <path d="M200,500 C200,300 500,300 500,500 C500,700 800,700 800,500" stroke="#4061FD" stroke-width="5" fill="none" />
+        <path d="M800,500 C800,300 500,300 500,500 C500,700 200,700 200,500" stroke="#4061FD" stroke-width="5" fill="none" />
+        <path d="M500,200 L500,800" stroke="#B5FF5F" stroke-width="5" />
+        """
 
-        placeholder = st.empty()
-        
-        with placeholder.container():
-            intro_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
-                
-                html, body {{
-                    margin: 0; padding: 0; 
-                    background-color: #000;
-                    height: 100vh; width: 100vw;
-                    overflow: hidden; 
-                    display: flex; flex-direction: column;
-                    align-items: center; justify-content: center;
-                }}
-
-                .intro-wrapper {{
-                    width: 100%; 
-                    display: flex; flex-direction: column; align-items: center;
-                    animation: fadeOut 0.8s ease-in-out 8.0s forwards;
-                }}
-
-                /* --- CRITICAL SCALING FIX --- */
-                svg {{
-                    width: 80%;        /* Takes up 80% of screen width */
-                    max-width: 400px;  /* But never bigger than 400px */
-                    height: auto;      /* Height adjusts automatically */
-                    max-height: 60vh;  /* Never taller than 60% of vertical screen */
-                    display: block;
-                    filter: drop-shadow(0 0 0px #4061FD);
-                    animation: glowPulse 2s ease-out 3.5s forwards;
-                }}
-
-                /* --- PATH 1: INFINITY LOOP (Smooth Draw) --- */
-                path:not(:last-child) {{
-                    fill-opacity: 0; 
-                    stroke: #4061FD;
-                    stroke-width: 3;
-                    stroke-dasharray: 5000;
-                    stroke-dashoffset: 5000;
-                    stroke-linecap: round;
-                    animation: drawLoop 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards,
-                               fillLoop 1s ease 3.0s forwards;
-                }}
-
-                /* --- PATH 2: ARROW (Glitch Effect) --- */
-                path:last-child {{
-                    fill-opacity: 0;
-                    stroke: #B5FF5F; 
-                    stroke-width: 0; 
-                    transform-origin: center;
-                    animation: glitchSequence 5s linear forwards;
-                }}
-
-                /* --- TEXT REVEAL --- */
-                .brand-text {{
-                    margin-top: 20px;
-                    font-family: 'Orbitron', sans-serif;
-                    color: white;
-                    font-size: 20px; 
-                    letter-spacing: 10px;
-                    opacity: 0;
-                    animation: textAppear 1s ease 4.5s forwards;
-                }}
-
-                /* --- ANIMATIONS --- */
-                @keyframes drawLoop {{ to {{ stroke-dashoffset: 0; }} }}
-                @keyframes fillLoop {{ to {{ fill-opacity: 1; stroke-width: 0; }} }}
-
-                @keyframes glitchSequence {{
-                    0%, 65% {{ opacity: 0; stroke-width: 0; }}
-                    /* Fail 1 */
-                    66% {{ opacity: 1; stroke-width: 4; stroke: #FF0000; transform: scale(0.95); }}
-                    68% {{ opacity: 0; }}
-                    /* Fail 2 */
-                    75% {{ opacity: 0.5; stroke: #B5FF5F; transform: translate(5px, 0); }}
-                    77% {{ opacity: 0; }}
-                    /* Success */
-                    90% {{ opacity: 1; transform: scale(1.1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
-                    100% {{ opacity: 1; transform: scale(1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
-                }}
-
-                @keyframes glowPulse {{
-                    to {{ filter: drop-shadow(0 0 20px rgba(64, 97, 253, 0.6)); }}
-                }}
-
-                @keyframes textAppear {{
-                    from {{ opacity: 0; transform: translateY(20px); }}
-                    to {{ opacity: 1; transform: translateY(0); }}
-                }}
-
-                @keyframes fadeOut {{ to {{ opacity: 0; visibility: hidden; }} }}
-            </style>
-            </head>
-            <body>
-                <div class="intro-wrapper">
-                    <svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-                        {svg_inner}
-                    </svg>
-                    <div class="brand-text">TIMEHUNT</div>
-                </div>
-            </body>
-            </html>
-            """
+        intro_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+            body {{ background-color: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }}
+            svg {{ width: 50%; max-width: 250px; animation: glow 3s infinite alternate; }}
+            .text {{ font-family: sans-serif; color: white; font-size: 20px; letter-spacing: 5px; opacity: 0; animation: fadeUp 1s ease 2.5s forwards; margin-top: 20px; font-weight: bold; }}
             
-            components.html(intro_html, height=900) 
-            time.sleep(8.5) 
+            path {{ stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: draw 2.5s ease-out forwards; }}
             
-        placeholder.empty()
+            @keyframes draw {{ to {{ stroke-dashoffset: 0; }} }}
+            @keyframes fadeUp {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+            @keyframes glow {{ from {{ filter: drop-shadow(0 0 5px #4061FD); }} to {{ filter: drop-shadow(0 0 20px #B5FF5F); }} }}
+        </style>
+        </head>
+        <body>
+            <svg viewBox="0 0 1000 1000" xmlns="http://www.w3.org/2000/svg">{svg_inner}</svg>
+            <div class="text">TIMEHUNT</div>
+        </body>
+        </html>
+        """
+        # Play animation
+        components.html(intro_html, height=800)
+        time.sleep(4.0) 
         st.session_state['splash_played'] = True
+        st.rerun()
 
 # --- 20. MAIN APPLICATION ROUTER ---
-
 def main():
     initialize_session_state()
-    inject_modern_ui_css()
+    inject_custom_css() # This now calls the NEW css function
+    show_cinematic_intro() # This now calls the NEW intro
+    
     check_reminders()
     render_alarm_ui()
-    
+
     if not st.session_state['onboarding_complete']:
         page_onboarding()
         return 
 
-    # --- NEW BOTTOM NAVIGATION ---
-    # We place this at the very top of the script but style it to the bottom
+    # --- BOTTOM NAVIGATION (Fixed) ---
     selected = option_menu(
         menu_title=None,
-        options=["Home", "Tasks", "AI Chat", "Focus", "Stats"],
-        icons=["house-fill", "clipboard-check-fill", "chat-dots-fill", "clock-fill", "bar-chart-fill"],
+        options=["Home", "Tasks", "Chat", "Focus", "Stats"],
+        icons=["house-fill", "list-check", "chat-dots-fill", "clock-fill", "bar-chart-fill"],
         menu_icon="cast",
         default_index=0,
         orientation="horizontal",
         styles={
             "container": {
                 "padding": "0!important", 
-                "background-color": "#121212", 
+                "background-color": "#000000", 
                 "position": "fixed", 
                 "bottom": "0", 
+                "left": "0",
+                "right": "0",
                 "z-index": "999",
                 "border-top": "1px solid #333"
             },
             "icon": {"color": "#B5FF5F", "font-size": "20px"}, 
             "nav-link": {
-                "font-size": "12px", 
+                "font-size": "10px", 
                 "text-align": "center", 
                 "margin": "0px", 
-                "color": "#888",
+                "color": "#666",
                 "--hover-color": "#222"
             },
             "nav-link-selected": {"background-color": "transparent", "color": "#B5FF5F"},
         }
     )
 
-    # Route Pages based on Bottom Nav
-    if selected == "Home":
-        page_home()
-    elif selected == "Tasks":
-        page_scheduler()
-    elif selected == "AI Chat":
-        page_ai_assistant()
-    elif selected == "Focus":
-        page_timer()
-    elif selected == "Stats":
-        page_dashboard()
+    # Route Pages
+    if selected == "Home": page_home()
+    elif selected == "Tasks": page_scheduler()
+    elif selected == "Chat": page_ai_assistant()
+    elif selected == "Focus": page_timer()
+    elif selected == "Stats": page_dashboard()
 
-    # Add extra padding at the bottom so content isn't hidden by the navbar
+    # Padding so content isn't hidden behind nav
     st.markdown('<div style="height: 100px;"></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
