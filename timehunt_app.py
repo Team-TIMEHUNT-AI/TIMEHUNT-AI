@@ -530,36 +530,40 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (V3: Full SVG Multi-Path Engine) ---
+# --- 11. CINEMATIC SPLASH SCREEN (Apple-Style SVG Engine) ---
 def show_cinematic_intro():
     """
-    Apple-Style Intro: Reads a full SVG file and renders a multi-path 
-    drawing animation with high-end easing and cinematic glow.
+    V4 Fix: Uses fill-opacity to ensure the drawing animation 
+    is visible even if the SVG has hardcoded colors.
+    Reads from 'logo_data.txt'.
     """
+    # UNCOMMENT THE NEXT LINE TO FORCE REPLAY FOR TESTING:
+    # st.session_state['splash_played'] = False 
+    
     if not st.session_state.get('splash_played', False):
         
-        # 1. Load the Full SVG Content
+        # 1. Load SVG
         svg_content = ""
         try:
             with open("logo_data.txt", "r") as f:
                 svg_content = f.read()
-                # Remove XML header if present so it doesn't break the HTML
+                # Clean up XML tags that might break HTML
                 svg_content = re.sub(r'<\?xml.*?\?>', '', svg_content)
+                svg_content = re.sub(r'<!DOCTYPE.*?>', '', svg_content)
         except FileNotFoundError:
-            st.error("⚠️ System Error: 'logo_data.txt' not found.")
+            # Silent fallback if file is missing
             st.session_state['splash_played'] = True
             return
 
         placeholder = st.empty()
         
-        # 2. Render the Multi-Path Animation
         with placeholder.container():
             intro_html = f"""
             <!DOCTYPE html>
             <html>
             <head>
             <style>
-                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
+                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
                 
                 body {{
                     margin: 0; padding: 0; background-color: #000;
@@ -570,69 +574,75 @@ def show_cinematic_intro():
 
                 .intro-wrapper {{
                     display: flex; flex-direction: column; align-items: center;
-                    animation: fadeOutContainer 1s ease 5s forwards;
+                    animation: fadeOut 1s ease-in-out 6s forwards;
                 }}
 
-                /* Targeting all paths inside your logo */
                 svg {{
-                    width: 320px; height: auto;
-                    filter: drop-shadow(0 0 0px rgba(64, 97, 253, 0));
-                    animation: ignite 2s ease-out 3s forwards;
+                    width: 280px; height: auto;
+                    filter: drop-shadow(0 0 0px #4061FD);
+                    animation: glowPulse 2s ease-out 3.5s forwards;
                 }}
 
+                /* Hides the fill initially using Opacity */
                 path {{
-                    fill: transparent !important;
-                    stroke-width: 1.5;
-                    stroke-dasharray: 2000;
-                    stroke-dashoffset: 2000;
-                    animation: drawLine 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards;
-                }}
-
-                /* Delaying the fill so the drawing is visible first */
-                path {{
+                    fill-opacity: 0; 
+                    stroke: #4061FD; /* The Drawing Line Color */
+                    stroke-width: 2;
+                    stroke-dasharray: 3000;
+                    stroke-dashoffset: 3000;
+                    stroke-linecap: round;
                     animation: drawLine 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards,
-                               fillColor 1.2s ease 3.2s forwards;
+                               revealColor 1.5s ease 3.2s forwards;
                 }}
 
                 .brand-text {{
-                    margin-top: 40px;
+                    margin-top: 30px;
                     font-family: 'Orbitron', sans-serif;
-                    color: #fff; font-size: 18px; letter-spacing: 14px;
-                    opacity: 0; transform: translateY(20px);
-                    animation: textReveal 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) 2.5s forwards;
+                    color: white;
+                    font-size: 24px;
+                    letter-spacing: 8px;
+                    opacity: 0;
+                    transform: translateY(20px);
+                    animation: textUp 1s ease 3.5s forwards;
                 }}
 
-                @keyframes drawLine {{ to {{ stroke-dashoffset: 0; }} }}
-                
-                @keyframes fillColor {{
-                    /* This looks for the original colors in your SVG and brings them back */
-                    to {{ fill: inherit; stroke-width: 0; }}
+                @keyframes drawLine {{
+                    to {{ stroke-dashoffset: 0; }}
                 }}
 
-                @keyframes ignite {{
-                    to {{ filter: drop-shadow(0 0 30px rgba(64, 97, 253, 0.7)); }}
+                @keyframes revealColor {{
+                    to {{ 
+                        fill-opacity: 1; /* Bring back original colors */
+                        stroke-width: 0; /* Hide the stroke */
+                    }}
                 }}
 
-                @keyframes textReveal {{
+                @keyframes glowPulse {{
+                    0% {{ filter: drop-shadow(0 0 0px #4061FD); }}
+                    50% {{ filter: drop-shadow(0 0 30px rgba(64, 97, 253, 0.6)); }}
+                    100% {{ filter: drop-shadow(0 0 15px rgba(64, 97, 253, 0.3)); }}
+                }}
+
+                @keyframes textUp {{
                     to {{ opacity: 1; transform: translateY(0); }}
                 }}
 
-                @keyframes fadeOutContainer {{
-                    to {{ opacity: 0; transform: scale(1.05); visibility: hidden; }}
+                @keyframes fadeOut {{
+                    to {{ opacity: 0; visibility: hidden; }}
                 }}
             </style>
             </head>
             <body>
                 <div class="intro-wrapper">
                     {svg_content}
-                    <div class="brand-text">TIMEHUNT AI</div>
+                    <div class="brand-text">TIMEHUNT</div>
                 </div>
             </body>
             </html>
             """
             
             components.html(intro_html, height=1000)
-            time.sleep(6.5) # Extended time for multi-path drawing
+            time.sleep(7.0) # Wait for animation to finish
             
         placeholder.empty()
         st.session_state['splash_played'] = True
@@ -2408,15 +2418,19 @@ def main():
     # 1. Initialize Variables
     initialize_session_state()
     
+    # --- TESTING: FORCE ANIMATION REPLAY ---
+    # Uncomment the line below if you want to see the intro every time you refresh.
+    st.session_state['splash_played'] = False 
+    # ---------------------------------------
+    
     # 2. Check Alarms
     check_reminders()
     render_alarm_ui()
 
-    # 3. Load Styles (Fixes NameError)
+    # 3. Load Styles
     inject_custom_css()
     
     # 4. SHOW THE NEW CINEMATIC ANIMATION
-    # This replaces the old show_comet_splash()
     show_cinematic_intro()
 
     # 5. Onboarding Gate
@@ -2454,7 +2468,7 @@ def main():
     if nav == "Home": page_home()
     elif nav == "Scheduler": page_scheduler()
     elif nav == "Calendar": page_calendar()
-    elif nav == "Chat With AI": page_ai_assistant() # Text-only version
+    elif nav == "Chat With AI": page_ai_assistant()
     elif nav == "Timer": page_timer()  
     elif nav == "Analytics": page_dashboard()
     elif nav == "Help Center": page_help()
