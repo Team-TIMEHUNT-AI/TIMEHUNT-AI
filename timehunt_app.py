@@ -12,126 +12,114 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. THE VISUAL ENGINE (CSS) ---
+# --- 2. CSS & STYLING ---
 def inject_custom_css():
     st.markdown("""
-<style>
-    /* 1. Global Reset */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-    
-    .stApp { 
-        background-color: #000000 !important; 
-        font-family: 'Inter', sans-serif; 
-    }
-    
-    /* 2. Hide Streamlit Default Elements */
-    [data-testid="stSidebarNav"], [data-testid="collapsedControl"], header, footer, #MainMenu { 
-        display: none !important; 
-    }
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        
+        /* Global Reset */
+        .stApp { background-color: #000000 !important; font-family: 'Inter', sans-serif; }
+        
+        /* Hide Default Elements */
+        [data-testid="stSidebarNav"], [data-testid="collapsedControl"], header, footer, #MainMenu { display: none !important; }
 
-    /* 3. Mobile Grid Fix (The Notion Look) */
-    [data-testid="column"] {
-        width: calc(50% - 10px) !important;
-        flex: 1 1 calc(50% - 10px) !important;
-        min-width: 150px !important;
-    }
+        /* Mobile Grid Fix */
+        [data-testid="column"] {
+            width: calc(50% - 10px) !important;
+            flex: 1 1 calc(50% - 10px) !important;
+            min-width: 150px !important;
+        }
 
-    /* 4. Google "Pill" Buttons */
-    div.stButton > button {
-        background-color: #1A1A1A;
-        color: #FFF;
-        border: 1px solid #333;
-        border-radius: 50px;
-        padding: 12px 10px;
-        font-weight: 600;
-        transition: 0.2s;
-        width: 100%;
-        font-size: 18px;
-    }
-    div.stButton > button:hover {
-        border-color: #B5FF5F;
-        color: #B5FF5F;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 10px rgba(181, 255, 95, 0.2);
-    }
-    
-    /* 5. Spacing Fixes */
-    div[data-testid="stHorizontalBlock"] { gap: 8px !important; }
-    
-    /* 6. Floating Action Button */
-    .fab {
-        position: fixed; bottom: 90px; right: 20px;
-        width: 55px; height: 55px;
-        background: #B5FF5F; border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 4px 20px rgba(181, 255, 95, 0.4);
-        z-index: 1000; font-size: 24px; cursor: pointer;
-    }
-</style>
-<div class="fab">🤖</div>
+        /* Google Pill Buttons */
+        div.stButton > button {
+            background-color: #1A1A1A;
+            color: #FFF;
+            border: 1px solid #333;
+            border-radius: 50px;
+            padding: 12px 10px;
+            font-weight: 600;
+            transition: 0.2s;
+            width: 100%;
+            font-size: 18px;
+        }
+        div.stButton > button:hover {
+            border-color: #B5FF5F;
+            color: #B5FF5F;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(181, 255, 95, 0.2);
+        }
+        
+        /* Floating Action Button */
+        .fab {
+            position: fixed; bottom: 90px; right: 20px;
+            width: 55px; height: 55px;
+            background: #B5FF5F; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 20px rgba(181, 255, 95, 0.4);
+            z-index: 1000; font-size: 24px; cursor: pointer;
+        }
+    </style>
+    <div class="fab">🤖</div>
     """, unsafe_allow_html=True)
 
-# --- 3. UI COMPONENTS (HTML STRINGS MUST BE FLUSH LEFT) ---
+# --- 3. UI COMPONENTS (FLATTENED HTML) ---
 
 def render_hero_header():
     xp = st.session_state.get('user_xp', 1250)
     lvl = st.session_state.get('user_level', 5)
     progress = min(100, (xp % 1000) / 10) 
     
-    # HTML formatted as a single line to prevent indentation errors
-    html_code = f"""
-<div style="padding: 20px; background: linear-gradient(180deg, #161616 0%, #000000 100%); border-radius: 0 0 24px 24px; border-bottom: 1px solid #222; margin-bottom: 25px;">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="display:flex; align-items:center; gap: 15px;">
-            <div style="font-size: 32px; background: #1A1A1A; width: 60px; height: 60px; border-radius: 20px; display:flex; align-items:center; justify-content:center; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
-                {st.session_state.get('user_avatar', '🏹')}
+    # HTML formatted strictly to avoid indentation errors
+    st.markdown(f"""
+    <div style="padding: 20px; background: linear-gradient(180deg, #161616 0%, #000000 100%); border-radius: 0 0 24px 24px; border-bottom: 1px solid #222; margin-bottom: 25px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap: 15px;">
+                <div style="font-size: 32px; background: #1A1A1A; width: 60px; height: 60px; border-radius: 20px; display:flex; align-items:center; justify-content:center; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+                    {st.session_state.get('user_avatar', '🏹')}
+                </div>
+                <div>
+                    <div style="font-size: 20px; font-weight: 800; color: white; letter-spacing: -0.5px; font-family: sans-serif;">{st.session_state.get('user_name', 'Achiever')}</div>
+                    <div style="font-size: 11px; color: #B5FF5F; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif;">Level {lvl} • {xp} XP</div>
+                </div>
             </div>
-            <div>
-                <div style="font-size: 20px; font-weight: 800; color: white; letter-spacing: -0.5px; font-family: sans-serif;">{st.session_state.get('user_name', 'Achiever')}</div>
-                <div style="font-size: 11px; color: #B5FF5F; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif;">Level {lvl} • {xp} XP</div>
+            <div style="text-align:right;">
+                <div style="font-size: 10px; color: #666; font-weight:700; letter-spacing:1px; text-transform: uppercase; font-family: sans-serif;">TODAY</div>
+                <div style="font-size: 24px; font-weight: 700; color: #FFF; font-family: monospace;">{datetime.datetime.now().strftime('%H:%M')}</div>
             </div>
         </div>
-        <div style="text-align:right;">
-            <div style="font-size: 10px; color: #666; font-weight:700; letter-spacing:1px; text-transform: uppercase; font-family: sans-serif;">TODAY</div>
-            <div style="font-size: 24px; font-weight: 700; color: #FFF; font-family: monospace;">{datetime.datetime.now().strftime('%H:%M')}</div>
+        <div style="margin-top: 20px;">
+            <div style="display:flex; justify-content: space-between; font-size: 10px; color: #555; margin-bottom: 6px; font-weight: 600; font-family: sans-serif;">
+                <span>PROGRESS TO LVL {lvl + 1}</span>
+                <span>{int(progress)}%</span>
+            </div>
+            <div style="width: 100%; height: 8px; background: #222; border-radius: 10px; overflow: hidden;">
+                <div style="width: {progress}%; height: 100%; background: linear-gradient(90deg, #B5FF5F, #00E5FF); border-radius: 10px; box-shadow: 0 0 10px rgba(181, 255, 95, 0.4);"></div>
+            </div>
         </div>
     </div>
-    <div style="margin-top: 20px;">
-        <div style="display:flex; justify-content: space-between; font-size: 10px; color: #555; margin-bottom: 6px; font-weight: 600; font-family: sans-serif;">
-            <span>PROGRESS TO LVL {lvl + 1}</span>
-            <span>{int(progress)}%</span>
-        </div>
-        <div style="width: 100%; height: 8px; background: #222; border-radius: 10px; overflow: hidden;">
-            <div style="width: {progress}%; height: 100%; background: linear-gradient(90deg, #B5FF5F, #00E5FF); border-radius: 10px; box-shadow: 0 0 10px rgba(181, 255, 95, 0.4);"></div>
-        </div>
-    </div>
-</div>
-    """
-    st.markdown(html_code, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 def ui_grid_card(title, icon, subtitle, color):
-    # HTML formatted with no indentation to prevent markdown blocks
-    html_code = f"""
-<div style="background-color: #161616; border-radius: 24px; padding: 20px; height: 150px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #222; transition: all 0.3s ease; position: relative; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-    <div style="position: absolute; top: -40px; right: -40px; width: 100px; height: 100px; background: {color}; filter: blur(50px); opacity: 0.15;"></div>
-    <div style="font-size: 32px; z-index: 1;">{icon}</div>
-    <div style="z-index: 1;">
-        <div style="font-size: 16px; font-weight: 700; color: #EEE; letter-spacing: -0.3px; font-family: sans-serif;">{title}</div>
-        <div style="font-size: 11px; font-weight: 500; color: #666; margin-top: 4px; font-family: sans-serif;">{subtitle}</div>
+    st.markdown(f"""
+    <div style="background-color: #161616; border-radius: 24px; padding: 20px; height: 150px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #222; transition: all 0.3s ease; position: relative; overflow: hidden; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+        <div style="position: absolute; top: -40px; right: -40px; width: 100px; height: 100px; background: {color}; filter: blur(50px); opacity: 0.15;"></div>
+        <div style="font-size: 32px; z-index: 1;">{icon}</div>
+        <div style="z-index: 1;">
+            <div style="font-size: 16px; font-weight: 700; color: #EEE; letter-spacing: -0.3px; font-family: sans-serif;">{title}</div>
+            <div style="font-size: 11px; font-weight: 500; color: #666; margin-top: 4px; font-family: sans-serif;">{subtitle}</div>
+        </div>
     </div>
-</div>
-    """
-    st.markdown(html_code, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 def show_cinematic_intro():
     if not st.session_state.get('splash_played', False):
-        # Default logo fallback
         svg_inner = """
         <path d="M200,500 C200,300 500,300 500,500 C500,700 800,700 800,500" stroke="#4061FD" stroke-width="5" fill="none" />
         <path d="M800,500 C800,300 500,300 500,500 C500,700 200,700 200,500" stroke="#4061FD" stroke-width="5" fill="none" />
         <path d="M500,200 L500,800" stroke="#B5FF5F" stroke-width="5" />
         """
-        # Attempt to load file
+        # Try load file
         if os.path.exists("logo_data.txt"):
             try:
                 with open("logo_data.txt", "r") as f:
@@ -165,7 +153,7 @@ def show_cinematic_intro():
         st.session_state['splash_played'] = True
         st.rerun()
 
-# --- 4. SESSION & PAGES ---
+# --- 4. APP LOGIC ---
 
 def initialize_session_state():
     if 'user_xp' not in st.session_state:
@@ -175,8 +163,8 @@ def initialize_session_state():
             'user_level': 5,
             'user_avatar': "🏹",
             'current_mood': "Neutral",
-            'onboarding_complete': True, # Bypass for now
-            'splash_played': False
+            'splash_played': False,
+            'onboarding_complete': True 
         })
 
 def page_home():
@@ -184,35 +172,43 @@ def page_home():
 
     st.markdown("<div style='padding: 0 5px; margin-bottom: 10px; font-size: 12px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;'>Mental Pulse</div>", unsafe_allow_html=True)
     c1, c2, c3, c4, c5 = st.columns(5)
-    if c1.button("🔥", key="m1"): st.toast("Stay lit!")
-    if c2.button("🙂", key="m2"): st.toast("Good vibes!")
-    if c3.button("😐", key="m3"): st.toast("Stay steady.")
-    if c4.button("🌧️", key="m4"): st.toast("It's okay to rest.")
-    if c5.button("💀", key="m5"): st.toast("Take a break.")
+    
+    # Manual button logic to prevent list errors
+    if c1.button("🔥", key="m1"): st.toast("Fire mode on!")
+    if c2.button("🙂", key="m2"): st.toast("Glad you're happy!")
+    if c3.button("😐", key="m3"): st.toast("Stay balanced.")
+    if c4.button("🌧️", key="m4"): st.toast("Take it easy.")
+    if c5.button("💀", key="m5"): st.toast("Rest needed.")
 
-    st.write("")
+    st.write("") 
 
     st.markdown("<div style='padding: 0 5px; margin-bottom: 15px; font-size: 12px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;'>Workspace</div>", unsafe_allow_html=True)
+    
     r1a, r1b = st.columns(2)
     with r1a: ui_grid_card("Plan", "📅", "Calendar", "#00E5FF")
     with r1b: ui_grid_card("Focus", "⏳", "Timer", "#B5FF5F")
+    
     r2a, r2b = st.columns(2)
     with r2a: ui_grid_card("Growth", "📈", "Analytics", "#FF4B4B")
     with r2b: ui_grid_card("Assistant", "🤖", "AI Chat", "#A0A0A0")
 
-# Placeholder pages
-def page_scheduler(): st.title("📅 Tasks Page")
-def page_ai_assistant(): st.title("🤖 AI Chat Page")
-def page_timer(): st.title("⏳ Focus Page")
-def page_dashboard(): st.title("📊 Stats Page")
+# Placeholders
+def page_scheduler(): st.title("📅 Tasks")
+def page_ai_assistant(): st.title("🤖 AI Chat")
+def page_timer(): st.title("⏳ Focus Timer")
+def page_dashboard(): st.title("📊 Stats")
 
-# --- 5. MAIN EXECUTION ---
+# --- 5. MAIN ---
 def main():
     initialize_session_state()
     inject_custom_css()
     show_cinematic_intro()
     
-    # Navigation
+    if not st.session_state['onboarding_complete']:
+        st.write("Onboarding...") # Placeholder
+        return 
+
+    # Bottom Nav
     selected = option_menu(
         menu_title=None,
         options=["Home", "Tasks", "Chat", "Focus", "Stats"],
