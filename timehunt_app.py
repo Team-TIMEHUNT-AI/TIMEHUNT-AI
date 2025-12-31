@@ -530,157 +530,135 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (Productive & Engaging) ---
+# --- 11. CINEMATIC SPLASH SCREEN (Apple-Style SVG Engine) ---
 def show_cinematic_intro():
     """
-    Ultra-High Fidelity 'Comet' Intro.
-    Features: 3D Parallax Stars, Optical Lens Flash, and Elastic Logo Reveal.
+    "Apple-Style" Intro: Reads raw SVG path data from a text file
+    and renders a GPU-accelerated drawing animation with neon light leaks.
     """
-    if not st.session_state['splash_played']:
+    if not st.session_state.get('splash_played', False):
+        
+        # 1. Load the Vector Data
+        svg_path = ""
+        try:
+            # We read from the text file to keep the Python script clean
+            with open("logo_data.txt", "r") as f:
+                svg_path = f.read().strip()
+        except FileNotFoundError:
+            # Fallback if file is missing (Prevents crash)
+            st.error("⚠️ System Error: 'logo_data.txt' not found.")
+            st.session_state['splash_played'] = True
+            return
+
         placeholder = st.empty()
         
-        # 1. Safe Logo Loading (Prevents text glitch)
-        logo_html = '<div style="font-size: 80px;">🏹</div>' # Fallback
-        try:
-            if os.path.exists("1000592991.png"):
-                with open("1000592991.png", "rb") as f:
-                    logo_b64 = base64.b64encode(f.read()).decode()
-                logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="main-logo">'
-        except Exception: pass
-
+        # 2. Render the Animation
         with placeholder.container():
-            st.markdown(f"""
+            intro_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
             <style>
-                /* CORE SCREEN */
-                .intro-container {{
-                    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-                    background: #000; z-index: 999999;
-                    display: flex; justify-content: center; align-items: center;
-                    overflow: hidden;
-                    animation: fadeOutAll 0.8s ease-in-out 6.0s forwards;
-                }}
-
-                /* LAYER 1: 3D STAR FIELD (Parallax) */
-                .stars-small, .stars-medium {{
-                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-                    background: transparent;
-                }}
-                .stars-small {{
-                    /* CSS Trick: Creating stars using box-shadows */
-                    box-shadow: 
-                        10vw 10vh 1px white, 20vw 40vh 1px white, 40vw 80vh 1px white, 
-                        60vw 20vh 1px white, 80vw 60vh 1px white, 90vw 10vh 1px white;
-                    animation: flyUp 10s linear infinite;
-                    opacity: 0.6;
-                }}
-                .stars-medium {{
-                    box-shadow: 
-                        15vw 15vh 2px rgba(255,255,255,0.5), 35vw 55vh 2px rgba(255,255,255,0.5), 
-                        75vw 25vh 2px rgba(255,255,255,0.5), 55vw 85vh 2px rgba(255,255,255,0.5);
-                    animation: flyUp 15s linear infinite;
-                    opacity: 0.4;
-                }}
-
-                /* LAYER 2: NEBULA GAS (The colors) */
-                .nebula-glow {{
-                    position: absolute; width: 150vw; height: 150vw;
-                    background: radial-gradient(circle, rgba(65, 105, 225, 0.2) 0%, rgba(255, 69, 0, 0.15) 40%, transparent 70%);
-                    filter: blur(80px);
-                    animation: rotateNebula 20s linear infinite;
-                    opacity: 0.8;
-                }}
-
-                /* LAYER 3: IGNITION (The start dot) */
-                .spark-core {{
-                    position: absolute; width: 2px; height: 2px;
-                    background: #fff; border-radius: 50%;
-                    box-shadow: 0 0 20px 5px #fff;
-                    opacity: 0;
-                    animation: igniteSequence 2.0s cubic-bezier(0.8, 0, 0.2, 1) forwards;
-                }}
-
-                /* LAYER 4: OPTICAL FLASH (The explosion) */
-                .lens-flash {{
-                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-                    background: white;
-                    opacity: 0;
-                    /* Snappy flash timing */
-                    animation: flashBang 0.6s cubic-bezier(0.1, 0.8, 0.1, 1) 2.0s forwards;
-                    z-index: 500;
-                }}
-
-                /* LAYER 5: CONTENT REVEAL */
-                .content-wrapper {{
-                    z-index: 600; display: flex; flex-direction: column; align-items: center;
-                    opacity: 0;
-                    /* Elastic Bounce Effect */
-                    animation: logoBounce 2.5s cubic-bezier(0.25, 1.2, 0.25, 1) 2.1s forwards;
-                }}
+                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
                 
-                .main-logo {{ 
-                    width: 140px; 
-                    filter: drop-shadow(0 0 30px rgba(181, 255, 95, 0.4)); 
+                body {{
+                    margin: 0; padding: 0;
+                    background-color: #000;
+                    display: flex; flex-direction: column;
+                    align-items: center; justify-content: center;
+                    height: 100vh; overflow: hidden;
                 }}
-                
-                .title-main {{ 
-                    font-family: 'Inter', sans-serif; font-size: 36px; font-weight: 800; 
-                    color: white; letter-spacing: 6px; margin-top: 20px;
-                    text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+
+                /* THE CONTAINER */
+                .intro-wrapper {{
+                    position: relative;
+                    z-index: 9999;
+                    display: flex; flex-direction: column;
+                    align-items: center;
+                    animation: fadeOutContainer 1s ease 4.5s forwards;
                 }}
-                
-                .subtitle {{
-                    font-family: 'Inter', sans-serif; font-size: 14px; 
-                    color: #B5FF5F; letter-spacing: 3px; text-transform: uppercase;
-                    margin-top: 10px; opacity: 0;
-                    animation: fadeUp 1s ease-out 3.0s forwards;
+
+                /* THE SVG */
+                .logo-svg {{
+                    width: 320px; /* Adjust size here */
+                    height: auto;
+                    filter: drop-shadow(0 0 0px rgba(64, 97, 253, 0)); /* Start with no glow */
+                    animation: ignite 2s ease-out 2.5s forwards;
+                }}
+
+                /* THE PATH (The Magic Line) */
+                .logo-path {{
+                    fill: transparent;
+                    stroke: #4061FD; /* Your Brand Blue */
+                    stroke-width: 2;
+                    stroke-linecap: round;
+                    stroke-linejoin: round;
+                    stroke-dasharray: 6000; /* Long enough to cover the whole shape */
+                    stroke-dashoffset: 6000; /* Start hidden */
+                    
+                    /* The "Apple" Ease: Slow start, fast middle, precision stop */
+                    animation: drawLine 3.0s cubic-bezier(0.65, 0, 0.35, 1) forwards,
+                               fillColor 1.0s ease 2.8s forwards;
+                }}
+
+                /* BRAND NAME TEXT */
+                .brand-text {{
+                    margin-top: 30px;
+                    font-family: 'Orbitron', sans-serif;
+                    color: #fff;
+                    font-size: 16px;
+                    letter-spacing: 12px;
+                    opacity: 0;
+                    transform: translateY(20px);
+                    animation: textReveal 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) 2.2s forwards;
                 }}
 
                 /* --- KEYFRAMES --- */
-                @keyframes flyUp {{ from {{ transform: translateY(0); }} to {{ transform: translateY(-100vh); }} }}
-                @keyframes rotateNebula {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(360deg); }} }}
                 
-                @keyframes igniteSequence {{
-                    0% {{ opacity: 0; transform: scale(0); }}
-                    40% {{ opacity: 1; transform: scale(1); }}
-                    80% {{ opacity: 1; transform: scale(5); box-shadow: 0 0 50px 20px #fff; }}
-                    100% {{ opacity: 0; transform: scale(0); }}
+                /* 1. Draw the line */
+                @keyframes drawLine {{
+                    to {{ stroke-dashoffset: 0; }}
                 }}
 
-                @keyframes flashBang {{
-                    0% {{ opacity: 0; }}
-                    10% {{ opacity: 1; }} /* PEAK WHITE */
-                    100% {{ opacity: 0; }} /* FADE OUT */
+                /* 2. Fill the shape */
+                @keyframes fillColor {{
+                    to {{ fill: rgba(64, 97, 253, 0.15); stroke-width: 0.5; }}
                 }}
 
-                @keyframes logoBounce {{
-                    0% {{ opacity: 0; transform: scale(0.5); filter: blur(10px); }}
-                    40% {{ opacity: 1; transform: scale(1.1); filter: blur(0px); }}
-                    100% {{ opacity: 1; transform: scale(1.0); }}
+                /* 3. Turn on the lights (Glow) */
+                @keyframes ignite {{
+                    to {{ filter: drop-shadow(0 0 25px rgba(64, 97, 253, 0.8)); }}
                 }}
 
-                @keyframes fadeUp {{ from {{ opacity: 0; transform: translateY(20px); }} to {{ opacity: 0.8; transform: translateY(0); }} }}
-                @keyframes fadeOutAll {{ to {{ opacity: 0; visibility: hidden; pointer-events: none; }} }}
+                /* 4. Text slides up */
+                @keyframes textReveal {{
+                    to {{ opacity: 1; transform: translateY(0); }}
+                }}
+
+                /* 5. Fade out everything */
+                @keyframes fadeOutContainer {{
+                    to {{ opacity: 0; transform: scale(1.1); }}
+                }}
+
             </style>
-
-            <div class="intro-container">
-                <div class="stars-small"></div>
-                <div class="stars-medium"></div>
-                <div class="nebula-glow"></div>
-                
-                <div class="spark-core"></div>
-                <div class="lens-flash"></div>
-                
-                <div class="content-wrapper">
-                    {logo_html}
-                    <div class="title-main">TIMEHUNT</div>
-                    <div class="subtitle">Productivity Intelligence</div>
+            </head>
+            <body>
+                <div class="intro-wrapper">
+                    <svg class="logo-svg" viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet">
+                        <path class="logo-path" d="{svg_path}" />
+                    </svg>
+                    <div class="brand-text">TIMEHUNT AI</div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+            </body>
+            </html>
+            """
             
-            # Animation Duration (6.5s)
-            time.sleep(6.5)
-        
+            # Render fullscreen
+            components.html(intro_html, height=900)
+            
+            # Wait for animation to finish (Total animation is roughly 5.5s)
+            time.sleep(5.5)
+            
         placeholder.empty()
         st.session_state['splash_played'] = True
 
