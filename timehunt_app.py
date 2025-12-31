@@ -530,29 +530,29 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (Apple-Style SVG Engine) ---
+# --- 11. CINEMATIC SPLASH SCREEN (V3: Full SVG Multi-Path Engine) ---
 def show_cinematic_intro():
     """
-    "Apple-Style" Intro: Reads raw SVG path data from a text file
-    and renders a GPU-accelerated drawing animation with neon light leaks.
+    Apple-Style Intro: Reads a full SVG file and renders a multi-path 
+    drawing animation with high-end easing and cinematic glow.
     """
     if not st.session_state.get('splash_played', False):
         
-        # 1. Load the Vector Data
-        svg_path = ""
+        # 1. Load the Full SVG Content
+        svg_content = ""
         try:
-            # We read from the text file to keep the Python script clean
             with open("logo_data.txt", "r") as f:
-                svg_path = f.read().strip()
+                svg_content = f.read()
+                # Remove XML header if present so it doesn't break the HTML
+                svg_content = re.sub(r'<\?xml.*?\?>', '', svg_content)
         except FileNotFoundError:
-            # Fallback if file is missing (Prevents crash)
             st.error("⚠️ System Error: 'logo_data.txt' not found.")
             st.session_state['splash_played'] = True
             return
 
         placeholder = st.empty()
         
-        # 2. Render the Animation
+        # 2. Render the Multi-Path Animation
         with placeholder.container():
             intro_html = f"""
             <!DOCTYPE html>
@@ -562,102 +562,77 @@ def show_cinematic_intro():
                 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
                 
                 body {{
-                    margin: 0; padding: 0;
-                    background-color: #000;
+                    margin: 0; padding: 0; background-color: #000;
                     display: flex; flex-direction: column;
                     align-items: center; justify-content: center;
                     height: 100vh; overflow: hidden;
                 }}
 
-                /* THE CONTAINER */
                 .intro-wrapper {{
-                    position: relative;
-                    z-index: 9999;
-                    display: flex; flex-direction: column;
-                    align-items: center;
-                    animation: fadeOutContainer 1s ease 4.5s forwards;
+                    display: flex; flex-direction: column; align-items: center;
+                    animation: fadeOutContainer 1s ease 5s forwards;
                 }}
 
-                /* THE SVG */
-                .logo-svg {{
-                    width: 320px; /* Adjust size here */
-                    height: auto;
-                    filter: drop-shadow(0 0 0px rgba(64, 97, 253, 0)); /* Start with no glow */
-                    animation: ignite 2s ease-out 2.5s forwards;
+                /* Targeting all paths inside your logo */
+                svg {{
+                    width: 320px; height: auto;
+                    filter: drop-shadow(0 0 0px rgba(64, 97, 253, 0));
+                    animation: ignite 2s ease-out 3s forwards;
                 }}
 
-                /* THE PATH (The Magic Line) */
-                .logo-path {{
-                    fill: transparent;
-                    stroke: #4061FD; /* Your Brand Blue */
-                    stroke-width: 2;
-                    stroke-linecap: round;
-                    stroke-linejoin: round;
-                    stroke-dasharray: 6000; /* Long enough to cover the whole shape */
-                    stroke-dashoffset: 6000; /* Start hidden */
-                    
-                    /* The "Apple" Ease: Slow start, fast middle, precision stop */
-                    animation: drawLine 3.0s cubic-bezier(0.65, 0, 0.35, 1) forwards,
-                               fillColor 1.0s ease 2.8s forwards;
+                path {{
+                    fill: transparent !important;
+                    stroke-width: 1.5;
+                    stroke-dasharray: 2000;
+                    stroke-dashoffset: 2000;
+                    animation: drawLine 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards;
                 }}
 
-                /* BRAND NAME TEXT */
+                /* Delaying the fill so the drawing is visible first */
+                path {{
+                    animation: drawLine 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards,
+                               fillColor 1.2s ease 3.2s forwards;
+                }}
+
                 .brand-text {{
-                    margin-top: 30px;
+                    margin-top: 40px;
                     font-family: 'Orbitron', sans-serif;
-                    color: #fff;
-                    font-size: 16px;
-                    letter-spacing: 12px;
-                    opacity: 0;
-                    transform: translateY(20px);
-                    animation: textReveal 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) 2.2s forwards;
+                    color: #fff; font-size: 18px; letter-spacing: 14px;
+                    opacity: 0; transform: translateY(20px);
+                    animation: textReveal 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) 2.5s forwards;
                 }}
 
-                /* --- KEYFRAMES --- */
+                @keyframes drawLine {{ to {{ stroke-dashoffset: 0; }} }}
                 
-                /* 1. Draw the line */
-                @keyframes drawLine {{
-                    to {{ stroke-dashoffset: 0; }}
-                }}
-
-                /* 2. Fill the shape */
                 @keyframes fillColor {{
-                    to {{ fill: rgba(64, 97, 253, 0.15); stroke-width: 0.5; }}
+                    /* This looks for the original colors in your SVG and brings them back */
+                    to {{ fill: inherit; stroke-width: 0; }}
                 }}
 
-                /* 3. Turn on the lights (Glow) */
                 @keyframes ignite {{
-                    to {{ filter: drop-shadow(0 0 25px rgba(64, 97, 253, 0.8)); }}
+                    to {{ filter: drop-shadow(0 0 30px rgba(64, 97, 253, 0.7)); }}
                 }}
 
-                /* 4. Text slides up */
                 @keyframes textReveal {{
                     to {{ opacity: 1; transform: translateY(0); }}
                 }}
 
-                /* 5. Fade out everything */
                 @keyframes fadeOutContainer {{
-                    to {{ opacity: 0; transform: scale(1.1); }}
+                    to {{ opacity: 0; transform: scale(1.05); visibility: hidden; }}
                 }}
-
             </style>
             </head>
             <body>
                 <div class="intro-wrapper">
-                    <svg class="logo-svg" viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet">
-                        <path class="logo-path" d="{svg_path}" />
-                    </svg>
+                    {svg_content}
                     <div class="brand-text">TIMEHUNT AI</div>
                 </div>
             </body>
             </html>
             """
             
-            # Render fullscreen
-            components.html(intro_html, height=900)
-            
-            # Wait for animation to finish (Total animation is roughly 5.5s)
-            time.sleep(5.5)
+            components.html(intro_html, height=1000)
+            time.sleep(6.5) # Extended time for multi-path drawing
             
         placeholder.empty()
         st.session_state['splash_played'] = True
