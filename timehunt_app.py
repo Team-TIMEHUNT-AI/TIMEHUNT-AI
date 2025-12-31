@@ -1528,7 +1528,18 @@ def create_mission_report(user_name, level, xp, history):
     
     return pdf.output(dest='S').encode('latin-1')
 
+def ui_grid_card(title, icon, subtitle, accent):
+    """Helper function to create the grid squares in the home page"""
+    st.markdown(f"""
+        <div style="background: #161616; border: 1px solid #222; padding: 20px; border-radius: 16px; margin-bottom: 12px; transition: 0.3s;">
+            <div style="font-size: 28px; margin-bottom: 8px;">{icon}</div>
+            <div style="font-weight: 700; color: white; font-size: 14px;">{title}</div>
+            <div style="font-size: 11px; color: {accent}; opacity: 0.8; font-weight: 600;">{subtitle}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 # --- 13. PAGE: HOME (Dashboard) ---
+
 def page_home():
     # 1. HEADER
     with st.container():
@@ -2217,18 +2228,35 @@ def inject_custom_css():
         </style>
         <div class="fab">🤖</div>
     """, unsafe_allow_html=True)
-
+    
 # --- 11. CINEMATIC SPLASH SCREEN (V9: Bulletproof Scaling & Glitch) ---
 def show_cinematic_intro():
     # Only play once per session
     if not st.session_state.get('splash_played', False):
         
-        # Hardcoded Logo (Infinity Loop) - Works without external file
+        # 1. Default Fallback Logo (Infinity Loop)
         svg_inner = """
         <path d="M200,500 C200,300 500,300 500,500 C500,700 800,700 800,500" stroke="#4061FD" stroke-width="5" fill="none" />
         <path d="M800,500 C800,300 500,300 500,500 C500,700 200,700 200,500" stroke="#4061FD" stroke-width="5" fill="none" />
         <path d="M500,200 L500,800" stroke="#B5FF5F" stroke-width="5" />
         """
+
+        # 2. Try to load YOUR file from GitHub/Local
+        try:
+            if os.path.exists("logo_data.txt"):
+                with open("logo_data.txt", "r") as f:
+                    content = f.read()
+                    # Simple check to see if it looks like SVG data
+                    if "<path" in content:
+                        # Extract just the paths if it's a full SVG, or use raw if it's just paths
+                        start = content.find("<path")
+                        end = content.rfind("</svg>")
+                        if start != -1 and end != -1:
+                            svg_inner = content[start:end]
+                        else:
+                            svg_inner = content # Assume file contains just path tags
+        except Exception:
+            pass # Keep using the fallback if file fails
 
         intro_html = f"""
         <!DOCTYPE html>
@@ -2252,7 +2280,6 @@ def show_cinematic_intro():
         </body>
         </html>
         """
-        # Play animation
         components.html(intro_html, height=800)
         time.sleep(4.0) 
         st.session_state['splash_played'] = True
