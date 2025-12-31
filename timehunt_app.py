@@ -529,153 +529,6 @@ def initialize_session_state():
         # Remove duplicates and empty strings
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
-        
-# --- 11. CINEMATIC SPLASH SCREEN (V8: Glitch Protocol & Scale Fix) ---
-def show_cinematic_intro():
-    """
-    1. FORCED RELOAD: Runs animation every time (for testing).
-    2. GLITCH EFFECT: Infinity loop draws smoothly; Arrow flickers/fails before appearing.
-    3. MOBILE FIX: Uses 'viewBox' to force the 1080p logo to fit any screen.
-    """
-    
-    # --- UNCOMMENT THIS LINE TO TEST ANIMATION REPEATEDLY ---
-    # st.session_state['splash_played'] = False 
-    
-    if not st.session_state.get('splash_played', False):
-        
-        # 1. READ & CLEAN SVG
-        svg_inner = ""
-        try:
-            with open("logo_data.txt", "r") as f:
-                raw = f.read()
-                # Clean XML headers
-                raw = re.sub(r'<\?xml.*?\?>', '', raw)
-                raw = re.sub(r'<!DOCTYPE.*?>', '', raw)
-                # Remove the existing <svg> wrapper so we can insert our own with correct sizing
-                svg_inner = re.sub(r'<svg.*?>', '', raw, count=1, flags=re.DOTALL)
-                svg_inner = svg_inner.replace('</svg>', '')
-                
-        except FileNotFoundError:
-            st.session_state['splash_played'] = True
-            return
-
-        placeholder = st.empty()
-        
-        with placeholder.container():
-            intro_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
-                
-                html, body {{
-                    margin: 0; padding: 0; 
-                    background-color: #000;
-                    height: 100vh; width: 100vw;
-                    overflow: hidden; /* DISABLE SCROLLBARS */
-                    display: flex; flex-direction: column;
-                    align-items: center; justify-content: center;
-                }}
-
-                .intro-wrapper {{
-                    display: flex; flex-direction: column; 
-                    align-items: center; justify-content: center;
-                    width: 100%; height: 100%;
-                    animation: fadeOut 0.8s ease-in-out 7.5s forwards;
-                }}
-
-                /* --- SCALING ENGINE (Fixes the "Partial View/Crop") --- */
-                svg {{
-                    width: 85vw;       /* Responsive Width */
-                    max-width: 450px;  /* Cap width for desktops */
-                    height: auto; 
-                    max-height: 50vh;  /* Never taller than half screen */
-                    overflow: visible;
-                }}
-
-                /* --- 1. THE INFINITY LOOP (Blue Parts) --- */
-                /* Selects all paths EXCEPT the last one (the arrow) */
-                path:not(:last-child) {{
-                    fill-opacity: 0; 
-                    stroke: #4061FD;
-                    stroke-width: 4;
-                    stroke-dasharray: 4000;
-                    stroke-dashoffset: 4000;
-                    /* Draw for 3s, then fill blue */
-                    animation: drawLoop 3s cubic-bezier(0.65, 0, 0.35, 1) forwards,
-                               fillLoop 1s ease 2.5s forwards;
-                }}
-
-                /* --- 2. THE ARROW (The Last Path) - GLITCH EFFECT --- */
-                path:last-child {{
-                    fill-opacity: 0;
-                    stroke: #B5FF5F; /* Neon Green Outline */
-                    stroke-width: 0; /* Start Invisible */
-                    transform-origin: center;
-                    
-                    /* The "Fail then Retry" Sequence */
-                    animation: glitchSequence 4.5s linear forwards;
-                }}
-
-                /* --- 3. TEXT REVEAL --- */
-                .brand-text {{
-                    margin-top: 25px;
-                    font-family: 'Orbitron', sans-serif;
-                    color: white;
-                    font-size: 22px; 
-                    letter-spacing: 12px;
-                    opacity: 0;
-                    animation: textAppear 1s ease 4.3s forwards; /* Appears with final arrow */
-                }}
-
-                /* --- KEYFRAMES --- */
-                
-                @keyframes drawLoop {{ to {{ stroke-dashoffset: 0; }} }}
-                @keyframes fillLoop {{ to {{ fill-opacity: 1; stroke-width: 0; }} }}
-
-                @keyframes glitchSequence {{
-                    0%   {{ opacity: 0; stroke-width: 0; }}
-                    60%  {{ opacity: 0; stroke-width: 0; }}
-                    
-                    /* 1. ATTEMPT TO APPEAR (Fail Red) */
-                    62%  {{ opacity: 0.6; stroke-width: 3; transform: scale(0.9) translate(-5px, 2px); stroke: #FF0000; }}
-                    63%  {{ opacity: 0; }}
-                    
-                    /* 2. SECOND ATTEMPT (Flicker Green) */
-                    70%  {{ opacity: 0.3; stroke: #B5FF5F; transform: translate(5px, -2px); }}
-                    71%  {{ opacity: 0; }}
-                    
-                    /* 3. SUCCESS (Blue Boom) */
-                    90%  {{ opacity: 1; transform: scale(1.1); filter: blur(0px); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
-                    100% {{ opacity: 1; transform: scale(1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
-                }}
-
-                @keyframes textAppear {{
-                    0% {{ opacity: 0; transform: translateY(20px); letter-spacing: 0px; }}
-                    100% {{ opacity: 1; transform: translateY(0); letter-spacing: 12px; }}
-                }}
-
-                @keyframes fadeOut {{ to {{ opacity: 0; visibility: hidden; }} }}
-            </style>
-            </head>
-            <body>
-                <div class="intro-wrapper">
-                    <svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-                        {svg_inner}
-                    </svg>
-                    <div class="brand-text">TIMEHUNT</div>
-                </div>
-            </body>
-            </html>
-            """
-            
-            # Height matches screen, css prevents scrolling
-            components.html(intro_html, height=900) 
-            time.sleep(8.0) 
-            
-        placeholder.empty()
-        st.session_state['splash_played'] = True
 
 # --- 12. AI CONTEXT GENERATOR (The "Brain Dump") ---
 def get_system_context():
@@ -2304,7 +2157,7 @@ def page_help():
     st.caption("Guides, FAQs, and Feedback Channel")
     
     # --- SECTION 1: INSTALLATION GUIDE ---
-    st.markdown("### 📲 Install TimeHunt")
+    st.markdown("### 📲 Install TimeHunt AI")
     st.info("Add this app to your home screen for the best full-screen experience.")
     
     with st.container():
@@ -2442,6 +2295,153 @@ def inject_custom_css():
         </style>
     """, unsafe_allow_html=True)
 
+# --- 11. CINEMATIC SPLASH SCREEN (V9: Bulletproof Scaling & Glitch) ---
+def show_cinematic_intro():
+    """
+    V9 Update:
+    1. EXTRACTS only the paths from your file to remove the bad size limits.
+    2. INJECTS a new 1080x1386 ViewBox so it shrinks to fit any screen.
+    3. ANIMATES the Loop (Smooth) and Arrow (Glitch) separately.
+    """
+    
+    # Check session state
+    if not st.session_state.get('splash_played', False):
+        
+        svg_inner = ""
+        try:
+            with open("logo_data.txt", "r") as f:
+                raw = f.read()
+                # ROBUST EXTRACTION: Ignore the old <svg> tag entirely.
+                # We just want the <path> elements inside.
+                start = raw.find("<path")
+                end = raw.rfind("</svg>")
+                if start != -1 and end != -1:
+                    svg_inner = raw[start:end]
+                else:
+                    # Fallback: Just clean XML headers
+                    raw = re.sub(r'<\?xml.*?\?>', '', raw)
+                    raw = re.sub(r'<!DOCTYPE.*?>', '', raw)
+                    # Try to strip the svg tag if regex fails
+                    svg_inner = re.sub(r'<svg.*?>', '', raw, count=1, flags=re.DOTALL).replace('</svg>', '')
+                
+        except FileNotFoundError:
+            st.session_state['splash_played'] = True
+            return
+
+        placeholder = st.empty()
+        
+        with placeholder.container():
+            intro_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+                
+                html, body {{
+                    margin: 0; padding: 0; 
+                    background-color: #000;
+                    height: 100vh; width: 100vw;
+                    overflow: hidden; 
+                    display: flex; flex-direction: column;
+                    align-items: center; justify-content: center;
+                }}
+
+                .intro-wrapper {{
+                    width: 100%; 
+                    display: flex; flex-direction: column; align-items: center;
+                    animation: fadeOut 0.8s ease-in-out 8.0s forwards;
+                }}
+
+                /* --- CRITICAL SCALING FIX --- */
+                svg {{
+                    width: 80%;        /* Takes up 80% of screen width */
+                    max-width: 400px;  /* But never bigger than 400px */
+                    height: auto;      /* Height adjusts automatically */
+                    max-height: 60vh;  /* Never taller than 60% of vertical screen */
+                    display: block;
+                    filter: drop-shadow(0 0 0px #4061FD);
+                    animation: glowPulse 2s ease-out 3.5s forwards;
+                }}
+
+                /* --- PATH 1: INFINITY LOOP (Smooth Draw) --- */
+                path:not(:last-child) {{
+                    fill-opacity: 0; 
+                    stroke: #4061FD;
+                    stroke-width: 3;
+                    stroke-dasharray: 5000;
+                    stroke-dashoffset: 5000;
+                    stroke-linecap: round;
+                    animation: drawLoop 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards,
+                               fillLoop 1s ease 3.0s forwards;
+                }}
+
+                /* --- PATH 2: ARROW (Glitch Effect) --- */
+                path:last-child {{
+                    fill-opacity: 0;
+                    stroke: #B5FF5F; 
+                    stroke-width: 0; 
+                    transform-origin: center;
+                    animation: glitchSequence 5s linear forwards;
+                }}
+
+                /* --- TEXT REVEAL --- */
+                .brand-text {{
+                    margin-top: 20px;
+                    font-family: 'Orbitron', sans-serif;
+                    color: white;
+                    font-size: 20px; 
+                    letter-spacing: 10px;
+                    opacity: 0;
+                    animation: textAppear 1s ease 4.5s forwards;
+                }}
+
+                /* --- ANIMATIONS --- */
+                @keyframes drawLoop {{ to {{ stroke-dashoffset: 0; }} }}
+                @keyframes fillLoop {{ to {{ fill-opacity: 1; stroke-width: 0; }} }}
+
+                @keyframes glitchSequence {{
+                    0%, 65% {{ opacity: 0; stroke-width: 0; }}
+                    /* Fail 1 */
+                    66% {{ opacity: 1; stroke-width: 4; stroke: #FF0000; transform: scale(0.95); }}
+                    68% {{ opacity: 0; }}
+                    /* Fail 2 */
+                    75% {{ opacity: 0.5; stroke: #B5FF5F; transform: translate(5px, 0); }}
+                    77% {{ opacity: 0; }}
+                    /* Success */
+                    90% {{ opacity: 1; transform: scale(1.1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
+                    100% {{ opacity: 1; transform: scale(1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
+                }}
+
+                @keyframes glowPulse {{
+                    to {{ filter: drop-shadow(0 0 20px rgba(64, 97, 253, 0.6)); }}
+                }}
+
+                @keyframes textAppear {{
+                    from {{ opacity: 0; transform: translateY(20px); }}
+                    to {{ opacity: 1; transform: translateY(0); }}
+                }}
+
+                @keyframes fadeOut {{ to {{ opacity: 0; visibility: hidden; }} }}
+            </style>
+            </head>
+            <body>
+                <div class="intro-wrapper">
+                    <svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+                        {svg_inner}
+                    </svg>
+                    <div class="brand-text">TIMEHUNT</div>
+                </div>
+            </body>
+            </html>
+            """
+            
+            components.html(intro_html, height=900) 
+            time.sleep(8.5) 
+            
+        placeholder.empty()
+        st.session_state['splash_played'] = True
+
 # --- 20. MAIN APPLICATION ROUTER ---
 
 def main():
@@ -2464,7 +2464,7 @@ def main():
 
     # 6. APP ROUTING
     with st.sidebar:
-        st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
         render_live_clock()
         
         nav = option_menu(
