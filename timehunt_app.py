@@ -530,16 +530,18 @@ def initialize_session_state():
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
-# --- 11. CINEMATIC SPLASH SCREEN (V7: Glitch & Retry Protocol) ---
+# --- 11. CINEMATIC SPLASH SCREEN (V8: Glitch Protocol & Force Fix) ---
 def show_cinematic_intro():
     """
-    V7 Feature: 'Glitch Protocol'. 
-    1. Loop draws first.
-    2. Arrow (Last Path) tries to load -> Fails -> Retries -> Success.
-    3. Forces correct mobile scaling using CSS Flexbox + ViewBox.
+    V8 Update:
+    1. FORCED RELOAD: Runs animation every time (for testing).
+    2. GLITCH EFFECT: Infinity loop draws smoothly; Arrow flickers/fails before appearing.
+    3. MOBILE FIX: Uses 'viewBox' to force the logo inside the screen.
     """
     
-    # st.session_state['splash_played'] = False # Uncomment for testing
+    # --- CRITICAL: TEMPORARILY RESET STATE SO YOU CAN SEE CHANGES ---
+    # Delete this line after you are happy with the animation!
+    st.session_state['splash_played'] = False 
     
     if not st.session_state.get('splash_played', False):
         
@@ -548,11 +550,10 @@ def show_cinematic_intro():
         try:
             with open("logo_data.txt", "r") as f:
                 raw = f.read()
-                # Remove XML metadata
+                # Clean XML headers so we can insert our own SVG tag
                 raw = re.sub(r'<\?xml.*?\?>', '', raw)
                 raw = re.sub(r'<!DOCTYPE.*?>', '', raw)
-                # Remove the existing <svg> wrapper so we can build our own
-                # This keeps ONLY the <path> tags
+                # Extract JUST the paths (remove the old <svg> wrapper)
                 svg_inner = re.sub(r'<svg.*?>', '', raw, count=1, flags=re.DOTALL)
                 svg_inner = svg_inner.replace('</svg>', '')
                 
@@ -574,7 +575,7 @@ def show_cinematic_intro():
                     margin: 0; padding: 0; 
                     background-color: #000;
                     height: 100vh; width: 100vw;
-                    overflow: hidden; /* NO SCROLLING */
+                    overflow: hidden; /* STOP SCROLLING */
                     display: flex; flex-direction: column;
                     align-items: center; justify-content: center;
                 }}
@@ -586,36 +587,37 @@ def show_cinematic_intro():
                     animation: fadeOut 0.8s ease-in-out 7.5s forwards;
                 }}
 
-                /* --- SCALING ENGINE --- */
+                /* --- SCALING ENGINE (Fixes the "Partial View") --- */
                 svg {{
-                    width: 80vw;       /* Responsive Width */
-                    max-width: 400px;  /* Cap width for desktops */
+                    width: 85vw;       /* Responsive Width */
+                    max-width: 450px;  /* Cap width for desktops */
                     height: auto; 
-                    max-height: 50vh;  /* Cap height for mobiles */
+                    max-height: 50vh;  /* Never taller than half screen */
                     overflow: visible;
                 }}
 
-                /* --- 1. THE INFINITY LOOP (All paths except the last one) --- */
+                /* --- 1. THE INFINITY LOOP (Blue Parts) --- */
+                /* Selects all paths EXCEPT the last one (the arrow) */
                 path:not(:last-child) {{
                     fill-opacity: 0; 
                     stroke: #4061FD;
-                    stroke-width: 3;
+                    stroke-width: 4;
                     stroke-dasharray: 4000;
                     stroke-dashoffset: 4000;
+                    /* Draw for 3s, then fill blue */
                     animation: drawLoop 3s cubic-bezier(0.65, 0, 0.35, 1) forwards,
                                fillLoop 1s ease 2.5s forwards;
                 }}
 
-                /* --- 2. THE ARROW (The last path) - GLITCH EFFECT --- */
+                /* --- 2. THE ARROW (The Last Path) - GLITCH EFFECT --- */
                 path:last-child {{
                     fill-opacity: 0;
-                    stroke: #B5FF5F; /* Neon Green for the Arrow */
-                    stroke-width: 0; /* Hidden initially */
+                    stroke: #B5FF5F; /* Neon Green Outline */
+                    stroke-width: 0; /* Start Invisible */
                     transform-origin: center;
                     
                     /* The "Fail then Retry" Sequence */
-                    animation: glitchFail 4s linear forwards, 
-                               arrowSuccess 0.5s cubic-bezier(0.17, 0.67, 0.83, 0.67) 4.2s forwards;
+                    animation: glitchSequence 4.5s linear forwards;
                 }}
 
                 /* --- 3. TEXT REVEAL --- */
@@ -626,7 +628,7 @@ def show_cinematic_intro():
                     font-size: 22px; 
                     letter-spacing: 12px;
                     opacity: 0;
-                    animation: textAppear 1s ease 4.3s forwards; /* Syncs with Arrow Success */
+                    animation: textAppear 1s ease 4.3s forwards; /* Appears with final arrow */
                 }}
 
                 /* --- KEYFRAMES --- */
@@ -634,25 +636,21 @@ def show_cinematic_intro():
                 @keyframes drawLoop {{ to {{ stroke-dashoffset: 0; }} }}
                 @keyframes fillLoop {{ to {{ fill-opacity: 1; stroke-width: 0; }} }}
 
-                /* The "Fail" Glitch Animation */
-                @keyframes glitchFail {{
-                    0%   {{ opacity: 0; }}
-                    60%  {{ opacity: 0; }}
+                @keyframes glitchSequence {{
+                    0%   {{ opacity: 0; stroke-width: 0; }}
+                    60%  {{ opacity: 0; stroke-width: 0; }}
                     
-                    /* First Attempt (Fail) */
-                    62%  {{ opacity: 0.4; transform: scale(0.9) translate(-5px, 2px); fill: #FF0000; }}
-                    64%  {{ opacity: 0;   transform: scale(1.0); }}
+                    /* 1. ATTEMPT TO APPEAR (Fail) */
+                    62%  {{ opacity: 0.6; stroke-width: 3; transform: scale(0.9) translate(-5px, 2px); stroke: #FF0000; }}
+                    63%  {{ opacity: 0; }}
                     
-                    /* Second Attempt (Flicker) */
-                    70%  {{ opacity: 0.2; transform: translate(5px, -2px); }}
-                    72%  {{ opacity: 0; }}
-                    100% {{ opacity: 0; }}
-                }}
-
-                /* The "Success" Animation */
-                @keyframes arrowSuccess {{
-                    0%   {{ opacity: 0; transform: scale(3); filter: blur(10px); fill-opacity: 0; stroke-width: 5; }}
-                    100% {{ opacity: 1; transform: scale(1); filter: blur(0px); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
+                    /* 2. SECOND ATTEMPT (Flicker) */
+                    70%  {{ opacity: 0.3; stroke: #B5FF5F; transform: translate(5px, -2px); }}
+                    71%  {{ opacity: 0; }}
+                    
+                    /* 3. SUCCESS (Boom) */
+                    90%  {{ opacity: 1; transform: scale(1.1); filter: blur(0px); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
+                    100% {{ opacity: 1; transform: scale(1); fill-opacity: 1; stroke-width: 0; fill: #4061FD; }}
                 }}
 
                 @keyframes textAppear {{
@@ -668,14 +666,15 @@ def show_cinematic_intro():
                     <svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
                         {svg_inner}
                     </svg>
-                    <div class="brand-text">TIMEHUNT AI</div>
+                    <div class="brand-text">TIMEHUNT</div>
                 </div>
             </body>
             </html>
             """
             
-            components.html(intro_html, height=850) # Taller container, but CSS restricts logo size
-            time.sleep(8.0) # Matches total animation time
+            # Taller container to catch the whole screen, but CSS prevents scrolling
+            components.html(intro_html, height=900) 
+            time.sleep(8.0) 
             
         placeholder.empty()
         st.session_state['splash_played'] = True
@@ -2448,22 +2447,17 @@ def inject_custom_css():
 # --- 20. MAIN APPLICATION ROUTER ---
 
 def main():
-    # 1. Initialize Variables
+    # 1. Initialize Session State
     initialize_session_state()
     
-    # --- TESTING: FORCE ANIMATION REPLAY ---
-    # Uncomment the line below if you want to see the intro every time you refresh.
-    st.session_state['splash_played'] = False 
-    # ---------------------------------------
-    
-    # 2. Check Alarms
+    # 2. Run Background Tasks
     check_reminders()
     render_alarm_ui()
 
     # 3. Load Styles
     inject_custom_css()
     
-    # 4. SHOW THE NEW CINEMATIC ANIMATION
+    # 4. SHOW INTRO (This will now run every time because of the fix in Section 11)
     show_cinematic_intro()
 
     # 5. Onboarding Gate
@@ -2472,12 +2466,10 @@ def main():
         return 
 
     # 6. APP ROUTING
-    # Sidebar Setup
     with st.sidebar:
         st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt</h1>", unsafe_allow_html=True)
         render_live_clock()
         
-        # Navigation
         nav = option_menu(
             menu_title=None,
             options=["Home", "Scheduler", "Calendar", "Chat With AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
@@ -2490,11 +2482,9 @@ def main():
             }
         )
         
-        # Audio Player
         st.markdown("---")
         music = st.selectbox("🎧 Focus Sound", ["Off", "Rain", "Binaural", "Lofi"], label_visibility="collapsed")
         if music != "Off":
-             # Placeholder for audio logic
              st.caption(f"Playing: {music}")
 
     # Page Logic
