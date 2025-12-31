@@ -537,7 +537,8 @@ def show_cinematic_intro():
     Forces the large 1080x1386 logo to fit inside the screen.
     """
     
-    # st.session_state['splash_played'] = False # Uncomment to test again
+    # Uncomment the next line ONLY for testing (to see intro every reload)
+    # st.session_state['splash_played'] = False 
     
     if not st.session_state.get('splash_played', False):
         
@@ -547,20 +548,27 @@ def show_cinematic_intro():
             with open("logo_data.txt", "r") as f:
                 raw_svg = f.read()
                 
-                # A. Remove XML header (<?xml...>)
+                # A. Remove XML header (<?xml...>) to prevent HTML errors
                 clean_svg = re.sub(r'<\?xml.*?>', '', raw_svg)
+                clean_svg = re.sub(r'<!DOCTYPE.*?>', '', clean_svg)
                 
-                # B. CRITICAL: Replace the opening <svg> tag with one that scales correctly
-                # We overwrite the original width/height with a viewBox
-                svg_content = re.sub(
-                    r'<svg.*?>', 
-                    '<svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet">', 
-                    clean_svg, 
-                    count=1, 
-                    flags=re.DOTALL
-                )
+                # B. CRITICAL FIX: Inject the correct scaling box
+                # We replace the opening <svg...> tag with one that forces resizing
+                if "<svg" in clean_svg:
+                    svg_content = re.sub(
+                        r'<svg.*?>', 
+                        # This tells the browser: "The image is 1080x1386, but shrink it to fit!"
+                        '<svg viewBox="0 0 1080 1386" preserveAspectRatio="xMidYMid meet">', 
+                        clean_svg, 
+                        count=1, 
+                        flags=re.DOTALL
+                    )
+                else:
+                    # Fallback if regex fails
+                    svg_content = clean_svg
                 
         except FileNotFoundError:
+            st.error("⚠️ System Error: 'logo_data.txt' not found.")
             st.session_state['splash_played'] = True
             return
 
@@ -584,15 +592,16 @@ def show_cinematic_intro():
 
                 .intro-wrapper {{
                     display: flex; flex-direction: column; align-items: center;
-                    width: 100%; max-width: 400px; /* Constraints the container width */
+                    width: 100%; 
+                    max-width: 400px; /* Constraints width on large screens */
                     animation: fadeOut 1s ease-in-out 6s forwards;
                 }}
 
                 /* LOGO STYLING */
                 svg {{
-                    width: 100%; /* Fills the max-width container */
+                    width: 100%; /* Force it to fit container */
                     height: auto;
-                    max-height: 50vh; /* Prevents it from being too tall on mobile */
+                    max-height: 60vh; /* Never taller than 60% of screen */
                     filter: drop-shadow(0 0 0px #4061FD);
                     animation: glowPulse 2s ease-out 3.5s forwards;
                 }}
@@ -601,20 +610,20 @@ def show_cinematic_intro():
                 path {{
                     fill-opacity: 0; 
                     stroke: #4061FD;
-                    stroke-width: 3; /* Thicker line for visibility */
-                    stroke-dasharray: 4000;
-                    stroke-dashoffset: 4000;
+                    stroke-width: 3;
+                    stroke-dasharray: 5000;
+                    stroke-dashoffset: 5000;
                     stroke-linecap: round;
                     animation: drawLine 3.5s cubic-bezier(0.65, 0, 0.35, 1) forwards,
                                revealColor 1.5s ease 3.2s forwards;
                 }}
 
                 .brand-text {{
-                    margin-top: 20px;
+                    margin-top: 25px;
                     font-family: 'Orbitron', sans-serif;
                     color: white;
                     font-size: 24px;
-                    letter-spacing: 8px;
+                    letter-spacing: 10px;
                     opacity: 0;
                     transform: translateY(20px);
                     animation: textUp 1s ease 3.5s forwards;
@@ -650,7 +659,6 @@ def show_cinematic_intro():
             
         placeholder.empty()
         st.session_state['splash_played'] = True
-
 
 # --- 12. AI CONTEXT GENERATOR (The "Brain Dump") ---
 def get_system_context():
