@@ -1528,162 +1528,76 @@ def create_mission_report(user_name, level, xp, history):
     
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 13. PAGE: HOME (Dashboard) ---
-def page_home():
-    # 1. Dynamic Greeting
-    ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
-    hr = ist_now.hour
-    
-    if 5 <= hr < 12: greeting = "Good Morning"
-    elif 12 <= hr < 17: greeting = "Good Afternoon"
-    elif 17 <= hr < 22: greeting = "Good Evening"
-    else: greeting = "Working Late?"
-
-    quotes = [
-        "Small steps every day lead to big results.", 
-        "Focus on being productive instead of busy.", 
-        "Your future is created by what you do today.", 
-        "Discipline is choosing between what you want now and what you want most."
-    ]
-    random_sub = random.choice(quotes)
-
-    # 2. Hero Section (Weather + Greeting)
-    st.markdown("""
-    <style>
-        .hero-box {
-            background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
-            border-radius: 16px;
-            padding: 24px;
-            border: 1px solid rgba(255,255,255,0.1);
-            margin-bottom: 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-    </style>
+def ui_grid_card(title, icon, subtitle, accent):
+    """Helper function to create the grid squares in the home page"""
+    st.markdown(f"""
+        <div style="background: #161616; border: 1px solid #222; padding: 20px; border-radius: 16px; margin-bottom: 12px; transition: 0.3s;">
+            <div style="font-size: 28px; margin-bottom: 8px;">{icon}</div>
+            <div style="font-weight: 700; color: white; font-size: 14px;">{title}</div>
+            <div style="font-size: 11px; color: {accent}; opacity: 0.8; font-weight: 600;">{subtitle}</div>
+        </div>
     """, unsafe_allow_html=True)
 
-    c_text, c_weather = st.columns([3, 1])
-    
-    with c_text:
-        st.markdown(f'<div class="big-title">{greeting}, {st.session_state["user_name"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="opacity:0.8; font-size:16px;">{random_sub}</div>', unsafe_allow_html=True)
-    
-    with c_weather:
-        city = st.session_state.get('user_city', 'Jaipur')
-        temp, desc = get_real_time_weather(city)
-        st.markdown(f"""
-        <div style="text-align:right; animation: fadeIn 2s;">
-            <div style="font-size:26px; font-weight:700; color:var(--accent);">{temp}</div>
-            <div style="font-size:13px; opacity:0.9;">{desc}</div>
-            <div style="font-size:11px; opacity:0.6;">{ist_now.strftime('%H:%M')}</div>
-        </div>
-        """, unsafe_allow_html=True)
+# --- 13. PAGE: HOME (Dashboard) ---
+def page_home():
 
+    st.markdown(f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="font-size: 40px; background: #1A1A1A; border-radius: 50%; padding: 10px; border: 1px solid #333;">
+                    {st.session_state.get('user_avatar', '🏹')}
+                </div>
+                <div>
+                    <h2 style="margin:0; font-size: 22px; font-weight: 800; color: white;">{st.session_state['user_name']}</h2>
+                    <p style="margin:0; color: #B5FF5F; font-size: 12px; font-weight: 600;">LEVEL {st.session_state['user_level']} • {st.session_state['user_xp']} XP</p>
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 18px; font-weight: 700; color: white;">{datetime.datetime.now().strftime('%H:%M')}</div>
+                <div style="font-size: 11px; opacity: 0.5;">{datetime.datetime.now().strftime('%d %b')}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # 2. EMOTIONAL PULSE (Emotional Support Feature)
+    with st.container():
+        st.markdown("<p style='font-size: 14px; font-weight: 600; margin-bottom: 10px; opacity: 0.8;'>How are you feeling today?</p>", unsafe_allow_html=True)
+        cols = st.columns(5)
+        emojis = ["🔥", "😊", "😐", "😔", "😫"]
+        moods = ["Energized", "Good", "Okay", "Low", "Burnt Out"]
+        
+        for i, col in enumerate(cols):
+            if col.button(emojis[i], help=moods[i], use_container_width=True):
+                st.session_state['current_mood'] = moods[i]
+                if moods[i] in ["Low", "Burnt Out"]:
+                    st.toast(f"I hear you. Let's take it slow today.", icon="🫂")
+                else:
+                    st.toast(f"Love that energy! Let's crush it.", icon="🚀")
+
+    # 3. MISSION CARD (Upcoming Task)
     st.write("")
-
-    # 3. Level Progress
-    curr_xp = st.session_state.get('user_xp', 0)
-    lvl = st.session_state.get('user_level', 1)
-    next_xp = lvl * 1000
-    lvl_progress = curr_xp - ((lvl - 1) * 1000)
-    pct = min(100, max(0, (lvl_progress / 1000) * 100))
-    
-    c_lvl, c_focus = st.columns([2, 1])
-    
-    with c_lvl:
-        st.markdown(f"""
-        <div class="css-card">
-            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                <span style="font-weight:700; font-size:18px;">Productivity Level: {lvl}</span>
-                <span style="color:var(--accent); font-weight:600;">{int(lvl_progress)} / 1000 XP</span>
-            </div>
-            <div style="width:100%; background:#333; height:8px; border-radius:4px; overflow:hidden;">
-                <div style="height:100%; width:{pct}%; background: linear-gradient(90deg, var(--accent), #00E5FF);"></div>
-            </div>
-            <div style="margin-top:8px; font-size:12px; opacity:0.6;">Keep consistent to reach the next level.</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with c_focus:
-        # Focus Widget
-        with st.container(border=True):
-            st.caption("🎯 MAIN FOCUS")
-            curr_obj = st.session_state.get('current_objective', 'Finish Tasks')
-            st.markdown(f"**{curr_obj}**")
-            if st.button("Edit Focus"):
-                with st.popover("Set New Focus"):
-                    n_obj = st.text_input("Goal", value=curr_obj)
-                    if st.button("Save"):
-                        st.session_state['current_objective'] = n_obj
-                        st.rerun()
-
-    # 4. Quick Dashboard Grid
-    c1, c2, c3 = st.columns(3)
-    
-    # Logic for Next Task
     slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
     pending = [s for s in slots if not s['Done']]
-    next_task = pending[0]['Activity'] if pending else "All Caught Up"
-    next_time = pending[0]['Time'] if pending else "--:--"
-
-    with c1:
+    
+    if pending:
+        next_t = pending[0]
         st.markdown(f"""
-        <div class="css-card" style="height: 160px; display:flex; flex-direction:column; justify-content:center;">
-            <div style="font-size:11px; opacity:0.6; text-transform:uppercase; letter-spacing:1px;">NEXT UP</div>
-            <div style="font-size:20px; font-weight:700; margin: 5px 0;">{next_task}</div>
-            <div style="font-size:24px; color:var(--accent); font-family:monospace;">{next_time}</div>
+        <div style="background: linear-gradient(90deg, #1E1E1E 0%, #121212 100%); border-left: 4px solid #B5FF5F; padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+            <div style="color: #888; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">NEXT MISSION • {next_t['Time']}</div>
+            <div style="font-size: 18px; font-weight: 700; margin-top: 6px; color: white;">{next_t['Activity']}</div>
         </div>
         """, unsafe_allow_html=True)
 
-    with c2:
-        with st.container(border=True):
-            st.markdown("**⚡ Quick Actions**")
-            if st.button("➕ Add Task", use_container_width=True):
-                st.toast("Use the Scheduler tab to manage tasks.", icon="ℹ️")
-            if st.button("🧘 Mindfulness", use_container_width=True):
-                st.session_state['show_breathing'] = True
-                st.rerun()
-            if st.button("🤖 Ask AI", use_container_width=True):
-                st.session_state['page_mode'] = 'chat'
-                st.rerun()
-
-    streak = st.session_state.get('streak', 1)
-    with c3:
-        st.markdown(f"""
-        <div class="css-card" style="height: 160px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
-            <div style="font-size:36px;">🔥</div>
-            <div style="font-size:28px; font-weight:800;">{streak} Days</div>
-            <div style="font-size:12px; opacity:0.6;">CURRENT STREAK</div>
-            <div style="font-size:11px; color:var(--accent); margin-top:4px;">Consistency is key!</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # 5. Breathing Exercise Overlay
-    if st.session_state.get('show_breathing', False):
-        st.markdown("---")
-        st.markdown("### 🧘 Mindfulness Pause")
-        st.markdown("""
-        <div style="display:flex; justify-content:center; margin: 20px 0;">
-            <div style="
-                width: 100px; height: 100px; 
-                background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
-                border-radius: 50%;
-                animation: breath 4s infinite ease-in-out;
-            "></div>
-        </div>
-        <div style="text-align:center; font-family:monospace; opacity:0.7;">INHALE ... HOLD ... EXHALE</div>
-        <style>
-            @keyframes breath {
-                0% { transform: scale(0.8); opacity: 0.4; }
-                50% { transform: scale(1.6); opacity: 0.9; }
-                100% { transform: scale(0.8); opacity: 0.4; }
-            }
-        </style>
-        """, unsafe_allow_html=True)
-        if st.button("End Session"):
-            st.session_state['show_breathing'] = False
-            st.rerun()
+    # 4. FEATURE GRID (Study Zone style)
+    st.markdown("<p style='font-size: 16px; font-weight: 700; margin-bottom: 15px;'>My Systems</p>", unsafe_allow_html=True)
+    
+    g1, g2 = st.columns(2)
+    with g1:
+        ui_grid_card("Daily Calendar", "📅", "View Schedule", "#00E5FF")
+        ui_grid_card("Mindfulness", "🧘", "Breathe & Reset", "#D050FF")
+    with g2:
+        ui_grid_card("Performance", "📈", "Check Progress", "#B5FF5F")
+        ui_grid_card("Library", "📚", "Saved Resources", "#FFD700")
 
 # --- 14. PAGE: ABOUT (System Info) ---
 def page_about():
@@ -2244,55 +2158,61 @@ def page_help():
             st.write(a)
 
 # --- 11. VISUAL STYLING (Restores the missing function) ---
-def inject_custom_css():
-    """
-    Injects global CSS styles to handle the theme (Dark/Light) and colors.
-    """
-    # 1. Get Theme Settings
-    theme_color = st.session_state.get('theme_color', 'Green (Default)')
-    theme_mode = st.session_state.get('theme_mode', 'Dark')
-    
-    # 2. Define Palette
-    colors = {"Green (Default)": "#B5FF5F", "Blue": "#00E5FF", "Red": "#FF4B4B", "Grey": "#A0A0A0"}
-    accent = colors.get(theme_color, "#B5FF5F")
-    
-    # 3. Define Backgrounds based on Mode
-    if theme_mode == "Light":
-        main_bg = "#FFFFFF"
-        sidebar_bg = "#F8F9FB"
-        card_bg = "#FFFFFF"
-        text_color = "#1A1A1A"
-        btn_text = "#000000"
-    else:
-        main_bg = "#0E1117"
-        sidebar_bg = "#262730"
-        card_bg = "#1E1E1E"
-        text_color = "#FAFAFA"
-        btn_text = "#FFFFFF"
-
-    # 4. Inject CSS
-    st.markdown(f"""
+def inject_modern_ui_css():
+    st.markdown("""
         <style>
-            :root {{ --accent: {accent}; --text: {text_color}; --card-bg: {card_bg}; }}
-            .stApp {{ background: {main_bg} !important; color: {text_color} !important; }}
-            section[data-testid="stSidebar"] {{ background: {sidebar_bg} !important; }}
+            /* Main Background & Font */
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
             
-            /* Clean Buttons */
-            div.stButton > button {{ 
-                background-color: {card_bg}; border: 1px solid rgba(255,255,255,0.1); 
-                color: {btn_text} !important; border-radius: 8px; 
-            }}
-            div.stButton > button:hover {{ border-color: {accent}; color: {accent} !important; }}
+            .stApp {
+                background-color: #000000 !important;
+                font-family: 'Inter', sans-serif;
+            }
+
+            /* Hide Streamlit Header/Footer for clean App look */
+            header, footer, #MainMenu {visibility: hidden;}
+
+            /* Custom Card Styling */
+            .css-card {
+                background: #121212;
+                border-radius: 15px;
+                padding: 20px;
+                border: 1px solid #222;
+                margin-bottom: 15px;
+            }
+
+            /* Title Styling */
+            .big-title {
+                font-weight: 800;
+                font-size: 28px;
+                letter-spacing: -0.5px;
+                margin-bottom: 20px;
+            }
+
+            /* Adjust Column Padding for Mobile */
+            [data-testid="stHorizontalBlock"] {
+                gap: 10px !important;
+            }
             
-            /* Primary Button */
-            div.stButton > button[kind="primary"] {{ 
-                background-color: {accent} !important; border: none; 
-                color: #000 !important; font-weight: bold;
-            }}
-            
-            /* Remove white backgrounds from columns */
-            div[data-testid="column"] {{ background: transparent !important; }}
+            /* Floating Action Button for AI Chat */
+            .fab {
+                position: fixed;
+                bottom: 85px;
+                right: 20px;
+                width: 60px;
+                height: 60px;
+                background: #B5FF5F;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 15px rgba(181, 255, 95, 0.4);
+                z-index: 1000;
+                cursor: pointer;
+            }
         </style>
+        
+        <div class="fab">🤖</div>
     """, unsafe_allow_html=True)
 
 # --- 11. CINEMATIC SPLASH SCREEN (V9: Bulletproof Scaling & Glitch) ---
@@ -2445,55 +2365,59 @@ def show_cinematic_intro():
 # --- 20. MAIN APPLICATION ROUTER ---
 
 def main():
-    # 1. Initialize Session State
     initialize_session_state()
-    st.session_state['splash_played'] = False
-    
-    # 2. Run Background Tasks
+    inject_modern_ui_css()
     check_reminders()
     render_alarm_ui()
-
-    # 3. Load Styles
-    inject_custom_css()
-    show_cinematic_intro()
-
-    # 5. Onboarding Gate
+    
     if not st.session_state['onboarding_complete']:
         page_onboarding()
         return 
 
-    # 6. APP ROUTING
-    with st.sidebar:
-        st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
-        render_live_clock()
-        
-        nav = option_menu(
-            menu_title=None,
-            options=["Home", "Scheduler", "Calendar", "Chat With AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
-            icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
-            default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": "transparent"},
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin":"2px"},
-                "nav-link-selected": {"background-color": "var(--primary-color)", "color": "#000"},
-            }
-        )
-        
-        st.markdown("---")
-        music = st.selectbox("🎧 Focus Sound", ["Off", "Rain", "Binaural", "Lofi"], label_visibility="collapsed")
-        if music != "Off":
-             st.caption(f"Playing: {music}")
+    # --- NEW BOTTOM NAVIGATION ---
+    # We place this at the very top of the script but style it to the bottom
+    selected = option_menu(
+        menu_title=None,
+        options=["Home", "Tasks", "AI Chat", "Focus", "Stats"],
+        icons=["house-fill", "clipboard-check-fill", "chat-dots-fill", "clock-fill", "bar-chart-fill"],
+        menu_icon="cast",
+        default_index=0,
+        orientation="horizontal",
+        styles={
+            "container": {
+                "padding": "0!important", 
+                "background-color": "#121212", 
+                "position": "fixed", 
+                "bottom": "0", 
+                "z-index": "999",
+                "border-top": "1px solid #333"
+            },
+            "icon": {"color": "#B5FF5F", "font-size": "20px"}, 
+            "nav-link": {
+                "font-size": "12px", 
+                "text-align": "center", 
+                "margin": "0px", 
+                "color": "#888",
+                "--hover-color": "#222"
+            },
+            "nav-link-selected": {"background-color": "transparent", "color": "#B5FF5F"},
+        }
+    )
 
-    # Page Logic
-    if nav == "Home": page_home()
-    elif nav == "Scheduler": page_scheduler()
-    elif nav == "Calendar": page_calendar()
-    elif nav == "Chat With AI": page_ai_assistant()
-    elif nav == "Timer": page_timer()  
-    elif nav == "Analytics": page_dashboard()
-    elif nav == "Help Center": page_help()
-    elif nav == "About": page_about()
-    elif nav == "Settings": page_settings()
+    # Route Pages based on Bottom Nav
+    if selected == "Home":
+        page_home()
+    elif selected == "Tasks":
+        page_scheduler()
+    elif selected == "AI Chat":
+        page_ai_assistant()
+    elif selected == "Focus":
+        page_timer()
+    elif selected == "Stats":
+        page_dashboard()
+
+    # Add extra padding at the bottom so content isn't hidden by the navbar
+    st.markdown('<div style="height: 100px;"></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
