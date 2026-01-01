@@ -798,47 +798,31 @@ def check_reminders():
                 </script>
             """, unsafe_allow_html=True)
 
-# --- REPLACES THE OLD generate_visual_intel FUNCTION ---
+# --- generate_visual_intel function---
+
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Pollinations.ai.
-    ✅ 100% FREE
-    ✅ NO API KEY REQUIRED
+    Generates a URL for the image.
+    ✅ Saves perfectly to Google Sheets (Short URL)
+    ✅ 100% FREE & Reliable
     """
     import urllib.parse
-    import urllib.request
-    import base64
     import random
 
     try:
-        # 1. Enhance the prompt to make it look professional automatically
-        # We add keywords like '8k', 'cinematic' to ensure good quality
+        # 1. Enhance Prompt
         enhanced_prompt = f"{prompt_text}, cinematic lighting, photorealistic, 8k, highly detailed, sharp focus"
-        
-        # 2. Prepare the URL (Safe for web transmission)
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         
-        # 3. Random seed ensures you get a new image every time, not the same one
+        # 2. Create Random Seed (This ensures the image stays the same when you reload)
         seed = random.randint(1, 99999)
         
-        # 4. The Magic URL (No API Key needed here!)
+        # 3. Construct the URL
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=576&seed={seed}&nologo=true"
-
-        # 5. Download the image
-        req = urllib.request.Request(
-            image_url, 
-            headers={'User-Agent': 'Mozilla/5.0'} # Pretends to be a standard browser
-        )
         
-        with urllib.request.urlopen(req, timeout=20) as response:
-            image_bytes = response.read()
-            
-        # 6. Return the image data to your app
-        if image_bytes:
-            return base64.b64encode(image_bytes).decode('utf-8')
+        return image_url
             
     except Exception as e:
-        print(f"Image Gen Error: {e}")
         return None
     
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
