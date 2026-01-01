@@ -220,7 +220,7 @@ def render_sidebar():
                     "text-align": "left", 
                     "margin":"0px", 
                     "--hover-color": "#f0f2f6",
-                    "color": "#262730"  # <--- THIS FIXES THE INVISIBLE TEXT
+                    "color": "#262730"  # <--- THIS LINE FIXES THE INVISIBLE TEXT
                 },
                 "nav-link-selected": {"background-color": "#262730", "color": "#B5FF5F", "border-left": "3px solid #B5FF5F"},
             }
