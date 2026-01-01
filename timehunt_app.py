@@ -794,10 +794,10 @@ def check_reminders():
                 </script>
             """, unsafe_allow_html=True)
 
-# --- NEW: AI IMAGE GENERATION ENGINE (Imagen 4.0) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Imagen 3.0) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 4.0 to generate images based on text prompts.
+    Uses Google's Imagen 3.0 to generate images based on text prompts.
     Cycles through API keys for robust connection.
     Returns: Base64 string of the image, or None if failed.
     """
@@ -814,8 +814,8 @@ def generate_visual_intel(prompt_text):
         st.error("Auth Error: No API Keys found.")
         return None
 
-    # Use the latest Imagen model available to your keys
-    imagen_model = 'imagen-4.0-generate-001'
+    # --- FIX: Use the stable Imagen 3.0 model ---
+    imagen_model = 'imagen-3.0-generate-001'
 
     for key in api_keys:
         if not isinstance(key, str): continue
@@ -828,7 +828,7 @@ def generate_visual_intel(prompt_text):
                 prompt=prompt_text,
                 config=types.GenerateImageConfig(
                     number_of_images=1,
-                    aspect_ratio="16:9" # cinematic look for productivity visuals
+                    aspect_ratio="16:9" 
                 )
             )
             
@@ -838,12 +838,10 @@ def generate_visual_intel(prompt_text):
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
                 return img_b64
             else:
-                 print(f"Key {key[:5]} worked but returned no image.")
                  continue
 
         except Exception as e:
             print(f"Image Gen Error on Key {key[:5]}: {e}")
-            # If 429 (Quota) or 404, try next key. Otherwise stop.
             if "429" in str(e) or "404" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 continue
             else:
@@ -1556,11 +1554,12 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Updated UI & Avatars) ---
+# --- 10. PAGE: AI COMPANION (Fixed Saving + Loading UI) ---
 
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import base64
+    import uuid
     
     # --- 1. SETUP AVATARS ---
     # User: Get from session state (Filename or Emoji)
@@ -1576,7 +1575,6 @@ def page_ai_assistant():
     def render_loading_state():
         """
         Renders the custom 'Thinking' UI inside the chat bubble.
-        Matches the requested style: Logo + Status Text.
         """
         # Get Logo Base64 for HTML embedding
         img_b64 = ""
@@ -1587,7 +1585,6 @@ def page_ai_assistant():
         except: pass
         
         # HTML for the "Thinking" state
-        # Shows the logo pulsing next to the text
         html_code = f"""
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
@@ -1618,6 +1615,9 @@ def page_ai_assistant():
         # B. Append User Message (Internal State)
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
         
+        # --- FIX: SAVE USER CHAT TO CLOUD ---
+        save_chat_to_cloud("user", prompt_text)
+        
         # C. DISPLAY USER MESSAGE IMMEDIATELY (Visual)
         with st.chat_message("user", avatar=user_av):
             st.write(prompt_text)
@@ -1629,7 +1629,7 @@ def page_ai_assistant():
             with status_box:
                 render_loading_state()
             
-            # E. GENERATE RESPONSE (The Heavy Lifting)
+            # E. GENERATE RESPONSE
             if generate_image:
                 # Image Mode
                 img_b64 = generate_visual_intel(prompt_text)
@@ -1639,13 +1639,20 @@ def page_ai_assistant():
                         "text": f"Visual intel generated for: '{prompt_text}'",
                         "image": img_b64
                     }
+                    # --- FIX: SAVE IMAGE METADATA TO CLOUD ---
+                    save_chat_to_cloud("model", f"[IMAGE GENERATED] {prompt_text}")
                 else:
-                    response_block = {"role": "model", "text": "⚠️ Visual generation failed. Please try a different prompt."}
+                    err_text = "⚠️ Visual generation failed. Please try a different prompt."
+                    response_block = {"role": "model", "text": err_text}
+                    save_chat_to_cloud("model", err_text)
             else:
                 # Text Mode
                 response_text, _ = perform_ai_analysis(prompt_text)
                 response_block = {"role": "model", "text": response_text}
                 
+                # --- FIX: SAVE AI TEXT TO CLOUD ---
+                save_chat_to_cloud("model", response_text)
+
                 # Audio Playback
                 try:
                     clean_text = response_text.replace('\n', ' ').replace('#', '').replace('*', '')[:200]
@@ -1656,7 +1663,7 @@ def page_ai_assistant():
             # F. CLEAR LOADING & UPDATE STATE
             status_box.empty() # Remove the "Thinking..." animation
             
-        # G. Save & Refresh
+        # G. Update History & Refresh
         st.session_state['chat_history'].append(response_block)
         st.rerun()
 
