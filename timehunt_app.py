@@ -493,8 +493,7 @@ def initialize_session_state():
         'user_goal': "Productivity", 
         'user_avatar': "🏹", 
         'xp_history': [], 
-        
-        # --- CHANGE HERE: Set default to Light ---
+    
         'theme_mode': 'Light', 
         'theme_color': 'Green (Default)'
     }
@@ -803,9 +802,8 @@ def check_reminders():
 # --- REPLACES THE OLD generate_visual_intel FUNCTION ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Hugging Face.
-    ✅ UPDATED: Uses 'Stable Diffusion 1.5' (Faster & More Reliable than SDXL)
-    ✅ Adds error reporting so you can see WHY it fails.
+    Generates images using Hugging Face (Router URL).
+    ✅ FIX: Updated URL to router.huggingface.co (Solves Error 410)
     """
     import requests
     import base64
@@ -815,32 +813,30 @@ def generate_visual_intel(prompt_text):
     hf_token = st.secrets.get("HF_TOKEN")
     if not hf_token: return None
 
-    # 2. SWITCHED MODEL: Using v1-5 because it loads much faster on free accounts
-    API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    # 2. NEW URL (The Fix for Error 410)
+    # We switched from 'api-inference' to 'router'
+    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {hf_token}"}
     
-    # 3. Enhance Prompt
     final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k"
 
     try:
         response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
         
-        # 4. Handle "Model Loading" Error (Common on Free Tier)
+        # Retry logic for model loading
         if response.status_code == 503:
-            # If model is loading, wait a bit and try one more time
-            with st.spinner("Waking up the AI model... (This happens on free tier)"):
-                time.sleep(5) # Wait 5 seconds
+            with st.spinner("Waking up AI..."):
+                time.sleep(4)
                 response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
 
         if response.status_code == 200:
+            # If it returns an image directly
             return base64.b64encode(response.content).decode('utf-8')
         else:
-            # Print the EXACT error to your app screen so we know what is wrong
-            st.warning(f"⚠️ Image Gen Error {response.status_code}: {response.text}")
+            st.warning(f"⚠️ HF Error {response.status_code}: {response.text}")
             return None
             
     except Exception as e:
-        st.error(f"Connection Error: {e}")
         return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
