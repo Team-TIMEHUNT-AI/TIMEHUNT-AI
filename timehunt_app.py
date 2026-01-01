@@ -37,7 +37,7 @@ def init_session_state():
         'theme_mode': 'Light',
         'theme_color': 'Venom Green (Default)',
         'current_objective': 'Initialize Protocol',
-        'onboarding_complete': False # Added to prevent onboarding logic errors
+        'onboarding_complete': False 
     }
     
     for key, value in defaults.items():
@@ -1547,7 +1547,6 @@ def main():
     # 1. Apply World-Class Theme Immediately
     inject_custom_css()
 
-    # 2. RUN AUTHENTICATION (Blocks access until logged in)
     if not handle_auth():
         return
 
@@ -1622,5 +1621,6 @@ def main():
     if st.session_state.get('active_alarm'):
         render_alarm_ui()
 
+# Move this to the far left (No Indentation)
 if __name__ == "__main__":
     main()
