@@ -800,99 +800,79 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- REPLACES THE OLD generate_visual_intel FUNCTION ---
+# --- FINAL STABLE VERSION (Official Library + Watermark) ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Hugging Face with RETRY LOGIC.
-    ✅ Retries if model is sleeping (Fixes intermittent 503 errors)
-    ✅ Includes Backup Model
-    ✅ Includes TimeHunt Watermark
+    Generates images using the Official Hugging Face Client.
+    ✅ Solves 404/410 Errors permanently (Library handles URLs).
+    ✅ Adds TimeHunt Watermark.
+    ✅ Uses 'Stable Diffusion v1.5' (Fast & Free).
     """
-    import requests
-    import base64
-    import io
-    import time
-    from PIL import Image, ImageDraw, ImageFont
+    # Imports inside function to avoid startup errors
+    try:
+        from huggingface_hub import InferenceClient
+        import base64
+        import io
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return None # Graceful fail if requirements missing
 
     # 1. Get Token
     hf_token = st.secrets.get("HF_TOKEN")
     if not hf_token: return None
 
-    # 2. Configuration: Primary & Backup Models
-    # We use the 'router' URL which is the new standard
-    MODELS = [
-        "https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5",
-        "https://router.huggingface.co/hf-inference/models/CompVis/stable-diffusion-v1-4"
-    ]
-    
-    headers = {"Authorization": f"Bearer {hf_token}"}
-    final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k, photorealistic"
-
-    # 3. Attempt Generation (Loop through models)
-    image_bytes = None
-    
-    for model_url in MODELS:
-        # Retry up to 3 times per model
-        for attempt in range(3):
-            try:
-                response = requests.post(model_url, headers=headers, json={"inputs": final_prompt})
-                
-                if response.status_code == 200:
-                    image_bytes = response.content
-                    break # Success! Exit retry loop
-                
-                elif response.status_code == 503:
-                    # Model is loading... Wait and retry
-                    with st.spinner(f"Waking up AI Brain... (Attempt {attempt+1}/3)"):
-                        time.sleep(5) # Wait 5 seconds
-                        continue
-                else:
-                    # Other error, try next model
-                    print(f"Error {response.status_code} on {model_url}")
-                    break
-            except:
-                break
-        
-        if image_bytes: break # If we got an image, stop checking other models
-
-    # 4. If all failed, return None
-    if not image_bytes:
-        return None
-
-    # --- WATERMARK LOGIC (Safe Mode) ---
     try:
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+        # 2. Setup Client (Auto-detects correct URL)
+        client = InferenceClient(token=hf_token)
+        
+        # 3. Generate Image
+        # We use a reliable model that works on free tier
+        image = client.text_to_image(
+            f"{prompt_text}, cinematic lighting, highly detailed, 8k",
+            model="runwayml/stable-diffusion-v1-5"
+        )
+        
+        # --- WATERMARK LOGIC ---
+        # Convert to RGBA for transparency
+        image = image.convert("RGBA")
         txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt_layer)
         
+        # Define Text & Font
         text = "TimeHunt AI  ∞ 🏹"
         
-        # Dynamic Font Size
+        # Dynamic Font Size (Scale with image)
         font_size = int(image.size[0] / 35)
-        try: font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
-        except: font = ImageFont.load_default()
-        
-        # Position
+        try:
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+
+        # Calculate Position (Bottom Right)
         bbox = draw.textbbox((0, 0), text, font=font)
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
         x = image.size[0] - text_w - 20
         y = image.size[1] - text_h - 20
-        
-        # Draw Shadow & Text
+
+        # Draw Shadow (Dark)
         draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
+        # Draw Main Text (White/Glassy)
         draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
         
-        # Final Export
-        watermarked = Image.alpha_composite(image, txt_layer).convert("RGB")
+        # Merge Watermark
+        watermarked = Image.alpha_composite(image, txt_layer)
+        watermarked = watermarked.convert("RGB") # Remove alpha for JPEG
+
+        # 4. Return as Base64
         buffered = io.BytesIO()
         watermarked.save(buffered, format="JPEG", quality=95)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
-        
+
     except Exception as e:
-        # If watermark fails, return the original image at least
-        print(f"Watermark Error: {e}")
-        return base64.b64encode(image_bytes).decode('utf-8')
+        # Debugging: Print error to console if something goes wrong
+        print(f"Gen Error: {e}")
+        return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
 
