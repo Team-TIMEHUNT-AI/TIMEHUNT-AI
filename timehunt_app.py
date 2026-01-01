@@ -811,9 +811,8 @@ def generate_visual_intel(prompt_text):
     import random
 
     try:
-        # 1. Use the User's prompt directly (Flux understands natural language well)
-        # We add 'high quality' just to ensure it looks good, but stop forcing 'photorealistic'
-        # forcing 'photorealistic' was why your quotes looked like weird photos.
+        # 1. Use the User's prompt directly
+        # We add 'high quality' just to ensure it looks good
         enhanced_prompt = f"{prompt_text}, high quality, detailed, 8k"
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         
@@ -821,7 +820,7 @@ def generate_visual_intel(prompt_text):
         seed = random.randint(1, 99999)
         
         # 3. Construct URL with FLUX model
-        # CRITICAL CHANGE: We added '&model=flux' at the end.
+        # CRITICAL: We use '&model=flux' for better results
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=576&seed={seed}&nologo=true&model=flux"
         
         return image_url
@@ -1535,7 +1534,6 @@ def page_calendar():
 
 # --- 10. PAGE: AI ASSISTANT ---
 
-# --- 10. PAGE: AI COMPANION (Auto-Detect Image Requests) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -1582,7 +1580,6 @@ def page_ai_assistant():
         Priority 2: AI Analysis (Smart but Slower)
         """
         # 1. KEYWORD CHECK (The "Force" Switch)
-        # If any of these words appear, we assume it's an image request immediately.
         triggers = ["generate image", "create image", "show me a picture", "generate a picture", 
                    "draw a", "make a visual", "visualize", "generate an image", "create a logo"]
         
@@ -1684,7 +1681,8 @@ def page_ai_assistant():
     with c_title:
         st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
     with c_mic:
-        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
+        # Key change: 'voice_input_btn' to fix duplicate error
+        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input_btn")
         if audio_data: st.toast("Voice received...", icon="🎧")
 
     # --- 6. RENDER HISTORY ---
@@ -1731,161 +1729,6 @@ def page_ai_assistant():
             process_message(prompt, force_image_mode=True)
         else:
             # Auto-detect takes over here
-            process_message(prompt, force_image_mode=False)
-
-    # --- 3. AUTO-DETECT LOGIC (The Brain) ---
-    def check_if_image_request(user_text):
-        """
-        Asks Gemini if the user wants an image. Returns True/False.
-        """
-        try:
-            # We use a lightweight check
-            from google import genai
-            from google.genai import types
-            
-            api_keys = st.session_state.get('gemini_api_keys', [])
-            if not api_keys: return False
-            
-            client = genai.Client(api_key=api_keys[0]) # Use first available key
-            
-            # Strict prompt to get a binary answer
-            detection_prompt = f"""
-            Analyze this user message: "{user_text}"
-            Does the user explicitly want to generate, create, show, or see an image, picture, photo, diagram, or visual?
-            Answer ONLY with 'YES' or 'NO'.
-            """
-            
-            response = client.models.generate_content(
-                model="gemini-2.0-flash-lite", # Use fastest model for this check
-                contents=detection_prompt
-            )
-            
-            return "YES" in response.text.strip().upper()
-        except:
-            return False
-
-    # --- 4. PROCESS MESSAGE LOGIC ---
-    def process_message(prompt_text, force_image_mode=False):
-        # A. Init Session
-        if not st.session_state.get('current_session_id'):
-            st.session_state['current_session_id'] = str(uuid.uuid4())
-            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4])
-
-        # B. Save User Message
-        st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        save_chat_to_cloud("user", prompt_text)
-        
-        # C. Render User Message
-        with st.chat_message("user", avatar=user_av):
-            st.write(prompt_text)
-
-        # D. DECIDE: IMAGE OR TEXT?
-        # If user didn't click the button, ask AI if it's an image request
-        is_image_gen = force_image_mode
-        if not is_image_gen:
-            # Show a mini "Thinking" state while deciding
-            with st.chat_message("assistant", avatar=ai_av):
-                with st.spinner("Analyzing request..."):
-                    is_image_gen = check_if_image_request(prompt_text)
-
-        # E. EXECUTE RESPONSE
-        with st.chat_message("assistant", avatar=ai_av):
-            status_box = st.empty()
-            
-            if is_image_gen:
-                # --- IMAGE PATH ---
-                with status_box:
-                    render_loading_state("Loading TimeHunt AI for image generation...")
-                
-                # Use Flux Model (Pollinations)
-                img_url = generate_visual_intel(prompt_text)
-                
-                if img_url:
-                    response_block = {
-                        "role": "model", 
-                        "text": f"Visual intel generated for: '{prompt_text}'",
-                        "image": img_url
-                    }
-                    save_chat_to_cloud("model", f"Visual intel generated for: '{prompt_text}'", image_b64=img_url)
-                else:
-                    err_text = "⚠️ Visual generation failed."
-                    response_block = {"role": "model", "text": err_text}
-                    save_chat_to_cloud("model", err_text)
-                    
-            else:
-                # --- TEXT PATH ---
-                with status_box:
-                    render_loading_state("Processing Intelligence...")
-                
-                response_text, _ = perform_ai_analysis(prompt_text)
-                response_block = {"role": "model", "text": response_text}
-                save_chat_to_cloud("model", response_text)
-                
-                # Audio
-                try:
-                    clean_text = response_text.replace('\n', ' ')[:200]
-                    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
-                    st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
-                except: pass
-
-            status_box.empty()
-            
-        st.session_state['chat_history'].append(response_block)
-        st.rerun()
-
-    # --- 5. RENDER PAGE HEADER ---
-    c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
-    with c_title:
-        st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
-    with c_mic:
-        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
-        if audio_data: st.toast("Voice received...", icon="🎧")
-
-    # --- 6. RENDER HISTORY ---
-    if not st.session_state.get('chat_history'):
-        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
-        st.markdown(f"<h3>Hello, {user_name}</h3>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a productive hourly schedule for today.")
-        if c2.button("🧠 Explain Topic", use_container_width=True): process_message("Explain a complex concept simply.")
-        
-        # NOTE: This button now explicitly forces image mode
-        if c3.button("🎨 Generate Visual", use_container_width=True): 
-            st.session_state['trigger_image_gen'] = True
-            st.toast("Type your image prompt below!", icon="🎨")
-            
-        if c4.button("📝 Study Tips", use_container_width=True): process_message("Give me scientific study techniques.")
-    else:
-        chat_container = st.container()
-        with chat_container:
-            for msg in st.session_state['chat_history']:
-                role = str(msg.get('role')).lower()
-                content_text = msg.get('text', '')
-                content_img = msg.get('image') 
-                
-                ui_role = "assistant" if role in ["model", "assistant", "ai"] else "user"
-                current_avatar = ai_av if ui_role == "assistant" else user_av
-
-                with st.chat_message(ui_role, avatar=current_avatar):
-                    if content_text: st.write(content_text)
-                    if content_img:
-                        if str(content_img).startswith("http"):
-                            st.image(content_img, use_container_width=True)
-                        else:
-                            try: st.image(base64.b64decode(content_img), use_container_width=True)
-                            except: pass 
-
-    # --- 7. INPUT FIELD ---
-    # Check if image mode was manually triggered via sidebar or button
-    manual_gen_mode = st.session_state.get('trigger_image_gen', False)
-    placeholder_txt = "Describe visual..." if manual_gen_mode else "Ask TimeHunt AI..."
-    
-    if prompt := st.chat_input(placeholder_txt):
-        if manual_gen_mode: 
-            st.session_state['trigger_image_gen'] = False
-            process_message(prompt, force_image_mode=True)
-        else:
-            # Normal send - Auto-detect will handle it!
             process_message(prompt, force_image_mode=False)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
