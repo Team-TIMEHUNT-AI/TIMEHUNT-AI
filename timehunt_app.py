@@ -27,53 +27,66 @@ def init_session_state():
 def get_cookie_manager():
     return stx.CookieManager(key="auth_cookie_manager")
 
-# --- 2. LOGIN/LOGOUT FUNCTIONS ---
+# --- REVISED LOGIN LOGIC (Connects to GSheets) ---
 def login_user(username, password, cookie_manager):
-    # !!! IMPORTANT: CONNECT YOUR GSHEETS VERIFICATION HERE !!!
-    # Example: if check_gsheets_credentials(username, password):
-    if username == "admin" and password == "123":  # <--- REPLACE THIS LINE WITH YOUR GSHEET CHECK
-        st.session_state.logged_in = True
-        st.session_state.user_info = username
-        # Save cookie for 30 days
-        cookie_manager.set("auth_token", username, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
-        st.success("Login Successful!")
-        time.sleep(1)
-        st.rerun()
-    else:
-        st.error("Incorrect Username or Password")
+    try:
+        # 1. Connect to your existing GSheets logic
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Sheet1", ttl=0)
+        
+        # 2. Verify Credentials
+        if not df.empty and 'Name' in df.columns:
+            # Match username and PIN (password)
+            user_row = df[(df['Name'] == username) & (df['PIN'].astype(str) == str(password))]
+            
+            if not user_row.empty:
+                st.session_state.logged_in = True
+                st.session_state.user_info = username
+                st.session_state.user_name = username
+                # Set cookie to remember user
+                cookie_manager.set("auth_token", username, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+                st.success("Login Successful!")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Incorrect Username or Password")
+    except Exception as e:
+        st.error(f"GSheets Connection Error: {e}")
 
-def logout_user():
-    cm = get_cookie_manager()
-    cm.delete("auth_token")
-    st.session_state.logged_in = False
-    st.session_state.user_info = None
-    st.rerun()
-
+# --- REVISED AUTH HANDLER (Restores Splash Intro) ---
 def handle_auth():
     init_session_state()
     cookie_manager = get_cookie_manager()
     
-    # Check if already logged in or if cookie exists
+    # 1. Check Cookies First (Silent Auto-Login)
+    cookie_val = cookie_manager.get("auth_token")
+    if cookie_val and not st.session_state.logged_in:
+        st.session_state.logged_in = True
+        st.session_state.user_info = cookie_val
+        st.session_state.user_name = cookie_val
+        return True
+
     if st.session_state.logged_in:
         return True
-        
-    time.sleep(0.1) # Stability wait
-    if cookie_manager.get("auth_token"):
-        st.session_state.logged_in = True
-        st.session_state.user_info = cookie_manager.get("auth_token")
-        st.session_state['user_name'] = st.session_state.user_info
 
-        return True
-        
-    # If not logged in, show Login Form
-    st.title("🔐 TimeHunt AI Login")
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.form_submit_button("Log In"):
-            login_user(username, password, cookie_manager)
+    # 2. Show the Comet Splash Intro BEFORE showing the login form
+    show_comet_splash()
+
+    # 3. Professional Login UI (Restored Style)
+    st.markdown('<div class="big-title" style="text-align:center;">🔐 TimeHunt AI Login</div>', unsafe_allow_html=True)
+    
+    with st.container():
+        # Using a form for stability
+        with st.form("professional_login"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Log In")
+            
+            if submit:
+                login_user(username, password, cookie_manager)
+                
     return False
-
 # --- 3. PROFESSIONAL STYLING ---
 def apply_professional_style():
     st.markdown("""
