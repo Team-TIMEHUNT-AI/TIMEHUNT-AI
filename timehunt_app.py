@@ -5,12 +5,6 @@ import re
 import streamlit as st
 import os
 from streamlit_option_menu import option_menu
-
-# --- PATH CONFIGURATION ---
-# Ensures assets load correctly regardless of where the script is run
-current_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(current_dir)
-
 import datetime
 import random
 import pandas as pd
@@ -22,6 +16,11 @@ import calendar
 from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import tempfile
+
+# --- PATH CONFIGURATION ---
+# Ensures assets load correctly regardless of where the script is run
+current_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(current_dir)
 
 # --- 1. LIVE CLOCK COMPONENT (Modern & Clean) ---
 def render_live_clock():
