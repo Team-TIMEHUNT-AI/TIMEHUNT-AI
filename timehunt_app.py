@@ -44,6 +44,9 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
+def get_cookie_manager():
+    return stx.CookieManager(key="auth_cookie_manager")
+
 # --- REVISED AUTH HANDLER (Restores Splash Intro) ---
 def handle_auth():
     init_session_state()
@@ -1623,4 +1626,4 @@ def main():
 
 # Move this to the far left (No Indentation)
 if __name__ == "__main__":
-    main()
+	main()
