@@ -8,3 +8,4 @@ st-gsheets-connection
 google-genai
 Pillow
 huggingface_hub
+requests
