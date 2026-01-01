@@ -18,11 +18,15 @@ import json
 import extra_streamlit_components as stx
 
 # --- 1. SESSION MANAGEMENT ---
+
 def init_session_state():
+    # Fix: Ensure all auth-related keys exist before checking them
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
+    if 'splash_played' not in st.session_state: 
+        st.session_state['splash_played'] = False
 
 def get_cookie_manager():
     return stx.CookieManager(key="auth_cookie_manager")
@@ -37,13 +41,17 @@ def login_user(username, password, cookie_manager):
         
         # 2. Verify Credentials
         if not df.empty and 'Name' in df.columns:
-            # Match username and PIN (password)
-            user_row = df[(df['Name'] == username) & (df['PIN'].astype(str) == str(password))]
+            # FIX: Ensure PIN column is string and remove trailing '.0' (e.g., "1234.0" -> "1234")
+            df['PIN'] = df['PIN'].astype(str).str.replace(r'\.0$', '', regex=True)
+            
+            # Match username and PIN
+            user_row = df[(df['Name'] == username) & (df['PIN'] == str(password))]
             
             if not user_row.empty:
                 st.session_state.logged_in = True
                 st.session_state.user_info = username
                 st.session_state.user_name = username
+                
                 # Set cookie to remember user
                 cookie_manager.set("auth_token", username, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
                 st.success("Login Successful!")
@@ -51,6 +59,9 @@ def login_user(username, password, cookie_manager):
                 st.rerun()
             else:
                 st.error("Incorrect Username or Password")
+        else:
+            st.error("Database Error: Could not read user data.")
+            
     except Exception as e:
         st.error(f"GSheets Connection Error: {e}")
 
@@ -71,22 +82,26 @@ def handle_auth():
         return True
 
     # 2. Show the Comet Splash Intro BEFORE showing the login form
+    # The updated init_session_state ensures this won't crash
     show_comet_splash()
 
     # 3. Professional Login UI (Restored Style)
     st.markdown('<div class="big-title" style="text-align:center;">🔐 TimeHunt AI Login</div>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align:center; color:#666;">Enter your Agent Credentials to access the command center.</p>', unsafe_allow_html=True)
     
-    with st.container():
-        # Using a form for stability
+    # Center the login form using columns
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
         with st.form("professional_login"):
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Log In")
+            submit = st.form_submit_button("Log In", use_container_width=True)
             
             if submit:
                 login_user(username, password, cookie_manager)
                 
     return False
+
 # --- 3. PROFESSIONAL STYLING ---
 def apply_professional_style():
     st.markdown("""
@@ -1585,10 +1600,9 @@ def main():
     
     # --- 3. GLOBAL ALARM SYSTEM ---
     alarm_container = st.container()
-    # check_reminders() # Uncomment if you have this function defined elsewhere
+    check_reminders() 
     with alarm_container:
-        # render_alarm_ui() # Uncomment if you have this function defined elsewhere
-        pass
+        render_alarm_ui() 
     
     # --- 4. SIDEBAR (Enhanced with Chat History) ---
     with st.sidebar:
@@ -1603,16 +1617,12 @@ def main():
 
         st.divider()
 
-        # --- NEW: CHAT HISTORY (ChatGPT Style) ---
+        # --- CHAT HISTORY (ChatGPT Style) ---
         st.subheader("🗂️ Chat History")
         
-        # Init History
+        # Init History if missing
         if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = [
-                {"id": 1, "title": "Physics Capstone Plan"}, 
-                {"id": 2, "title": "Mental Health Check"},
-                {"id": 3, "title": "Startup Budgeting"}
-            ]
+            st.session_state.chat_history = []
         
         # Edit Mode Toggle
         col_h1, col_h2 = st.columns([4,1])
@@ -1625,22 +1635,13 @@ def main():
                 st.session_state.chat_history = [c for c in st.session_state.chat_history if c['id'] not in st.session_state.get('selected_chats', [])]
                 st.rerun()
 
-        # List Chats
-        if 'selected_chats' not in st.session_state: st.session_state.selected_chats = []
+        # List Chats (Dummy logic for display, real logic in Chat Page)
+        # Note: Your full chat history is stored in session state, this visual list is for context switching
+        # For this version, we keep it simple as implemented in render_sidebar
         
-        for chat in st.session_state.chat_history:
-            if edit_mode:
-                if st.checkbox(chat['title'], key=f"chk_{chat['id']}"):
-                    if chat['id'] not in st.session_state.selected_chats:
-                        st.session_state.selected_chats.append(chat['id'])
-            else:
-                if st.button(f"💬 {chat['title']}", key=f"btn_{chat['id']}"):
-                    st.session_state.current_chat_context = chat['title']
-                    st.info(f"Loaded: {chat['title']}")
-
         st.divider()
         
-        # --- EXISTING: NAVIGATION ---
+        # --- NAVIGATION ---
         nav = option_menu(
             menu_title=None,
             options=["Home", "Scheduler", "AI Assistant", "Dashboard", "About", "Settings"], 
@@ -1648,48 +1649,31 @@ def main():
             default_index=0
         )
         
-        # --- EXISTING: MUSIC & TIMER (Moved to bottom for cleanliness) ---
+        # --- MUSIC & TIMER ---
         with st.expander("🎧 Focus Tools"):
             music_mode = st.selectbox("Frequency", ["Om Chanting", "Binaural Beats", "Flow State"], label_visibility="collapsed")
-            # st.audio logic here...
+            # st.audio logic would go here
             
             st.markdown("#### ⏱️ Timer")
-            # Simple Timer Placeholder
             st.write("25:00")
-            st.button("Start Timer")
+            if st.button("Start Focus Timer"):
+                st.toast("Timer Started")
 
-    # --- 5. PAGE ROUTING ---
+    # --- 5. PAGE ROUTING (CLEANED UP) ---
+    # This prevents double-rendering of content
+    
     if nav == "Home":
         page_home()
-        st.title("Home")
-        st.write("Welcome to the Professional TimeHunt Dashboard.")
-    elif nav == "Scheduler":
-    	page_scheduler()
-    elif nav == "AI Assistant":
-        page_ai_assistant()
-        st.markdown("I am your Guide. I can help with Mental Support, Technical Code, or Startup Advice.")
         
-        # Chat Interface
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
+    elif nav == "Scheduler":
+        page_scheduler()
 
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        if prompt := st.chat_input("Ask for guidance..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            with st.chat_message("assistant"):
-                # Call the Smart AI Function
-                response = get_smart_ai_response(prompt)
-                st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+    elif nav == "AI Assistant":
+        page_ai_assistant() 
+        # Note: Do not add extra chat code here, page_ai_assistant() handles it all.
 
     elif nav == "Dashboard":
-        # --- YOUR EXISTING DASHBOARD LOGIC PRESERVED ---
+        # --- DASHBOARD LOGIC ---
         try:
             from streamlit_gsheets import GSheetsConnection
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -1698,26 +1682,27 @@ def main():
             st.error(f"📡 Connection Failed: {e}")
             st.stop()
 
-        # Update Data
+        # Update Data to GSheets
         current_user = st.session_state['user_name']
         current_xp = st.session_state['user_xp']
         today_str = datetime.date.today().strftime("%Y-%m-%d")
 
-        # Create basic dataframe if empty
         if df.empty:
             df = pd.DataFrame(columns=["UserID", "Name", "XP", "League", "Avatar", "LastActive"])
 
-        # (Your Logic to Update GSheets goes here - Simplified for brevity)
-        # ...
-        
-        # UI for Dashboard
+        # Display Stats
         st.title("🏆 Global Leaderboard")
         col1, col2 = st.columns([2, 1])
         
         with col1:
             st.markdown("### Top Hunters")
-            # Render your leaderboard rows here...
-            st.info("Leaderboard data loaded from GSheets.")
+            if not df.empty and 'XP' in df.columns:
+                 # Sort by XP
+                 df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
+                 df_sorted = df.sort_values(by='XP', ascending=False).head(5)
+                 st.dataframe(df_sorted[['Name', 'XP', 'League']], use_container_width=True, hide_index=True)
+            else:
+                 st.info("No data available.")
             
         with col2:
             st.markdown("### Your Stats")
@@ -1727,9 +1712,10 @@ def main():
                 st.success("Report Generated!")
 
     elif nav == "About":
-        st.write("About Page")
+        page_about() # Calls the function defined earlier
+
     elif nav == "Settings":
-        st.write("Settings Page")
+        page_settings() # Calls the function defined earlier
 
 if __name__ == "__main__":
     main()
