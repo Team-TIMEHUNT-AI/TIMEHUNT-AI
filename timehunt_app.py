@@ -138,24 +138,24 @@ def apply_professional_style():
         </style>
     """, unsafe_allow_html=True)
 
-# --- 4. REDESIGNED MAIN SIDEBAR (FIXED) ---
+# --- 4. REDESIGNED MAIN SIDEBAR (FIXED VISIBILITY) ---
 def render_sidebar():
     with st.sidebar:
         # 1. HEADER
         st.markdown(f"### 🏹 Agent: **{st.session_state.get('user_name', 'Hunter')}**")
         
-        # 2. FOCUS TOOLS (Fixed Music & Timer)
+        # 2. FOCUS TOOLS (Top)
         with st.expander("🎧 Focus Tools & Timer", expanded=True):
-            # --- MUSIC PLAYER ---
+            # Music
             music_map = {
                 "Om Chanting": "om.mp3", 
                 "Binaural Beats": "binaural.mp3", 
                 "Flow State": "flute.mp3",
-                "Rainfall": "rain.mp3" # Added Rain
+                "Rainfall": "rain.mp3" 
             }
             selected_track = st.selectbox("Frequency", list(music_map.keys()), label_visibility="collapsed")
             
-            # Check if file exists before playing to prevent error
+            # Audio Player
             audio_file = music_map[selected_track]
             if os.path.exists(audio_file):
                 st.audio(audio_file, format="audio/mp3", loop=True)
@@ -164,12 +164,11 @@ def render_sidebar():
 
             st.markdown("---")
 
-            # --- REAL HTML TIMER (Restored) ---
-            # This HTML/JS block creates a real countdown that doesn't freeze the app
+            # Timer (HTML/JS)
             timer_html = """
             <style>
-                .timer-box { background: #111; color: #B5FF5F; font-family: monospace; font-size: 28px; text-align: center; border-radius: 8px; padding: 5px; border: 1px solid #333; margin-bottom: 5px; }
-                .btn-grid { display: flex; gap: 5px; }
+                .timer-box { background: #111; color: #B5FF5F; font-family: monospace; font-size: 24px; text-align: center; border-radius: 8px; padding: 5px; border: 1px solid #333; margin-top: 10px; }
+                .btn-grid { display: flex; gap: 5px; margin-top: 5px; }
                 .btn { flex: 1; padding: 5px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }
                 .btn-start { background: #B5FF5F; color: black; }
                 .btn-reset { background: #333; color: white; }
@@ -183,11 +182,11 @@ def render_sidebar():
                 function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
             </script>
             """
-            components.html(timer_html, height=120)
+            components.html(timer_html, height=140)
         
         st.divider()
 
-        # 3. MAIN NAVIGATION (Ensured Visibility)
+        # 3. MAIN NAVIGATION (Fixed Colors)
         selected_page = option_menu(
             menu_title=None,
             options=[
@@ -216,7 +215,13 @@ def render_sidebar():
             styles={
                 "container": {"padding": "0!important", "background-color": "transparent"},
                 "icon": {"color": "#B5FF5F", "font-size": "16px"}, 
-                "nav-link": {"font-size": "15px", "text-align": "left", "margin":"0px", "--hover-color": "#262730"},
+                "nav-link": {
+                    "font-size": "16px", 
+                    "text-align": "left", 
+                    "margin":"0px", 
+                    "--hover-color": "#f0f2f6",
+                    "color": "#262730"  # <--- THIS FIXES THE INVISIBLE TEXT
+                },
                 "nav-link-selected": {"background-color": "#262730", "color": "#B5FF5F", "border-left": "3px solid #B5FF5F"},
             }
         )
