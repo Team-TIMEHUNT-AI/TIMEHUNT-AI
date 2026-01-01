@@ -800,72 +800,47 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- UPDATED GENERATE VISUAL INTEL (Debug Friendly) ---
+# --- REPLACES THE OLD generate_visual_intel FUNCTION ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Hugging Face (Stable Diffusion XL).
-    ✅ Debugs Secrets issues automatically.
+    Generates images using Hugging Face.
+    ✅ UPDATED: Uses 'Stable Diffusion 1.5' (Faster & More Reliable than SDXL)
+    ✅ Adds error reporting so you can see WHY it fails.
     """
     import requests
     import base64
+    import time
     
-    # 1. Try to find the token
-    # We use .get() so it returns None instead of crashing
+    # 1. Get Token
     hf_token = st.secrets.get("HF_TOKEN")
-    
-    # DEBUGGING: Check your terminal (black box) to see what keys exist!
-    if not hf_token:
-        print("⚠️ HF_TOKEN missing! Available keys:", st.secrets.keys())
-        # Fallback: Check if user put it under 'huggingface' section
-        if "huggingface" in st.secrets:
-             hf_token = st.secrets["huggingface"].get("token")
+    if not hf_token: return None
 
-    if not hf_token:
-        print("❌ Error: HF_TOKEN is definitely missing.")
-        return None
-
-    # 2. Setup API
-    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    # 2. SWITCHED MODEL: Using v1-5 because it loads much faster on free accounts
+    API_URL = "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {hf_token}"}
     
-    # 3. Enhance Prompt for Pro Quality
-    final_prompt = f"{prompt_text}, cinematic lighting, 8k, highly detailed, photorealistic, motivational style"
+    # 3. Enhance Prompt
+    final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k"
 
     try:
         response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
         
+        # 4. Handle "Model Loading" Error (Common on Free Tier)
+        if response.status_code == 503:
+            # If model is loading, wait a bit and try one more time
+            with st.spinner("Waking up the AI model... (This happens on free tier)"):
+                time.sleep(5) # Wait 5 seconds
+                response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+
         if response.status_code == 200:
             return base64.b64encode(response.content).decode('utf-8')
         else:
-            print(f"HF Error ({response.status_code}): {response.text}")
+            # Print the EXACT error to your app screen so we know what is wrong
+            st.warning(f"⚠️ Image Gen Error {response.status_code}: {response.text}")
             return None
             
     except Exception as e:
-        print(f"Connection Error: {e}")
-        return None
-
-    # Model: Stable Diffusion XL
-    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    
-    # Enhance prompt
-    final_prompt = f"{prompt_text}, cinematic lighting, 8k, highly detailed, photorealistic, motivational style"
-
-    try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
-        
-        if response.status_code == 200:
-            return base64.b64encode(response.content).decode('utf-8')
-        else:
-            print(f"HF Error: {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"Image Gen Error: {e}")
-        return None
-
-    except Exception as e:
-        print(f"Image Gen Error: {e}")
+        st.error(f"Connection Error: {e}")
         return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
