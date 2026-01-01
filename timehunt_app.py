@@ -800,12 +800,11 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- REPLACES THE OLD # --- REPLACES THE OLD generate_visual_intel FUNCTION ---
+# --- SOLUTION 1: Corrected Router URL ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Hugging Face and adds a 'TimeHunt AI' watermark.
-    ✅ Professional Watermark (Infinity ∞ + Arrow 🏹)
-    ✅ Google Gemini-style Transparency
+    Generates images using Hugging Face.
+    ✅ FIXED: Uses the correct '/hf-inference/' path to avoid 404 errors.
     """
     import requests
     import base64
@@ -817,79 +816,49 @@ def generate_visual_intel(prompt_text):
     hf_token = st.secrets.get("HF_TOKEN")
     if not hf_token: return None
 
-    # 2. Use Official Router URL
-    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    # 2. CORRECTED URL (Notice the '/hf-inference/' part)
+    API_URL = "https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5"
     headers = {"Authorization": f"Bearer {hf_token}"}
     
     final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k"
 
     try:
-        # 3. Generate Image
         response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
         
-        # Retry Logic (for 503 loading error)
+        # Retry logic for model loading
         if response.status_code == 503:
             with st.spinner("Waking up AI model..."):
                 time.sleep(4)
                 response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
 
         if response.status_code == 200:
-            # --- WATERMARK LOGIC STARTS HERE ---
-            
-            # A. Open Image from Bytes
-            image = Image.open(io.BytesIO(response.content))
-            
-            # B. Setup Draw Context
-            # Convert to RGBA to handle transparency
-            image = image.convert("RGBA")
+            # --- WATERMARK LOGIC ---
+            image = Image.open(io.BytesIO(response.content)).convert("RGBA")
             txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
             draw = ImageDraw.Draw(txt_layer)
             
-            # C. Define Watermark Text & Font
-            # Using Unicode symbols for Infinity and Arrow
+            # Text & Font
             text = "TimeHunt AI  ∞ 🏹"
-            
-            # Dynamic Font Size (Calculated based on image width)
-            width, height = image.size
-            font_size = int(width / 35) # Adjust divisor to change size
-            
-            try:
-                # Try to load a standard font
-                font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
-            except:
-                # Fallback if font file missing
-                font = ImageFont.load_default()
+            font_size = int(image.size[0] / 35)
+            try: font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+            except: font = ImageFont.load_default()
 
-            # D. Position (Bottom Right Corner)
-            # We use textbbox to get exact dimensions
+            # Position
             bbox = draw.textbbox((0, 0), text, font=font)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-            
-            margin = 20
-            x = width - text_w - margin
-            y = height - text_h - margin - 10
+            x, y = image.size[0] - (bbox[2] - bbox[0]) - 20, image.size[1] - (bbox[3] - bbox[1]) - 30
 
-            # E. Draw "Gemini Style" Watermark
-            # 1. Small Shadow (Black, Low Opacity) for readability on bright backgrounds
+            # Draw
             draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
-            
-            # 2. Main Text (White, High Opacity, Subtle Gradient look)
             draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
             
-            # F. Merge Layers
-            watermarked = Image.alpha_composite(image, txt_layer)
-            watermarked = watermarked.convert("RGB") # Convert back to RGB for JPEG saving
-
-            # --- WATERMARK LOGIC ENDS HERE ---
-
-            # 4. Convert back to Base64 for the App
+            # Save
+            watermarked = Image.alpha_composite(image, txt_layer).convert("RGB")
             buffered = io.BytesIO()
             watermarked.save(buffered, format="JPEG", quality=95)
             return base64.b64encode(buffered.getvalue()).decode('utf-8')
-            
+        
         else:
-            st.warning(f"⚠️ HF Error {response.status_code}: {response.text}")
+            st.warning(f"⚠️ Error {response.status_code}: {response.text}")
             return None
             
     except Exception as e:
