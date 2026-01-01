@@ -794,10 +794,11 @@ def check_reminders():
                 </script>
             """, unsafe_allow_html=True)
 
-# --- NEW: AI IMAGE GENERATION ENGINE (Fixed for your Model List) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Debug & Fast Mode) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 4.0 to generate images.
+    Uses Google's Imagen 4.0 (Fast) to generate images.
+    Includes on-screen debugging to show exactly why it fails.
     """
     try:
         from google import genai
@@ -812,38 +813,50 @@ def generate_visual_intel(prompt_text):
         st.error("Auth Error: No API Keys found.")
         return None
 
-    # --- FIX: Use the model explicitly listed in your scan logs ---
-    imagen_model = 'imagen-4.0-generate-001'
+    # We try the 'Fast' model first, then the standard one.
+    # 'Fast' is lighter and often works better on free tiers.
+    models_to_try = ['imagen-4.0-fast-generate-001', 'imagen-4.0-generate-001']
 
     for key in api_keys:
         if not isinstance(key, str): continue
+        
         try:
             client = genai.Client(api_key=key)
             
-            # Generate the image
-            response = client.models.generate_image(
-                model=imagen_model,
-                prompt=prompt_text,
-                config=types.GenerateImageConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9" 
-                )
-            )
-            
-            if response.generated_images:
-                img_bytes = response.generated_images[0].image.image_bytes
-                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                return img_b64
+            for model_name in models_to_try:
+                try:
+                    # Attempt Generation
+                    response = client.models.generate_image(
+                        model=model_name,
+                        prompt=prompt_text,
+                        config=types.GenerateImageConfig(
+                            number_of_images=1,
+                            aspect_ratio="16:9" 
+                        )
+                    )
+                    
+                    if response.generated_images:
+                        img_bytes = response.generated_images[0].image.image_bytes
+                        img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                        return img_b64
+                        
+                except Exception as model_err:
+                    # Print specific model error to console for debugging
+                    print(f"Failed on {model_name}: {model_err}")
+                    # If it's a 403 (Permission) or 429 (Quota), we might try the next model/key
+                    # But we also want to show the user if ALL fail.
+                    continue
 
-        except Exception as e:
-            # This will print the exact error to your app screen for debugging
-            print(f"Key Error: {e}")
-            if "429" in str(e) or "404" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                continue
-            else:
-                # If it's a different error, stop trying and return None
-                break
-                
+        except Exception as key_err:
+            print(f"Key Error: {key_err}")
+            continue
+
+    # If we reach here, ALL attempts failed.
+    # We will trigger a specific warning to tell you WHY.
+    st.warning("⚠️ Image Gen Failed. Common reasons for Free Keys:")
+    st.caption("1. '403 Permission Denied': Free keys often block Image Gen. You may need to add a billing card to Google Cloud (Pay-as-you-go).")
+    st.caption("2. 'Safety Filter': Your prompt might have triggered safety blocks.")
+    
     return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
