@@ -25,7 +25,7 @@ def init_session_state():
     if 'user_info' not in st.session_state: st.session_state.user_info = None
     if 'splash_played' not in st.session_state: st.session_state['splash_played'] = False
     
-    # 2. App Data Defaults (Fixes the KeyError Crash)
+    # 2. App Data Defaults (Prevents KeyError Crash)
     defaults = {
         'user_name': 'Hunter',
         'user_xp': 0,
@@ -45,9 +45,53 @@ def init_session_state():
             st.session_state[key] = value
 
 def get_cookie_manager():
+    # This was missing and caused the NameError
     return stx.CookieManager(key="auth_cookie_manager")
 
-# --- REVISED AUTH HANDLER (Restores Splash Intro) ---
+def login_user(username, password, cookie_manager):
+    try:
+        # 1. Connect to your existing GSheets logic
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Sheet1", ttl=0)
+        
+        # 2. Verify Credentials
+        if not df.empty and 'Name' in df.columns:
+            # FIX: Ensure PIN column is string and remove trailing '.0'
+            df['PIN'] = df['PIN'].astype(str).str.replace(r'\.0$', '', regex=True)
+            
+            # Match username and PIN
+            user_row = df[(df['Name'] == username) & (df['PIN'] == str(password))]
+            
+            if not user_row.empty:
+                st.session_state.logged_in = True
+                st.session_state.user_info = username
+                st.session_state.user_name = username
+                
+                # Set cookie to remember user
+                cookie_manager.set("auth_token", username, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+                st.success("Login Successful!")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Incorrect Username or Password")
+        else:
+            st.error("Database Error: Could not read user data.")
+            
+    except Exception as e:
+        st.error(f"GSheets Connection Error: {e}")
+
+def logout_user():
+    # This was missing and caused the Sidebar crash
+    st.session_state.logged_in = False
+    st.session_state.user_info = None
+    try:
+        cm = get_cookie_manager()
+        cm.delete("auth_token")
+    except:
+        pass
+    st.rerun()
+
 def handle_auth():
     init_session_state()
     cookie_manager = get_cookie_manager()
@@ -63,15 +107,14 @@ def handle_auth():
     if st.session_state.logged_in:
         return True
 
-    # 2. Show the Comet Splash Intro BEFORE showing the login form
-    # The updated init_session_state ensures this won't crash
+    # 2. Show the Comet Splash Intro
     show_comet_splash()
 
-    # 3. Professional Login UI (Restored Style)
+    # 3. Professional Login UI
     st.markdown('<div class="big-title" style="text-align:center;">🔐 TimeHunt AI Login</div>', unsafe_allow_html=True)
     st.markdown('<p style="text-align:center; color:#666;">Enter your Agent Credentials to access the command center.</p>', unsafe_allow_html=True)
     
-    # Center the login form using columns
+    # Center the login form
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         with st.form("professional_login"):
