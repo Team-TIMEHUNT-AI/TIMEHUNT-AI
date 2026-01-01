@@ -794,19 +794,17 @@ def check_reminders():
                 </script>
             """, unsafe_allow_html=True)
 
-# --- NEW: AI IMAGE GENERATION ENGINE (Imagen 3.0) ---
+# --- NEW: AI IMAGE GENERATION ENGINE (Fixed for your Model List) ---
 def generate_visual_intel(prompt_text):
     """
-    Uses Google's Imagen 3.0 to generate images based on text prompts.
-    Cycles through API keys for robust connection.
-    Returns: Base64 string of the image, or None if failed.
+    Uses Google's Imagen 4.0 to generate images.
     """
     try:
         from google import genai
         from google.genai import types
         import base64
     except ImportError:
-        st.error("System Error: Missing required libraries for image generation.")
+        st.error("System Error: Missing required libraries.")
         return None
 
     api_keys = st.session_state.get('gemini_api_keys', [])
@@ -814,8 +812,8 @@ def generate_visual_intel(prompt_text):
         st.error("Auth Error: No API Keys found.")
         return None
 
-    # --- FIX: Use the stable Imagen 3.0 model ---
-    imagen_model = 'imagen-3.0-generate-001'
+    # --- FIX: Use the model explicitly listed in your scan logs ---
+    imagen_model = 'imagen-4.0-generate-001'
 
     for key in api_keys:
         if not isinstance(key, str): continue
@@ -833,18 +831,17 @@ def generate_visual_intel(prompt_text):
             )
             
             if response.generated_images:
-                # Get raw bytes and convert to base64 for easy storage in session state
                 img_bytes = response.generated_images[0].image.image_bytes
                 img_b64 = base64.b64encode(img_bytes).decode('utf-8')
                 return img_b64
-            else:
-                 continue
 
         except Exception as e:
-            print(f"Image Gen Error on Key {key[:5]}: {e}")
+            # This will print the exact error to your app screen for debugging
+            print(f"Key Error: {e}")
             if "429" in str(e) or "404" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 continue
             else:
+                # If it's a different error, stop trying and return None
                 break
                 
     return None
