@@ -20,50 +20,28 @@ import extra_streamlit_components as stx
 # --- 1. SESSION MANAGEMENT ---
 
 def init_session_state():
-    # Fix: Ensure all auth-related keys exist before checking them
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    if 'user_info' not in st.session_state:
-        st.session_state.user_info = None
-    if 'splash_played' not in st.session_state: 
-        st.session_state['splash_played'] = False
-
-def get_cookie_manager():
-    return stx.CookieManager(key="auth_cookie_manager")
-
-# --- REVISED LOGIN LOGIC (Connects to GSheets) ---
-def login_user(username, password, cookie_manager):
-    try:
-        # 1. Connect to your existing GSheets logic
-        from streamlit_gsheets import GSheetsConnection
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="Sheet1", ttl=0)
-        
-        # 2. Verify Credentials
-        if not df.empty and 'Name' in df.columns:
-            # FIX: Ensure PIN column is string and remove trailing '.0' (e.g., "1234.0" -> "1234")
-            df['PIN'] = df['PIN'].astype(str).str.replace(r'\.0$', '', regex=True)
-            
-            # Match username and PIN
-            user_row = df[(df['Name'] == username) & (df['PIN'] == str(password))]
-            
-            if not user_row.empty:
-                st.session_state.logged_in = True
-                st.session_state.user_info = username
-                st.session_state.user_name = username
-                
-                # Set cookie to remember user
-                cookie_manager.set("auth_token", username, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
-                st.success("Login Successful!")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("Incorrect Username or Password")
-        else:
-            st.error("Database Error: Could not read user data.")
-            
-    except Exception as e:
-        st.error(f"GSheets Connection Error: {e}")
+    # 1. Auth States
+    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+    if 'user_info' not in st.session_state: st.session_state.user_info = None
+    if 'splash_played' not in st.session_state: st.session_state['splash_played'] = False
+    
+    # 2. App Data Defaults (Prevents KeyError)
+    defaults = {
+        'user_name': 'Hunter',
+        'user_xp': 0,
+        'user_level': 1,
+        'streak': 1,
+        'chat_history': [],
+        'timetable_slots': [],
+        'reminders': [],
+        'theme_mode': 'Light',
+        'theme_color': 'Venom Green (Default)',
+        'current_objective': 'Initialize Protocol'
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 # --- REVISED AUTH HANDLER (Restores Splash Intro) ---
 def handle_auth():
@@ -1567,7 +1545,6 @@ def get_smart_ai_response(prompt):
     return text
 
 # --- MAIN APP FUNCTION ---
-# --- MAIN APP FUNCTION ---
 def main():
     # 1. Apply World-Class Theme Immediately
     inject_custom_css()
@@ -1579,7 +1556,6 @@ def main():
     # --- FROM HERE DOWN, USER IS LOGGED IN ---
 
     # 3. RENDER SIDEBAR & GET SELECTION
-    # This function now handles the new order: Focus -> Nav -> Logout
     nav_selection = render_sidebar()
 
     # 4. PAGE ROUTING
