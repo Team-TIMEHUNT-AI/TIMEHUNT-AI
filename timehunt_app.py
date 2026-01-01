@@ -138,29 +138,56 @@ def apply_professional_style():
         </style>
     """, unsafe_allow_html=True)
 
-# --- 4. NEW SIDEBAR WITH CHAT HISTORY & DELETE ---
-# --- 4. REDESIGNED MAIN SIDEBAR ---
+# --- 4. REDESIGNED MAIN SIDEBAR (FIXED) ---
 def render_sidebar():
     with st.sidebar:
-        # 1. HEADER & FOCUS TOOLS (Moved to Top)
-        st.markdown(f"### 🏹 Agent: **{st.session_state.user_name}**")
+        # 1. HEADER
+        st.markdown(f"### 🏹 Agent: **{st.session_state.get('user_name', 'Hunter')}**")
         
+        # 2. FOCUS TOOLS (Fixed Music & Timer)
         with st.expander("🎧 Focus Tools & Timer", expanded=True):
-            # Music
-            music_mode = st.selectbox("Frequency", ["Om Chanting", "Binaural Beats", "Flow State"], label_visibility="collapsed")
+            # --- MUSIC PLAYER ---
+            music_map = {
+                "Om Chanting": "om.mp3", 
+                "Binaural Beats": "binaural.mp3", 
+                "Flow State": "flute.mp3",
+                "Rainfall": "rain.mp3" # Added Rain
+            }
+            selected_track = st.selectbox("Frequency", list(music_map.keys()), label_visibility="collapsed")
             
-            # Simple Timer Button
-            c_t1, c_t2 = st.columns([2, 1])
-            with c_t1:
-                st.write("⏱️ Focus Timer")
-            with c_t2:
-                if st.button("Start", key="sidebar_timer"):
-                    st.toast("Timer Started: 25m")
+            # Check if file exists before playing to prevent error
+            audio_file = music_map[selected_track]
+            if os.path.exists(audio_file):
+                st.audio(audio_file, format="audio/mp3", loop=True)
+            else:
+                st.caption(f"⚠️ {audio_file} not found.")
+
+            st.markdown("---")
+
+            # --- REAL HTML TIMER (Restored) ---
+            # This HTML/JS block creates a real countdown that doesn't freeze the app
+            timer_html = """
+            <style>
+                .timer-box { background: #111; color: #B5FF5F; font-family: monospace; font-size: 28px; text-align: center; border-radius: 8px; padding: 5px; border: 1px solid #333; margin-bottom: 5px; }
+                .btn-grid { display: flex; gap: 5px; }
+                .btn { flex: 1; padding: 5px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }
+                .btn-start { background: #B5FF5F; color: black; }
+                .btn-reset { background: #333; color: white; }
+            </style>
+            <div class="timer-box"><span id="timer-display">25:00</span></div>
+            <div class="btn-grid"><button class="btn btn-start" onclick="startTimer()">START</button><button class="btn btn-reset" onclick="resetTimer()">RESET</button></div>
+            <script>
+                let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
+                function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
+                function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Time Up!"); } }, 1000); }
+                function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
+            </script>
+            """
+            components.html(timer_html, height=120)
         
         st.divider()
 
-        # 2. MAIN NAVIGATION (The "Pages" List)
-        # Added 'Calendar', 'Reminders', and 'Help' as requested
+        # 3. MAIN NAVIGATION (Ensured Visibility)
         selected_page = option_menu(
             menu_title=None,
             options=[
@@ -168,38 +195,35 @@ def render_sidebar():
                 "Scheduler", 
                 "AI Assistant", 
                 "Dashboard", 
-                "Calendar",     # New
-                "Reminders",    # New
+                "Calendar", 
+                "Reminders", 
                 "Settings", 
                 "About", 
-                "Help"          # New
+                "Help"
             ], 
             icons=[
                 "house", 
                 "calendar-check", 
                 "robot", 
                 "graph-up", 
-                "calendar3",    # Icon for Calendar
-                "alarm",        # Icon for Reminders
+                "calendar3", 
+                "alarm", 
                 "gear", 
                 "info-circle", 
-                "question-circle" # Icon for Help
+                "question-circle"
             ], 
             default_index=0,
             styles={
                 "container": {"padding": "0!important", "background-color": "transparent"},
                 "icon": {"color": "#B5FF5F", "font-size": "16px"}, 
-                "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#262730"},
+                "nav-link": {"font-size": "15px", "text-align": "left", "margin":"0px", "--hover-color": "#262730"},
                 "nav-link-selected": {"background-color": "#262730", "color": "#B5FF5F", "border-left": "3px solid #B5FF5F"},
             }
         )
         
-        # 3. PUSH LOGOUT TO BOTTOM
-        # We use a spacer to push content down if needed, or just place it at the end
-        st.markdown("---")
+        # 4. LOGOUT BUTTON
         st.write("")
-        st.write("") 
-        
+        st.markdown("---")
         if st.button("🚪 Log Out System", use_container_width=True, type="primary"):
             logout_user()
 
