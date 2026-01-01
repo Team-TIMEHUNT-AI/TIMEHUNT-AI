@@ -800,32 +800,49 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- REPLACES THE OLD generate_visual_intel FUNCTION ---
+## --- REPLACES THE OLD generate_visual_intel FUNCTION ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Pollinations.ai with the FLUX model.
-    ✅ FLUX is 'Pro' level (Smarter, follows instructions better).
-    ✅ 100% FREE & No Key Required.
+    Generates images using Hugging Face (Stable Diffusion XL).
+    ✅ SECURE: Reads token from st.secrets (Safe for GitHub)
+    ✅ 100% FREE & Professional Quality
     """
-    import urllib.parse
-    import random
+    import requests
+    import base64
+    
+    # 1. Get Token Safely from Secrets
+    # This works for both Local (secrets.toml) and Streamlit Cloud (Advanced Settings)
+    try:
+        HF_TOKEN = st.secrets["HF_TOKEN"]
+    except FileNotFoundError:
+        st.error("❌ Secrets not found. Please add HF_TOKEN to .streamlit/secrets.toml")
+        return None
+    except KeyError:
+        st.error("❌ HF_TOKEN not found in secrets.")
+        return None
+
+    # Model: Stable Diffusion XL
+    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    
+    # Enhance prompt
+    final_prompt = f"{prompt_text}, cinematic lighting, 8k, highly detailed, photorealistic, motivational style"
 
     try:
-        # 1. Use the User's prompt directly
-        # We add 'high quality' just to ensure it looks good
-        enhanced_prompt = f"{prompt_text}, high quality, detailed, 8k"
-        encoded_prompt = urllib.parse.quote(enhanced_prompt)
+        response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
         
-        # 2. Random Seed
-        seed = random.randint(1, 99999)
-        
-        # 3. Construct URL with FLUX model
-        # CRITICAL: We use '&model=flux' for better results
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=576&seed={seed}&nologo=true&model=flux"
-        
-        return image_url
+        if response.status_code == 200:
+            return base64.b64encode(response.content).decode('utf-8')
+        else:
+            print(f"HF Error: {response.text}")
+            return None
             
     except Exception as e:
+        print(f"Image Gen Error: {e}")
+        return None
+
+    except Exception as e:
+        print(f"Image Gen Error: {e}")
         return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
@@ -1534,6 +1551,7 @@ def page_calendar():
 
 # --- 10. PAGE: AI ASSISTANT ---
 
+# --- 10. PAGE: AI COMPANION (Final Fixed Version) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -1581,7 +1599,8 @@ def page_ai_assistant():
         """
         # 1. KEYWORD CHECK (The "Force" Switch)
         triggers = ["generate image", "create image", "show me a picture", "generate a picture", 
-                   "draw a", "make a visual", "visualize", "generate an image", "create a logo"]
+                   "draw a", "make a visual", "visualize", "generate an image", "create a logo",
+                   "image of", "picture of", "photo of"]
         
         lower_text = user_text.lower()
         if any(t in lower_text for t in triggers):
@@ -1636,22 +1655,23 @@ def page_ai_assistant():
             status_box = st.empty()
             
             if is_image_gen:
-                # --- IMAGE MODE (Flux via Pollinations) ---
+                # --- IMAGE MODE (Hugging Face) ---
                 with status_box:
                     render_loading_state("Loading TimeHunt AI for image generation...")
                 
-                # Call the Flux Generator
-                img_url = generate_visual_intel(prompt_text)
+                # Generate Image (Returns Base64 String now)
+                img_data = generate_visual_intel(prompt_text)
                 
-                if img_url:
+                if img_data:
                     response_block = {
                         "role": "model", 
                         "text": f"Visual intel generated for: '{prompt_text}'",
-                        "image": img_url
+                        "image": img_data
                     }
-                    save_chat_to_cloud("model", f"Visual intel generated for: '{prompt_text}'", image_b64=img_url)
+                    # Save Base64 Data to Cloud
+                    save_chat_to_cloud("model", f"Visual intel generated for: '{prompt_text}'", image_b64=img_data)
                 else:
-                    err_text = "⚠️ Visual generation failed."
+                    err_text = "⚠️ Visual generation failed. Check your Internet or API Token."
                     response_block = {"role": "model", "text": err_text}
                     save_chat_to_cloud("model", err_text)
                     
@@ -1681,7 +1701,7 @@ def page_ai_assistant():
     with c_title:
         st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
     with c_mic:
-        # Key change: 'voice_input_btn' to fix duplicate error
+        # Key change: 'voice_input_btn' fixes duplicate error
         audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input_btn")
         if audio_data: st.toast("Voice received...", icon="🎧")
 
@@ -1713,6 +1733,7 @@ def page_ai_assistant():
                 with st.chat_message(ui_role, avatar=current_avatar):
                     if content_text: st.write(content_text)
                     if content_img:
+                        # Handle both URL (Pollinations) and Base64 (HuggingFace)
                         if str(content_img).startswith("http"):
                             st.image(content_img, use_container_width=True)
                         else:
