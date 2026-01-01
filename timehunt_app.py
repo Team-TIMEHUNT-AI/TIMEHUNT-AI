@@ -61,6 +61,8 @@ def handle_auth():
     if cookie_manager.get("auth_token"):
         st.session_state.logged_in = True
         st.session_state.user_info = cookie_manager.get("auth_token")
+        st.session_state['user_name'] = st.session_state.user_info
+
         return True
         
     # If not logged in, show Login Form
@@ -1545,6 +1547,11 @@ def page_settings():
                 os.remove(DATA_FILE)
             st.rerun()
 
+def get_smart_ai_response(prompt):
+    # This bridges your chat UI to your Gemini logic
+    text, source = perform_auto_search(prompt)
+    return text
+
 # --- MAIN APP FUNCTION ---
 def main():
     # 1. Apply Professional Theme Immediately
@@ -1640,16 +1647,13 @@ def main():
 
     # --- 5. PAGE ROUTING ---
     if nav == "Home":
-        # page_home() # Call your function
+        page_home()
         st.title("Home")
         st.write("Welcome to the Professional TimeHunt Dashboard.")
-        
     elif nav == "Scheduler":
-        # page_scheduler()
-        st.title("Scheduler")
-
+    	page_scheduler()
     elif nav == "AI Assistant":
-        st.title("🤖 Smart AI Mentor")
+        page_ai_assistant()
         st.markdown("I am your Guide. I can help with Mental Support, Technical Code, or Startup Advice.")
         
         # Chat Interface
