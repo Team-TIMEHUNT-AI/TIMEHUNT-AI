@@ -1,8 +1,7 @@
 streamlit
-pandas
-fpdf
 streamlit-option-menu
 extra-streamlit-components
 st-gsheets-connection
 google-genai
-Pillow
+pandas
+fpdf
