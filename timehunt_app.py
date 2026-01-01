@@ -25,7 +25,7 @@ def init_session_state():
     if 'user_info' not in st.session_state: st.session_state.user_info = None
     if 'splash_played' not in st.session_state: st.session_state['splash_played'] = False
     
-    # 2. App Data Defaults (Prevents KeyError)
+    # 2. App Data Defaults (Fixes the KeyError Crash)
     defaults = {
         'user_name': 'Hunter',
         'user_xp': 0,
