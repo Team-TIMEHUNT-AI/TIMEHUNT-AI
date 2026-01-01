@@ -1688,6 +1688,5 @@ def main():
     if st.session_state.get('active_alarm'):
         render_alarm_ui()
 
-# Move this to the far left (No Indentation)
 if __name__ == "__main__":
-	main()
+    main()
