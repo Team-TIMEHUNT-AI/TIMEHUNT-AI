@@ -800,69 +800,49 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- SOLUTION 1: Corrected Router URL ---
 def generate_visual_intel(prompt_text):
-    """
-    Generates images using Hugging Face.
-    ✅ FIXED: Uses the correct '/hf-inference/' path to avoid 404 errors.
-    """
-    import requests
+    from huggingface_hub import InferenceClient
     import base64
     import io
-    import time
     from PIL import Image, ImageDraw, ImageFont
 
-    # 1. Get Token
     hf_token = st.secrets.get("HF_TOKEN")
     if not hf_token: return None
 
-    # 2. CORRECTED URL (Notice the '/hf-inference/' part)
-    API_URL = "https://router.huggingface.co/hf-inference/models/runwayml/stable-diffusion-v1-5"
-    headers = {"Authorization": f"Bearer {hf_token}"}
-    
-    final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k"
-
     try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+        # Client handles the URL automatically
+        client = InferenceClient(token=hf_token)
         
-        # Retry logic for model loading
-        if response.status_code == 503:
-            with st.spinner("Waking up AI model..."):
-                time.sleep(4)
-                response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
-
-        if response.status_code == 200:
-            # --- WATERMARK LOGIC ---
-            image = Image.open(io.BytesIO(response.content)).convert("RGBA")
-            txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
-            draw = ImageDraw.Draw(txt_layer)
-            
-            # Text & Font
-            text = "TimeHunt AI  ∞ 🏹"
-            font_size = int(image.size[0] / 35)
-            try: font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
-            except: font = ImageFont.load_default()
-
-            # Position
-            bbox = draw.textbbox((0, 0), text, font=font)
-            x, y = image.size[0] - (bbox[2] - bbox[0]) - 20, image.size[1] - (bbox[3] - bbox[1]) - 30
-
-            # Draw
-            draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
-            draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
-            
-            # Save
-            watermarked = Image.alpha_composite(image, txt_layer).convert("RGB")
-            buffered = io.BytesIO()
-            watermarked.save(buffered, format="JPEG", quality=95)
-            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+        # Generate
+        image = client.text_to_image(
+            f"{prompt_text}, cinematic lighting, 8k",
+            model="runwayml/stable-diffusion-v1-5"
+        )
         
-        else:
-            st.warning(f"⚠️ Error {response.status_code}: {response.text}")
-            return None
-            
+        # --- WATERMARK LOGIC ---
+        image = image.convert("RGBA")
+        txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
+        draw = ImageDraw.Draw(txt_layer)
+        
+        text = "TimeHunt AI  ∞ 🏹"
+        font_size = int(image.size[0] / 35)
+        try: font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        except: font = ImageFont.load_default()
+        
+        bbox = draw.textbbox((0, 0), text, font=font)
+        x, y = image.size[0] - (bbox[2] - bbox[0]) - 20, image.size[1] - (bbox[3] - bbox[1]) - 30
+        
+        draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
+        draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
+        
+        # Return Base64
+        watermarked = Image.alpha_composite(image, txt_layer).convert("RGB")
+        buffered = io.BytesIO()
+        watermarked.save(buffered, format="JPEG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
     except Exception as e:
-        st.error(f"Error: {e}")
+        print(f"Error: {e}")
         return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
