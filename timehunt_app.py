@@ -36,7 +36,8 @@ def init_session_state():
         'reminders': [],
         'theme_mode': 'Light',
         'theme_color': 'Venom Green (Default)',
-        'current_objective': 'Initialize Protocol'
+        'current_objective': 'Initialize Protocol',
+        'onboarding_complete': False # Added to prevent onboarding logic errors
     }
     
     for key, value in defaults.items():
@@ -1434,9 +1435,6 @@ def page_about():
     st.write("")
     st.write("")
     st.caption("🔒 System Status: ONLINE | 🛡️ Developed with ❤️ by TIME HUNT AI TEAM")
-
-
-
     
 # ------ SETTINGS PAGE --------
 
@@ -1591,7 +1589,9 @@ def main():
             
         with col2:
             st.markdown("### Your Stats")
-            st.metric("Your XP", f"{st.session_state['user_xp']} XP")
+            # Safe access to session state variables
+            xp_val = st.session_state.get('user_xp', 0)
+            st.metric("Your XP", f"{xp_val} XP")
             st.metric("Rank", "Gold League")
             if st.button("📄 Download Report"):
                 st.success("Report Generated!")
@@ -1602,7 +1602,7 @@ def main():
         
     elif nav_selection == "Reminders":
         st.title("⏰ Active Alarms")
-        if st.session_state['reminders']:
+        if st.session_state.get('reminders'):
             st.write(st.session_state['reminders'])
         else:
             st.info("No active alarms set.")
