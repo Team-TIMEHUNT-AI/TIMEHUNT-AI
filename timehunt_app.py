@@ -800,79 +800,93 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- FINAL STABLE VERSION (Official Library + Watermark) ---
+# --- MASTER HYBRID GENERATOR (Hugging Face + Pollinations Fallback) ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using the Official Hugging Face Client.
-    ✅ Solves 404/410 Errors permanently (Library handles URLs).
-    ✅ Adds TimeHunt Watermark.
-    ✅ Uses 'Stable Diffusion v1.5' (Fast & Free).
+    1. Tries Hugging Face Official (Best Quality, High Limits)
+    2. If that fails, auto-switches to Pollinations Flux (Backup)
+    3. Adds Watermark if possible
     """
-    # Imports inside function to avoid startup errors
+    import base64
+    import io
+    import random
+    import requests
+    from PIL import Image, ImageDraw, ImageFont
+
+    # --- 1. TRY HUGGING FACE (OFFICIAL) ---
     try:
         from huggingface_hub import InferenceClient
-        import base64
-        import io
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        return None # Graceful fail if requirements missing
+        
+        hf_token = st.secrets.get("HF_TOKEN")
+        if hf_token:
+            client = InferenceClient(token=hf_token)
+            
+            # Use Stable Diffusion v1.5 (Fast & Reliable)
+            image = client.text_to_image(
+                f"{prompt_text}, cinematic lighting, highly detailed, 8k",
+                model="runwayml/stable-diffusion-v1-5"
+            )
+            
+            # If successful, go to watermarking
+            return apply_watermark(image)
+            
+    except Exception as e:
+        # If HF fails, print the error but DON'T stop. Switch to Backup.
+        print(f"⚠️ Primary AI Failed: {e}. Switching to Backup...")
 
-    # 1. Get Token
-    hf_token = st.secrets.get("HF_TOKEN")
-    if not hf_token: return None
-
+    # --- 2. FALLBACK: POLLINATIONS.AI (FLUX) ---
     try:
-        # 2. Setup Client (Auto-detects correct URL)
-        client = InferenceClient(token=hf_token)
+        # Random seed bypasses some caching issues
+        seed = random.randint(1, 99999)
+        url = f"https://image.pollinations.ai/prompt/{prompt_text}?model=flux&width=1024&height=768&seed={seed}&nologo=true"
         
-        # 3. Generate Image
-        # We use a reliable model that works on free tier
-        image = client.text_to_image(
-            f"{prompt_text}, cinematic lighting, highly detailed, 8k",
-            model="runwayml/stable-diffusion-v1-5"
-        )
-        
-        # --- WATERMARK LOGIC ---
-        # Convert to RGBA for transparency
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            image = Image.open(io.BytesIO(response.content))
+            return apply_watermark(image)
+            
+    except Exception as e:
+        st.error(f"❌ All AI Models Failed. Error: {e}")
+        return None
+
+    return None
+
+def apply_watermark(image):
+    """
+    Helper function to apply the TimeHunt AI ∞ 🏹 watermark
+    """
+    import io
+    import base64
+    from PIL import Image, ImageDraw, ImageFont
+    
+    try:
         image = image.convert("RGBA")
         txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt_layer)
         
-        # Define Text & Font
         text = "TimeHunt AI  ∞ 🏹"
-        
-        # Dynamic Font Size (Scale with image)
         font_size = int(image.size[0] / 35)
-        try:
-            font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
-        except:
-            font = ImageFont.load_default()
+        
+        try: font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+        except: font = ImageFont.load_default()
 
-        # Calculate Position (Bottom Right)
         bbox = draw.textbbox((0, 0), text, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-        x = image.size[0] - text_w - 20
-        y = image.size[1] - text_h - 20
+        x = image.size[0] - (bbox[2] - bbox[0]) - 20
+        y = image.size[1] - (bbox[3] - bbox[1]) - 20
 
-        # Draw Shadow (Dark)
         draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
-        # Draw Main Text (White/Glassy)
         draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
         
-        # Merge Watermark
-        watermarked = Image.alpha_composite(image, txt_layer)
-        watermarked = watermarked.convert("RGB") # Remove alpha for JPEG
-
-        # 4. Return as Base64
+        watermarked = Image.alpha_composite(image, txt_layer).convert("RGB")
+        
         buffered = io.BytesIO()
         watermarked.save(buffered, format="JPEG", quality=95)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
-
-    except Exception as e:
-        # Debugging: Print error to console if something goes wrong
-        print(f"Gen Error: {e}")
-        return None
+    except:
+        # If watermark fails, return clean image
+        buffered = io.BytesIO()
+        image.convert("RGB").save(buffered, format="JPEG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
 
