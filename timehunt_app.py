@@ -800,25 +800,48 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-## --- REPLACES THE OLD generate_visual_intel FUNCTION ---
+# --- UPDATED GENERATE VISUAL INTEL (Debug Friendly) ---
 def generate_visual_intel(prompt_text):
     """
     Generates images using Hugging Face (Stable Diffusion XL).
-    ✅ SECURE: Reads token from st.secrets (Safe for GitHub)
-    ✅ 100% FREE & Professional Quality
+    ✅ Debugs Secrets issues automatically.
     """
     import requests
     import base64
     
-    # 1. Get Token Safely from Secrets
-    # This works for both Local (secrets.toml) and Streamlit Cloud (Advanced Settings)
-    try:
-        HF_TOKEN = st.secrets["HF_TOKEN"]
-    except FileNotFoundError:
-        st.error("❌ Secrets not found. Please add HF_TOKEN to .streamlit/secrets.toml")
+    # 1. Try to find the token
+    # We use .get() so it returns None instead of crashing
+    hf_token = st.secrets.get("HF_TOKEN")
+    
+    # DEBUGGING: Check your terminal (black box) to see what keys exist!
+    if not hf_token:
+        print("⚠️ HF_TOKEN missing! Available keys:", st.secrets.keys())
+        # Fallback: Check if user put it under 'huggingface' section
+        if "huggingface" in st.secrets:
+             hf_token = st.secrets["huggingface"].get("token")
+
+    if not hf_token:
+        print("❌ Error: HF_TOKEN is definitely missing.")
         return None
-    except KeyError:
-        st.error("❌ HF_TOKEN not found in secrets.")
+
+    # 2. Setup API
+    API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    headers = {"Authorization": f"Bearer {hf_token}"}
+    
+    # 3. Enhance Prompt for Pro Quality
+    final_prompt = f"{prompt_text}, cinematic lighting, 8k, highly detailed, photorealistic, motivational style"
+
+    try:
+        response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+        
+        if response.status_code == 200:
+            return base64.b64encode(response.content).decode('utf-8')
+        else:
+            print(f"HF Error ({response.status_code}): {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"Connection Error: {e}")
         return None
 
     # Model: Stable Diffusion XL
