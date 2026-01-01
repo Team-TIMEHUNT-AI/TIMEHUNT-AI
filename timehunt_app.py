@@ -1556,55 +1556,111 @@ def page_calendar():
             st.rerun()
 
 # --- 10. PAGE: AI ASSISTANT ---
-# --- 10. PAGE: AI COMPANION (Multimodal Update) ---
+# --- 10. PAGE: AI COMPANION (Updated UI & Avatars) ---
 
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
-    from PIL import Image 
-    import io
     import base64
     
-    # --- Helper: Process Message (Handles Text & Image Requests) ---
+    # --- 1. SETUP AVATARS ---
+    # User: Get from session state (Filename or Emoji)
+    user_av = st.session_state.get('user_avatar', '👤')
+    
+    # AI: Use the specific logo file
+    ai_av = "1000592991.png"
+    # Fallback if file is missing
+    if not os.path.exists(ai_av):
+        ai_av = "🤖"
+
+    # --- 2. HELPER: LOADING ANIMATION ---
+    def render_loading_state():
+        """
+        Renders the custom 'Thinking' UI inside the chat bubble.
+        Matches the requested style: Logo + Status Text.
+        """
+        # Get Logo Base64 for HTML embedding
+        img_b64 = ""
+        try:
+            if os.path.exists("1000592991.png"):
+                with open("1000592991.png", "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode()
+        except: pass
+        
+        # HTML for the "Thinking" state
+        # Shows the logo pulsing next to the text
+        html_code = f"""
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
+                {'<img src="data:image/png;base64,' + img_b64 + '" style="width: 100%; height: 100%; animation: pulse 1.5s infinite ease-in-out;">' if img_b64 else '<span style="font-size: 20px;">⚡</span>'}
+            </div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 14px; color: var(--text-color); opacity: 0.8; font-weight: 500;">
+                Processing Intelligence...
+            </div>
+        </div>
+        <style>
+            @keyframes pulse {{ 
+                0% {{ transform: scale(0.95); opacity: 0.7; }} 
+                50% {{ transform: scale(1.1); opacity: 1; }} 
+                100% {{ transform: scale(0.95); opacity: 0.7; }} 
+            }}
+        </style>
+        """
+        st.markdown(html_code, unsafe_allow_html=True)
+
+    # --- 3. PROCESS MESSAGE LOGIC ---
     def process_message(prompt_text, generate_image=False):
-        # 1. Init Session if needed
+        # A. Init Session if needed
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
             short_name = " ".join(prompt_text.split()[:4])
             st.session_state['current_session_name'] = short_name
 
-        # 2. Add User Message to History
+        # B. Append User Message (Internal State)
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
-        # (Optional: Add save_chat_to_cloud here if you want cloud sync)
         
-        # 3. Generate Response based on mode
-        with st.spinner("Processing intelligence..."):
+        # C. DISPLAY USER MESSAGE IMMEDIATELY (Visual)
+        with st.chat_message("user", avatar=user_av):
+            st.write(prompt_text)
+
+        # D. DISPLAY AI "THINKING" UI (Visual)
+        with st.chat_message("assistant", avatar=ai_av):
+            # Create a container for the loading animation
+            status_box = st.empty()
+            with status_box:
+                render_loading_state()
+            
+            # E. GENERATE RESPONSE (The Heavy Lifting)
             if generate_image:
-                # --- IMAGE GENERATION PATH ---
+                # Image Mode
                 img_b64 = generate_visual_intel(prompt_text)
                 if img_b64:
                     response_block = {
                         "role": "model", 
                         "text": f"Visual intel generated for: '{prompt_text}'",
-                        "image": img_b64 # Store base64 image data
+                        "image": img_b64
                     }
                 else:
                     response_block = {"role": "model", "text": "⚠️ Visual generation failed. Please try a different prompt."}
             else:
-                # --- TEXT GENERATION PATH ---
+                # Text Mode
                 response_text, _ = perform_ai_analysis(prompt_text)
                 response_block = {"role": "model", "text": response_text}
                 
-                # Audio Playback for text
-                clean_text = response_text.replace('\n', ' ').replace('#', '').replace('*', '')[:200]
-                tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
-                st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
+                # Audio Playback
+                try:
+                    clean_text = response_text.replace('\n', ' ').replace('#', '').replace('*', '')[:200]
+                    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
+                    st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
+                except: pass
 
-        # 4. Save AI Response to History & Rerun
+            # F. CLEAR LOADING & UPDATE STATE
+            status_box.empty() # Remove the "Thinking..." animation
+            
+        # G. Save & Refresh
         st.session_state['chat_history'].append(response_block)
-        # (Optional: Add save_chat_to_cloud here)
         st.rerun()
 
-    # --- PAGE HEADER ---
+    # --- 4. PAGE LAYOUT ---
     c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
     with c_title:
         st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
@@ -1614,9 +1670,9 @@ def page_ai_assistant():
         audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
         if audio_data: st.toast("Voice received...", icon="🎧")
 
-    # --- CHAT HISTORY DISPLAY (Multimodal) ---
+    # --- 5. RENDER CHAT HISTORY ---
     if not st.session_state.get('chat_history'):
-        # Welcome Screen
+        # Welcome Screen (Empty State)
         user_name = st.session_state.get('user_name', 'Hunter').split()[0]
         st.markdown(f"""
         <div style="margin: 30px 0;">
@@ -1632,45 +1688,39 @@ def page_ai_assistant():
         if c4.button("📝 Study Tips", use_container_width=True): process_message("Give me scientific study techniques.")
 
     else:
-        # Scrollable Chat Container
+        # History Loop
         chat_container = st.container()
         with chat_container:
             for msg in st.session_state['chat_history']:
                 role = str(msg.get('role')).lower()
                 content_text = msg.get('text', '')
-                content_img_b64 = msg.get('image') # Check for image data
+                content_img_b64 = msg.get('image') 
                 
-                # Define Avatar
+                # Determine Role & Avatar
                 if role in ["model", "assistant", "ai"]:
                     ui_role = "assistant"
-                    avatar_icon = "🤖"
+                    current_avatar = ai_av 
                 else:
                     ui_role = "user"
-                    avatar_icon = "👤"
+                    current_avatar = user_av
 
-                with st.chat_message(ui_role, avatar=avatar_icon):
-                    # Render Text if present
+                # Render Message
+                with st.chat_message(ui_role, avatar=current_avatar):
                     if content_text:
                         st.write(content_text)
-                    
-                    # Render Image if present
                     if content_img_b64:
                         try:
-                            # Decode base64 string back to image bytes
                             img_bytes = base64.b64decode(content_img_b64)
                             st.image(img_bytes, use_container_width=True)
                         except Exception:
                             st.error("Error rendering image.")
 
-    # --- MAIN INPUT FIELD ---
-    # Check if image generation mode was triggered from sidebar
+    # --- 6. INPUT FIELD ---
     gen_mode = st.session_state.get('trigger_image_gen', False)
     placeholder_txt = "Describe visual..." if gen_mode else "Ask TimeHunt AI..."
     
     if prompt := st.chat_input(placeholder_txt):
-        # Reset trigger flag
         if gen_mode: st.session_state['trigger_image_gen'] = False
-        # Process message with correct mode
         process_message(prompt, generate_image=gen_mode)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
