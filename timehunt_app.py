@@ -23,11 +23,11 @@ from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import tempfile
 
-# --- 1. LIVE CLOCK COMPONENT (Modern & Clean) ---
+# --- 1. LIVE CLOCK COMPONENT (Updated for Visibility) ---
 def render_live_clock():
     """
-    Renders a real-time digital clock using an isolated HTML iframe.
-    Style: Modern 'Glassmorphism' to match the productivity theme.
+    Renders a real-time digital clock.
+    FIX: Uses a dark gradient background so white text is always visible.
     """
     clock_html = """
     <!DOCTYPE html>
@@ -44,21 +44,19 @@ def render_live_clock():
             background: transparent; 
         }
         .clock-box {
-            /* Glassmorphism Effect */
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            
+            /* FIX: Dark Gradient Background for contrast in Light Mode */
+            background: linear-gradient(135deg, #2C3E50, #000000); 
             color: #FFFFFF;
-            font-family: 'Inter', sans-serif; /* Clean, productive font */
-            font-size: 32px;
-            font-weight: 600;
-            letter-spacing: 1px;
             
-            padding: 10px 25px;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            font-family: 'Inter', sans-serif;
+            font-size: 28px; /* Adjusted size */
+            font-weight: 600;
+            letter-spacing: 2px;
+            
+            padding: 12px 0; /* Vertical padding only */
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
             text-align: center;
             width: 100%;
         }
@@ -69,7 +67,6 @@ def render_live_clock():
         <script>
             function updateClock() {
                 const now = new Date();
-                // Format: HH:MM (24-hour cycle)
                 const timeString = now.toLocaleTimeString('en-US', { 
                     hour12: false, 
                     hour: '2-digit', 
@@ -78,12 +75,11 @@ def render_live_clock():
                 document.getElementById('clock').innerText = timeString;
             }
             setInterval(updateClock, 1000);
-            updateClock(); // Run immediately on load
+            updateClock(); 
         </script>
     </body>
     </html>
     """
-    # Render with fixed height to fit sidebar perfectly
     components.html(clock_html, height=80)
 
 # --- 2. DATA PERSISTENCE (Cloud Sync) ---
@@ -2602,19 +2598,54 @@ def main():
         # Render Chat Page
         page_ai_assistant()
 
-    # 6. STANDARD SIDEBAR (Main Menu)
-    else:
+# --- Standard Sidebar ------
+
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
             
-            # Audio Player
-            st.markdown("### 🎧 Focus Audio")
-            with st.container():
-                music_mode = st.selectbox("Soundscape", 
+            st.write("") # Spacer
+
+            # --- ENHANCED AUDIO PLAYER ---
+            with st.container(border=True):
+                st.markdown("### 🎧 Focus Zone")
+                
+                # CSS Animation for "Equalizer" Visual
+                st.markdown("""
+                <style>
+                .equalizer {
+                    display: flex; justify-content: center; align-items: flex-end;
+                    height: 40px; gap: 4px; margin-bottom: 15px;
+                }
+                .bar {
+                    width: 6px; background: var(--primary-color);
+                    animation: bounce 1s infinite ease-in-out;
+                    border-radius: 3px;
+                }
+                .bar:nth-child(1) { animation-duration: 0.8s; height: 15px; }
+                .bar:nth-child(2) { animation-duration: 1.1s; height: 25px; }
+                .bar:nth-child(3) { animation-duration: 1.3s; height: 35px; }
+                .bar:nth-child(4) { animation-duration: 0.9s; height: 20px; }
+                .bar:nth-child(5) { animation-duration: 1.2s; height: 30px; }
+                
+                @keyframes bounce {
+                    0%, 100% { transform: scaleY(0.5); opacity: 0.6; }
+                    50% { transform: scaleY(1.2); opacity: 1; }
+                }
+                </style>
+                <div class="equalizer">
+                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Sound Selection
+                music_mode = st.selectbox(
+                    "Soundscape", 
                     ["Om Chanting", "Binaural Beats", "Flute Flow", "Rainfall"], 
                     label_visibility="collapsed"
                 )
+                
+                # Map to files
                 local_map = {
                     "Om Chanting": "om.mp3", 
                     "Binaural Beats": "binaural.mp3", 
@@ -2622,20 +2653,17 @@ def main():
                     "Rainfall": "rain.mp3"
                 }
                 target_file = local_map.get(music_mode)
+                
+                # Check file and render
                 if target_file and os.path.exists(target_file):
+                    # Native player, but wrapped nicely
                     st.audio(target_file, format="audio/mp3", loop=True)
-            
-            st.markdown("---")
-            
-            # Location Settings
-            with st.expander("📍 Location Settings"):
-                city_input = st.text_input("Current City", value=st.session_state.get('user_city', 'Jaipur'))
-                if city_input != st.session_state.get('user_city', 'Jaipur'):
-                    st.session_state['user_city'] = city_input
-                    st.rerun()
+                    st.caption(f"▶ Now Playing: {music_mode}")
+                else:
+                    st.warning("Audio file not found.")
 
             st.markdown("---")
-            
+                    
             # Main (Navigations)
             nav = option_menu(
                 menu_title=None,
