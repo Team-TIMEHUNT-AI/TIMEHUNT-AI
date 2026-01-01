@@ -5,6 +5,12 @@ import re
 import streamlit as st
 import os
 from streamlit_option_menu import option_menu
+
+# --- PATH CONFIGURATION ---
+# Ensures assets load correctly regardless of where the script is run
+current_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(current_dir)
+
 import datetime
 import random
 import pandas as pd
@@ -16,11 +22,6 @@ import calendar
 from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import tempfile
-
-# --- PATH CONFIGURATION ---
-# Ensures assets load correctly regardless of where the script is run
-current_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(current_dir)
 
 # --- 1. LIVE CLOCK COMPONENT (Updated for Visibility) ---
 def render_live_clock():
@@ -2591,14 +2592,33 @@ def main():
 
             st.write("") # Spacer
             
-            # Session List Logic (Kept same as before for brevity, ensure you have the corrected version with enumerate)
-            # ... [Insert your corrected session list loop here] ...
+            # Session List Logic
+            sessions = load_chat_sessions()
+            if sessions:
+                st.markdown("#### History")
+                for s in sessions:
+                    sid = s['SessionID']
+                    sname = s['SessionName']
+                    
+                    if st.session_state['delete_mode']:
+                        if st.button(f"🗑️ {sname}", key=f"del_{sid}", use_container_width=True):
+                            delete_chat_session(sid)
+                            if st.session_state.get('current_session_id') == sid:
+                                st.session_state['current_session_id'] = None
+                                st.session_state['chat_history'] = []
+                            st.rerun()
+                    else:
+                        if st.button(f"💬 {sname}", key=f"sess_{sid}", use_container_width=True):
+                            st.session_state['current_session_id'] = sid
+                            st.session_state['current_session_name'] = sname
+                            st.session_state['chat_history'] = load_messages_for_session(sid)
+                            st.rerun()
         
         # Render Chat Page
         page_ai_assistant()
 
-# --- Standard Sidebar ------
-
+    # 6. STANDARD SIDEBAR (Main Menu)
+    else:
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
@@ -2655,15 +2675,14 @@ def main():
                 
                 # Check file and render
                 if target_file and os.path.exists(target_file):
-                    # Native player, but wrapped nicely
                     st.audio(target_file, format="audio/mp3", loop=True)
                     st.caption(f"▶ Now Playing: {music_mode}")
                 else:
                     st.warning("Audio file not found.")
 
             st.markdown("---")
-                    
-            # Main (Navigations)
+            
+            # Main Nav
             nav = option_menu(
                 menu_title=None,
                 options=["Home", "Scheduler", "Calendar", "AI Companion", "Timer", "Analytics", "Help Center", "About", "Settings"], 
@@ -2679,7 +2698,7 @@ def main():
             
             st.caption(f"👤 **{st.session_state.get('user_name', 'User')}**")
 
-# ----------- Page Routing ------------------
+        # --- PAGE ROUTING (MUST BE OUTSIDE st.sidebar) ---
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
