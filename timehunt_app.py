@@ -800,31 +800,35 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
+# --- REPLACES THE OLD generate_visual_intel FUNCTION ---
 def generate_visual_intel(prompt_text):
     """
-    Generates a URL for the image.
-    ✅ Saves perfectly to Google Sheets (Short URL)
-    ✅ 100% FREE & Reliable
+    Generates images using Pollinations.ai with the FLUX model.
+    ✅ FLUX is 'Pro' level (Smarter, follows instructions better).
+    ✅ 100% FREE & No Key Required.
     """
     import urllib.parse
     import random
 
     try:
-        # 1. Enhance Prompt
-        enhanced_prompt = f"{prompt_text}, cinematic lighting, photorealistic, 8k, highly detailed, sharp focus"
+        # 1. Use the User's prompt directly (Flux understands natural language well)
+        # We add 'high quality' just to ensure it looks good, but stop forcing 'photorealistic'
+        # forcing 'photorealistic' was why your quotes looked like weird photos.
+        enhanced_prompt = f"{prompt_text}, high quality, detailed, 8k"
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         
-        # 2. Create Random Seed (This ensures the image stays the same when you reload)
+        # 2. Random Seed
         seed = random.randint(1, 99999)
         
-        # 3. Construct the URL
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=576&seed={seed}&nologo=true"
+        # 3. Construct URL with FLUX model
+        # CRITICAL CHANGE: We added '&model=flux' at the end.
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=576&seed={seed}&nologo=true&model=flux"
         
         return image_url
             
     except Exception as e:
         return None
-    
+
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
 
 def page_onboarding():
