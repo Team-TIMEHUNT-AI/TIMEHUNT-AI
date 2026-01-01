@@ -493,7 +493,8 @@ def initialize_session_state():
         'user_goal': "Productivity", 
         'user_avatar': "🏹", 
         'xp_history': [], 
-    
+        
+        # --- CHANGE HERE: Set default to Light ---
         'theme_mode': 'Light', 
         'theme_color': 'Green (Default)'
     }
@@ -799,39 +800,100 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- OPTION 1: Hugging Face Official Library (Best Quality/Stability) ---
+# --- REPLACES THE OLD # --- REPLACES THE OLD generate_visual_intel FUNCTION ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using the official Hugging Face Hub library.
-    ✅ Fixes 404/410 Errors permanently
-    ✅ Uses SDXL (High Quality)
+    Generates images using Hugging Face and adds a 'TimeHunt AI' watermark.
+    ✅ Professional Watermark (Infinity ∞ + Arrow 🏹)
+    ✅ Google Gemini-style Transparency
     """
-    from huggingface_hub import InferenceClient
+    import requests
     import base64
     import io
+    import time
+    from PIL import Image, ImageDraw, ImageFont
 
     # 1. Get Token
     hf_token = st.secrets.get("HF_TOKEN")
     if not hf_token: return None
 
-    try:
-        # 2. Setup Client (Handles URL automatically)
-        client = InferenceClient(token=hf_token)
-        
-        # 3. Generate (SDXL Model)
-        # using 'stabilityai/stable-diffusion-xl-base-1.0' for Pro quality
-        image = client.text_to_image(
-            f"{prompt_text}, cinematic lighting, 8k, highly detailed",
-            model="stabilityai/stable-diffusion-xl-base-1.0"
-        )
-        
-        # 4. Convert PIL Image to Base64
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    # 2. Use Official Router URL
+    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
+    headers = {"Authorization": f"Bearer {hf_token}"}
+    
+    final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k"
 
+    try:
+        # 3. Generate Image
+        response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+        
+        # Retry Logic (for 503 loading error)
+        if response.status_code == 503:
+            with st.spinner("Waking up AI model..."):
+                time.sleep(4)
+                response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+
+        if response.status_code == 200:
+            # --- WATERMARK LOGIC STARTS HERE ---
+            
+            # A. Open Image from Bytes
+            image = Image.open(io.BytesIO(response.content))
+            
+            # B. Setup Draw Context
+            # Convert to RGBA to handle transparency
+            image = image.convert("RGBA")
+            txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(txt_layer)
+            
+            # C. Define Watermark Text & Font
+            # Using Unicode symbols for Infinity and Arrow
+            text = "TimeHunt AI  ∞ 🏹"
+            
+            # Dynamic Font Size (Calculated based on image width)
+            width, height = image.size
+            font_size = int(width / 35) # Adjust divisor to change size
+            
+            try:
+                # Try to load a standard font
+                font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+            except:
+                # Fallback if font file missing
+                font = ImageFont.load_default()
+
+            # D. Position (Bottom Right Corner)
+            # We use textbbox to get exact dimensions
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+            
+            margin = 20
+            x = width - text_w - margin
+            y = height - text_h - margin - 10
+
+            # E. Draw "Gemini Style" Watermark
+            # 1. Small Shadow (Black, Low Opacity) for readability on bright backgrounds
+            draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
+            
+            # 2. Main Text (White, High Opacity, Subtle Gradient look)
+            draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
+            
+            # F. Merge Layers
+            watermarked = Image.alpha_composite(image, txt_layer)
+            watermarked = watermarked.convert("RGB") # Convert back to RGB for JPEG saving
+
+            # --- WATERMARK LOGIC ENDS HERE ---
+
+            # 4. Convert back to Base64 for the App
+            buffered = io.BytesIO()
+            watermarked.save(buffered, format="JPEG", quality=95)
+            return base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+        else:
+            st.warning(f"⚠️ HF Error {response.status_code}: {response.text}")
+            return None
+            
     except Exception as e:
-        print(f"HF Library Error: {e}")
+        st.error(f"Error: {e}")
         return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
