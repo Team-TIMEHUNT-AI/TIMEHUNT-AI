@@ -799,44 +799,39 @@ def check_reminders():
 
 # --- generate_visual_intel function---
 
-# --- REPLACES THE OLD generate_visual_intel FUNCTION ---
+# --- OPTION 1: Hugging Face Official Library (Best Quality/Stability) ---
 def generate_visual_intel(prompt_text):
     """
-    Generates images using Hugging Face (Router URL).
-    ✅ FIX: Updated URL to router.huggingface.co (Solves Error 410)
+    Generates images using the official Hugging Face Hub library.
+    ✅ Fixes 404/410 Errors permanently
+    ✅ Uses SDXL (High Quality)
     """
-    import requests
+    from huggingface_hub import InferenceClient
     import base64
-    import time
-    
+    import io
+
     # 1. Get Token
     hf_token = st.secrets.get("HF_TOKEN")
     if not hf_token: return None
 
-    # 2. NEW URL (The Fix for Error 410)
-    # We switched from 'api-inference' to 'router'
-    API_URL = "https://router.huggingface.co/models/runwayml/stable-diffusion-v1-5"
-    headers = {"Authorization": f"Bearer {hf_token}"}
-    
-    final_prompt = f"{prompt_text}, cinematic lighting, highly detailed, 8k"
-
     try:
-        response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+        # 2. Setup Client (Handles URL automatically)
+        client = InferenceClient(token=hf_token)
         
-        # Retry logic for model loading
-        if response.status_code == 503:
-            with st.spinner("Waking up AI..."):
-                time.sleep(4)
-                response = requests.post(API_URL, headers=headers, json={"inputs": final_prompt})
+        # 3. Generate (SDXL Model)
+        # using 'stabilityai/stable-diffusion-xl-base-1.0' for Pro quality
+        image = client.text_to_image(
+            f"{prompt_text}, cinematic lighting, 8k, highly detailed",
+            model="stabilityai/stable-diffusion-xl-base-1.0"
+        )
+        
+        # 4. Convert PIL Image to Base64
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        if response.status_code == 200:
-            # If it returns an image directly
-            return base64.b64encode(response.content).decode('utf-8')
-        else:
-            st.warning(f"⚠️ HF Error {response.status_code}: {response.text}")
-            return None
-            
     except Exception as e:
+        print(f"HF Library Error: {e}")
         return None
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
