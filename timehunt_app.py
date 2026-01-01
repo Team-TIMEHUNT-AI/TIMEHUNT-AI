@@ -349,20 +349,21 @@ def load_messages_for_session(session_id):
     """
     df = get_all_chats()
     if not df.empty and "SessionID" in df.columns:
-        # Filter by Session ID and ensure chronological order
-        # We sort by Timestamp so the conversation flows correctly
+        # Filter by Session ID
+        # Using try-except to handle cases where Timestamp might be missing
         try:
             messages = df[df["SessionID"] == str(session_id)].sort_values(by="Timestamp")
         except KeyError:
-            # Fallback if Timestamp is missing
             messages = df[df["SessionID"] == str(session_id)]
         
         # Normalization Loop: Convert Sheet Columns to App Keys
         normalized_history = []
         for _, row in messages.iterrows():
             # Handle potential missing 'Image' column in older sheet data
+            # Check if 'Image' column exists in the row before accessing
             img_data = row["Image"] if "Image" in row else None
             
+            # CRITICAL FIX: Map sheet columns (Capitalized) to app keys (Lowercase)
             normalized_history.append({
                 "role": str(row["Role"]).lower(),  # Force lowercase 'user'/'model'
                 "text": str(row["Content"]),       # Map 'Content' to 'text'
