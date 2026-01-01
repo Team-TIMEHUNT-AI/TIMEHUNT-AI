@@ -292,16 +292,15 @@ def get_all_chats():
         # Return empty structure if sheet is missing
         return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
 
-def save_chat_to_cloud(role, content):
+def save_chat_to_cloud(role, content, image_b64=None):
     """
-    Saves a single chat message to the cloud.
-    Includes robust error handling for schema mismatches.
+    Saves chat text AND image data to the cloud.
     """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Prepare Data Points
+        # 1. Prepare Data
         uid = str(st.session_state.get('user_id', 'Unknown'))
         sid = str(st.session_state.get('current_session_id', 'Unknown'))
         sname = str(st.session_state.get('current_session_name', 'New Chat'))
@@ -311,25 +310,24 @@ def save_chat_to_cloud(role, content):
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
         except Exception:
-            df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
+            df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         
-        # 3. Create New Row
+        # 3. Create New Row (With Image Column)
         new_row = pd.DataFrame([{
             "UserID": uid, 
             "SessionID": sid, 
             "SessionName": sname,
             "Role": role, 
             "Content": content, 
+            "Image": image_b64 if image_b64 else "", # Save Base64 string if exists
             "Timestamp": ts
         }])
         
-        # 4. Append & Update
+        # 4. Update
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(worksheet="ChatHistory", data=df_final)
         
     except Exception as e:
-        # User-friendly error notification
-        st.warning("Chat sync paused. Check internet or Sheet permissions.")
         print(f"Chat Save Error: {e}")
 
 def load_chat_sessions():
@@ -345,28 +343,33 @@ def load_chat_sessions():
     return []
 
 def load_messages_for_session(session_id):
-    """Loads all messages for a specific session ID."""
+    """
+    Loads messages and normalizes keys to match Session State format.
+    Fixes the 'Empty Bubble' issue by converting 'Content' -> 'text'.
+    """
     df = get_all_chats()
     if not df.empty and "SessionID" in df.columns:
-        # Filter by Session ID
-        messages = df[df["SessionID"] == str(session_id)]
-        return messages.to_dict('records')
-    return []
-
-def delete_chat_session(session_id):
-    """Permanently deletes a chat session from the cloud."""
-    try:
-        from streamlit_gsheets import GSheetsConnection
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="ChatHistory", ttl=0)
+        # Filter by Session ID and ensure chronological order
+        # We sort by Timestamp so the conversation flows correctly
+        try:
+            messages = df[df["SessionID"] == str(session_id)].sort_values(by="Timestamp")
+        except KeyError:
+            # Fallback if Timestamp is missing
+            messages = df[df["SessionID"] == str(session_id)]
         
-        if not df.empty:
-            # Filter out the deleted session
-            df_cleaned = df[df["SessionID"] != str(session_id)]
-            conn.clear(worksheet="ChatHistory")
-            conn.update(worksheet="ChatHistory", data=df_cleaned)
-    except Exception:
-        pass
+        # Normalization Loop: Convert Sheet Columns to App Keys
+        normalized_history = []
+        for _, row in messages.iterrows():
+            # Handle potential missing 'Image' column in older sheet data
+            img_data = row["Image"] if "Image" in row else None
+            
+            normalized_history.append({
+                "role": str(row["Role"]).lower(),  # Force lowercase 'user'/'model'
+                "text": str(row["Content"]),       # Map 'Content' to 'text'
+                "image": img_data                  # Restore image data if present
+            })
+        return normalized_history
+    return []
 
 # --- 6. FEEDBACK & SUPPORT SYSTEM ---
 def save_feedback(query_text):
@@ -1616,30 +1619,27 @@ def page_ai_assistant():
             status_box = st.empty()
             with status_box:
                 render_loading_state()
-            
+
             # E. GENERATE RESPONSE
             if generate_image:
                 # Image Mode
                 img_b64 = generate_visual_intel(prompt_text)
+                
                 if img_b64:
                     response_block = {
                         "role": "model", 
                         "text": f"Visual intel generated for: '{prompt_text}'",
                         "image": img_b64
                     }
-                    # --- FIX: SAVE IMAGE METADATA TO CLOUD ---
-                    save_chat_to_cloud("model", f"[IMAGE GENERATED] {prompt_text}")
+                    
+                    # --- THIS IS THE CRITICAL FIX FOR STEP 3 ---
+                    # We must pass 'img_b64' to the save function so it stores it in the sheet
+                    save_chat_to_cloud("model", f"Visual intel generated for: '{prompt_text}'", image_b64=img_b64)
+                    
                 else:
                     err_text = "⚠️ Visual generation failed. Please try a different prompt."
                     response_block = {"role": "model", "text": err_text}
                     save_chat_to_cloud("model", err_text)
-            else:
-                # Text Mode
-                response_text, _ = perform_ai_analysis(prompt_text)
-                response_block = {"role": "model", "text": response_text}
-                
-                # --- FIX: SAVE AI TEXT TO CLOUD ---
-                save_chat_to_cloud("model", response_text)
 
                 # Audio Playback
                 try:
