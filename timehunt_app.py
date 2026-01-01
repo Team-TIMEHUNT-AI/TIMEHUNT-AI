@@ -1678,13 +1678,14 @@ def page_ai_assistant():
         process_message(prompt, generate_image=gen_mode)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
+
 def inject_custom_css():
     """
     Injects CSS variables for colors to ensure consistency and readability.
     Forces button text color to ensure visibility in Dark Mode.
     """
     theme_color = st.session_state.get('theme_color', 'Green (Default)')
-    theme_mode = st.session_state.get('theme_mode', 'Dark')
+    theme_mode = st.session_state.get('theme_mode', 'Light') # Default changed to Light here too for safety
     
     # Colors
     colors = {
@@ -1702,14 +1703,14 @@ def inject_custom_css():
         card_bg = "#FFFFFF"
         text_color = "#1A1A1A"
         border_color = "#E0E0E0"
-        btn_text_color = "#000000" # Black text on light buttons
+        btn_text_color = "#000000" 
     else:
         main_bg = "#0E1117"
         sidebar_bg = "#262730"
         card_bg = "#1E1E1E"
         text_color = "#FAFAFA"
         border_color = "#333333"
-        btn_text_color = "#FFFFFF" # White text on dark buttons
+        btn_text_color = "#FFFFFF" 
 
     st.markdown(f"""
         <style>
@@ -1727,6 +1728,16 @@ def inject_custom_css():
             /* Typography */
             h1, h2, h3, h4, h5, h6, p, li, span {{ color: {text_color} !important; }}
             
+            /* --- ADDED: BIG TITLE CLASS FOR PAGE HEADERS --- */
+            .big-title {{
+                font-family: 'Inter', sans-serif;
+                font-size: 36px; /* increased size */
+                font-weight: 800;
+                color: {text_color};
+                margin-bottom: 15px;
+                letter-spacing: -1px;
+            }}
+
             /* Inputs */
             .stTextInput input, .stSelectbox div, .stTextArea textarea {{ 
                 background-color: {sidebar_bg} !important; 
@@ -1735,7 +1746,6 @@ def inject_custom_css():
                 border: 1px solid {border_color} !important;
             }}
             
-            /* --- BUTTON VISIBILITY FIX --- */
             /* Force text color on all buttons */
             div.stButton > button p {{
                 color: {btn_text_color} !important;
@@ -1747,7 +1757,6 @@ def inject_custom_css():
                 border-radius: 10px; 
             }}
             
-            /* Hover Effect */
             div.stButton > button:hover {{
                 border-color: {accent};
             }}
@@ -1755,13 +1764,12 @@ def inject_custom_css():
                 color: {accent} !important;
             }}
 
-            /* Primary Action Buttons */
             div.stButton > button[kind="primary"] {{
                 background-color: {accent} !important;
                 border: none;
             }}
             div.stButton > button[kind="primary"] p {{
-                color: #000000 !important; /* Always black text on bright accent buttons */
+                color: #000000 !important; 
             }}
         </style>
     """, unsafe_allow_html=True)
