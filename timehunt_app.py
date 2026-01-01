@@ -138,57 +138,16 @@ def apply_professional_style():
         </style>
     """, unsafe_allow_html=True)
 
-# --- 4. REDESIGNED MAIN SIDEBAR (FIXED VISIBILITY) ---
+# --- 4. REDESIGNED MAIN SIDEBAR (HIGH CONTRAST FIX) ---
 def render_sidebar():
     with st.sidebar:
         # 1. HEADER
         st.markdown(f"### 🏹 Agent: **{st.session_state.get('user_name', 'Hunter')}**")
+        st.write("")
         
-        # 2. FOCUS TOOLS (Top)
-        with st.expander("🎧 Focus Tools & Timer", expanded=True):
-            # Music
-            music_map = {
-                "Om Chanting": "om.mp3", 
-                "Binaural Beats": "binaural.mp3", 
-                "Flow State": "flute.mp3",
-                "Rainfall": "rain.mp3" 
-            }
-            selected_track = st.selectbox("Frequency", list(music_map.keys()), label_visibility="collapsed")
-            
-            # Audio Player
-            audio_file = music_map[selected_track]
-            if os.path.exists(audio_file):
-                st.audio(audio_file, format="audio/mp3", loop=True)
-            else:
-                st.caption(f"⚠️ {audio_file} not found.")
-
-            st.markdown("---")
-
-            # Timer (HTML/JS)
-            timer_html = """
-            <style>
-                .timer-box { background: #111; color: #B5FF5F; font-family: monospace; font-size: 24px; text-align: center; border-radius: 8px; padding: 5px; border: 1px solid #333; margin-top: 10px; }
-                .btn-grid { display: flex; gap: 5px; margin-top: 5px; }
-                .btn { flex: 1; padding: 5px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; }
-                .btn-start { background: #B5FF5F; color: black; }
-                .btn-reset { background: #333; color: white; }
-            </style>
-            <div class="timer-box"><span id="timer-display">25:00</span></div>
-            <div class="btn-grid"><button class="btn btn-start" onclick="startTimer()">START</button><button class="btn btn-reset" onclick="resetTimer()">RESET</button></div>
-            <script>
-                let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
-                function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
-                function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Time Up!"); } }, 1000); }
-                function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
-            </script>
-            """
-            components.html(timer_html, height=140)
-        
-        st.divider()
-
-        # 3. MAIN NAVIGATION (Fixed Colors)
+        # 2. MAIN NAVIGATION (Moved UP & Forced Colors)
         selected_page = option_menu(
-            menu_title=None,
+            menu_title="Mission Control", # Title added to ensure it takes space
             options=[
                 "Home", 
                 "Scheduler", 
@@ -213,26 +172,82 @@ def render_sidebar():
             ], 
             default_index=0,
             styles={
-                "container": {"padding": "0!important", "background-color": "transparent"},
-                "icon": {"color": "#B5FF5F", "font-size": "16px"}, 
-                "nav-link": {
-                    "font-size": "16px", 
-                    "text-align": "left", 
-                    "margin":"0px", 
-                    "--hover-color": "#f0f2f6",
-                    "color": "#262730"  # <--- THIS LINE FIXES THE INVISIBLE TEXT
+                # FORCE White Background so text is always visible
+                "container": {
+                    "padding": "5px", 
+                    "background-color": "#ffffff", 
+                    "border-radius": "10px",
+                    "border": "1px solid #f0f0f0"
                 },
-                "nav-link-selected": {"background-color": "#262730", "color": "#B5FF5F", "border-left": "3px solid #B5FF5F"},
+                # FORCE Dark Icons
+                "icon": {"color": "#333333", "font-size": "16px"}, 
+                # FORCE Black Text
+                "nav-link": {
+                    "font-size": "15px", 
+                    "text-align": "left", 
+                    "margin": "0px", 
+                    "color": "#000000",
+                    "font-weight": "500"
+                },
+                # Active State Color
+                "nav-link-selected": {
+                    "background-color": "#B5FF5F", 
+                    "color": "black", 
+                    "font-weight": "bold",
+                    "border-left": "3px solid black"
+                },
             }
         )
         
-        # 4. LOGOUT BUTTON
-        st.write("")
         st.markdown("---")
+
+        # 3. FOCUS TOOLS (Below Navigation)
+        with st.expander("🎧 Focus Tools & Timer", expanded=True):
+            # Music
+            music_map = {
+                "Om Chanting": "om.mp3", 
+                "Binaural Beats": "binaural.mp3", 
+                "Flow State": "flute.mp3", 
+                "Rainfall": "rain.mp3"
+            }
+            selected_track = st.selectbox("Frequency", list(music_map.keys()), label_visibility="collapsed")
+            
+            # Audio
+            audio_file = music_map[selected_track]
+            if os.path.exists(audio_file):
+                st.audio(audio_file, format="audio/mp3", loop=True)
+            else:
+                st.caption("⚠️ Audio file not found")
+
+            st.write("")
+            
+            # Timer
+            timer_html = """
+            <style>
+                .timer-box { background: #111; color: #B5FF5F; font-family: monospace; font-size: 26px; text-align: center; border-radius: 8px; padding: 10px; border: 1px solid #333; }
+                .btn-grid { display: flex; gap: 5px; margin-top: 8px; }
+                .btn { flex: 1; padding: 6px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; }
+                .btn-start { background: #B5FF5F; color: black; }
+                .btn-reset { background: #333; color: white; }
+            </style>
+            <div class="timer-box"><span id="timer-display">25:00</span></div>
+            <div class="btn-grid"><button class="btn btn-start" onclick="startTimer()">START</button><button class="btn btn-reset" onclick="resetTimer()">RESET</button></div>
+            <script>
+                let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
+                function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
+                function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Time Up!"); } }, 1000); }
+                function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
+            </script>
+            """
+            components.html(timer_html, height=130)
+        
+        # 4. LOGOUT
+        st.write("")
         if st.button("🚪 Log Out System", use_container_width=True, type="primary"):
             logout_user()
 
         return selected_page
+
 
 # --- NEW: LIVE CLOCK & AUDIO ENGINE ---
 def render_live_clock():
