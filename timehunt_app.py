@@ -1574,6 +1574,165 @@ def page_ai_assistant():
         """
         st.markdown(html_code, unsafe_allow_html=True)
 
+    # --- 3. AUTO-DETECT LOGIC (Hybrid: Keywords + AI) ---
+    def check_if_image_request(user_text):
+        """
+        Determines if the user wants an image.
+        Priority 1: Hardcoded Keywords (Fast & Reliable)
+        Priority 2: AI Analysis (Smart but Slower)
+        """
+        # 1. KEYWORD CHECK (The "Force" Switch)
+        # If any of these words appear, we assume it's an image request immediately.
+        triggers = ["generate image", "create image", "show me a picture", "generate a picture", 
+                   "draw a", "make a visual", "visualize", "generate an image", "create a logo"]
+        
+        lower_text = user_text.lower()
+        if any(t in lower_text for t in triggers):
+            return True
+
+        # 2. AI CHECK (The "Smart" Switch for subtle requests)
+        try:
+            from google import genai
+            
+            api_keys = st.session_state.get('gemini_api_keys', [])
+            if not api_keys: return False
+            
+            client = genai.Client(api_key=api_keys[0]) 
+            
+            detection_prompt = f"""
+            Analyze this message: "{user_text}"
+            Does the user explicitly want to SEE or GENERATE a visual/image/diagram?
+            Answer ONLY 'YES' or 'NO'.
+            """
+            
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-lite", 
+                contents=detection_prompt
+            )
+            return "YES" in response.text.strip().upper()
+        except:
+            return False
+
+    # --- 4. PROCESS MESSAGE LOGIC ---
+    def process_message(prompt_text, force_image_mode=False):
+        # A. Init Session
+        if not st.session_state.get('current_session_id'):
+            st.session_state['current_session_id'] = str(uuid.uuid4())
+            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4])
+
+        # B. Save User Message
+        st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        save_chat_to_cloud("user", prompt_text)
+        
+        # C. Render User Message
+        with st.chat_message("user", avatar=user_av):
+            st.write(prompt_text)
+
+        # D. DECIDE: IMAGE OR TEXT?
+        is_image_gen = force_image_mode
+        if not is_image_gen:
+            # Check intelligently if this is an image request
+            is_image_gen = check_if_image_request(prompt_text)
+
+        # E. EXECUTE RESPONSE
+        with st.chat_message("assistant", avatar=ai_av):
+            status_box = st.empty()
+            
+            if is_image_gen:
+                # --- IMAGE MODE (Flux via Pollinations) ---
+                with status_box:
+                    render_loading_state("Loading TimeHunt AI for image generation...")
+                
+                # Call the Flux Generator
+                img_url = generate_visual_intel(prompt_text)
+                
+                if img_url:
+                    response_block = {
+                        "role": "model", 
+                        "text": f"Visual intel generated for: '{prompt_text}'",
+                        "image": img_url
+                    }
+                    save_chat_to_cloud("model", f"Visual intel generated for: '{prompt_text}'", image_b64=img_url)
+                else:
+                    err_text = "⚠️ Visual generation failed."
+                    response_block = {"role": "model", "text": err_text}
+                    save_chat_to_cloud("model", err_text)
+                    
+            else:
+                # --- TEXT MODE (Gemini) ---
+                with status_box:
+                    render_loading_state("Processing Intelligence...")
+                
+                response_text, _ = perform_ai_analysis(prompt_text)
+                response_block = {"role": "model", "text": response_text}
+                save_chat_to_cloud("model", response_text)
+                
+                # Audio
+                try:
+                    clean_text = response_text.replace('\n', ' ')[:200]
+                    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
+                    st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
+                except: pass
+
+            status_box.empty()
+            
+        st.session_state['chat_history'].append(response_block)
+        st.rerun()
+
+    # --- 5. RENDER PAGE HEADER ---
+    c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
+    with c_title:
+        st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
+    with c_mic:
+        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input")
+        if audio_data: st.toast("Voice received...", icon="🎧")
+
+    # --- 6. RENDER HISTORY ---
+    if not st.session_state.get('chat_history'):
+        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
+        st.markdown(f"<h3>Hello, {user_name}</h3>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a productive hourly schedule for today.")
+        if c2.button("🧠 Explain Topic", use_container_width=True): process_message("Explain a complex concept simply.")
+        
+        # Explicit Image Button
+        if c3.button("🎨 Generate Visual", use_container_width=True): 
+            st.session_state['trigger_image_gen'] = True
+            st.toast("Type your image prompt below!", icon="🎨")
+            
+        if c4.button("📝 Study Tips", use_container_width=True): process_message("Give me scientific study techniques.")
+    else:
+        chat_container = st.container()
+        with chat_container:
+            for msg in st.session_state['chat_history']:
+                role = str(msg.get('role')).lower()
+                content_text = msg.get('text', '')
+                content_img = msg.get('image') 
+                
+                ui_role = "assistant" if role in ["model", "assistant", "ai"] else "user"
+                current_avatar = ai_av if ui_role == "assistant" else user_av
+
+                with st.chat_message(ui_role, avatar=current_avatar):
+                    if content_text: st.write(content_text)
+                    if content_img:
+                        if str(content_img).startswith("http"):
+                            st.image(content_img, use_container_width=True)
+                        else:
+                            try: st.image(base64.b64decode(content_img), use_container_width=True)
+                            except: pass 
+
+    # --- 7. INPUT FIELD ---
+    manual_gen_mode = st.session_state.get('trigger_image_gen', False)
+    placeholder_txt = "Describe visual..." if manual_gen_mode else "Ask TimeHunt AI..."
+    
+    if prompt := st.chat_input(placeholder_txt):
+        if manual_gen_mode: 
+            st.session_state['trigger_image_gen'] = False
+            process_message(prompt, force_image_mode=True)
+        else:
+            # Auto-detect takes over here
+            process_message(prompt, force_image_mode=False)
+
     # --- 3. AUTO-DETECT LOGIC (The Brain) ---
     def check_if_image_request(user_text):
         """
