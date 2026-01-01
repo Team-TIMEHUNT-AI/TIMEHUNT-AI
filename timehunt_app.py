@@ -5,6 +5,12 @@ import re
 import streamlit as st
 import os
 from streamlit_option_menu import option_menu
+
+# --- PATH CONFIGURATION ---
+# Ensures assets load correctly regardless of where the script is run
+current_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(current_dir)
+
 import datetime
 import random
 import pandas as pd
@@ -16,11 +22,6 @@ import calendar
 from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import tempfile
-
-# --- PATH CONFIGURATION ---
-# Ensures assets load correctly regardless of where the script is run
-current_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(current_dir)
 
 # --- 1. LIVE CLOCK COMPONENT (Modern & Clean) ---
 def render_live_clock():
@@ -462,6 +463,7 @@ If asked to generate a plan, you MUST return it in this strict JSON format insid
 """
 
 # --- 10. SESSION STATE INITIALIZATION ---
+# --- 10. SESSION STATE INITIALIZATION ---
 def initialize_session_state():
     """
     Sets up the initial variables for the app.
@@ -491,7 +493,9 @@ def initialize_session_state():
         'user_goal': "Productivity", 
         'user_avatar': "🏹", 
         'xp_history': [], 
-        'theme_mode': 'Dark', 
+        
+        # --- CHANGE HERE: Set default to Light ---
+        'theme_mode': 'Light', 
         'theme_color': 'Green (Default)'
     }
 
@@ -500,28 +504,18 @@ def initialize_session_state():
         if key not in st.session_state:
             st.session_state[key] = default_val
 
-    # --- CRITICAL API KEY FIX ---
-    # This logic prevents "List inside a List" errors
+    # ... (Keep the rest of the API Key logic exactly as it was) ...
     if 'gemini_api_keys' not in st.session_state or not st.session_state['gemini_api_keys']:
         keys = []
-        
-        # Check GEMINI_API_KEY
         if "GEMINI_API_KEY" in st.secrets:
             raw = st.secrets["GEMINI_API_KEY"]
-            if isinstance(raw, list):
-                keys.extend(raw) # Add items from list, don't nest the list
-            else:
-                keys.append(raw)
-        
-        # Check GOOGLE_API_KEY (Backup)
+            if isinstance(raw, list): keys.extend(raw) 
+            else: keys.append(raw)
         elif "GOOGLE_API_KEY" in st.secrets:
             raw = st.secrets["GOOGLE_API_KEY"]
-            if isinstance(raw, list):
-                keys.extend(raw)
-            else:
-                keys.append(raw)
-                
-        # Remove duplicates and empty strings
+            if isinstance(raw, list): keys.extend(raw)
+            else: keys.append(raw)
+        
         unique_keys = list(set([k for k in keys if isinstance(k, str) and k.strip()]))
         st.session_state['gemini_api_keys'] = unique_keys
         
@@ -2228,7 +2222,7 @@ def page_settings():
         # Get current state with fallback
         current_mode = st.session_state.get('theme_mode', 'Dark')
         # Radio button returns "Dark" or "Light"
-        mode_choice = st.radio("Display Mode", ["Dark", "Light"], horizontal=True, index=0 if current_mode=='Dark' else 1)
+        mode_choice = st.radio("Display Mode", ["Light", "Dark"], horizontal=True, index=0 if current_mode=='Dark' else 1)
         
     with c_color:
         current_theme = st.session_state.get('theme_color', 'Green (Default)')
@@ -2283,7 +2277,7 @@ def page_settings():
     </style>
     </head>
     <body>
-    <button class="btn" onclick="requestPerm()">📢 Enable Desktop Alerts</button>
+    <button class="btn" onclick="requestPerm()">📢 Enable Notification Alerts</button>
     <script>
     function requestPerm() {
         if (!("Notification" in window)) {
@@ -2449,7 +2443,7 @@ def page_help():
     st.caption("Guides, FAQs, and Feedback Channel")
     
     # --- SECTION 1: INSTALLATION GUIDE ---
-    st.markdown("### 📲 Install TimeHunt")
+    st.markdown("### 📲 Install TimeHunt AI")
     st.info("Add this app to your home screen for the best full-screen experience.")
     
     with st.container():
@@ -2625,7 +2619,7 @@ def main():
             
             st.markdown("---")
             
-            # Location Setting
+            # Location Settings
             with st.expander("📍 Location Settings"):
                 city_input = st.text_input("Current City", value=st.session_state.get('user_city', 'Jaipur'))
                 if city_input != st.session_state.get('user_city', 'Jaipur'):
@@ -2634,7 +2628,7 @@ def main():
 
             st.markdown("---")
             
-            # Main Nav
+            # Main (Navigations)
             nav = option_menu(
                 menu_title=None,
                 options=["Home", "Scheduler", "Calendar", "AI Companion", "Timer", "Analytics", "Help Center", "About", "Settings"], 
@@ -2650,7 +2644,7 @@ def main():
             
             st.caption(f"👤 **{st.session_state.get('user_name', 'User')}**")
 
-        # Page Routing
+# ----------- Page Routing ------------------
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
