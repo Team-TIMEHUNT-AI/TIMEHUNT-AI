@@ -139,57 +139,17 @@ def apply_professional_style():
         </style>
     """, unsafe_allow_html=True)
 
-# --- 4. REDESIGNED MAIN SIDEBAR (High Contrast Fix) ---
+# --- 4. REDESIGNED MAIN SIDEBAR (Clean & Visible) ---
 def render_sidebar():
     with st.sidebar:
         # 1. HEADER
         st.markdown(f"### 🏹 Agent: **{st.session_state.get('user_name', 'Hunter')}**")
+        st.divider()
         
-        # 2. FOCUS TOOLS (Top)
-        with st.expander("🎧 Focus Tools & Timer", expanded=True):
-            # Music
-            music_map = {
-                "Om Chanting": "om.mp3", 
-                "Binaural Beats": "binaural.mp3", 
-                "Flow State": "flute.mp3", 
-                "Rainfall": "rain.mp3"
-            }
-            selected_track = st.selectbox("Frequency", list(music_map.keys()), label_visibility="collapsed")
-            
-            # Audio Player
-            audio_file = music_map[selected_track]
-            if os.path.exists(audio_file):
-                st.audio(audio_file, format="audio/mp3", loop=True)
-            else:
-                st.caption(f"⚠️ {audio_file} not found")
-
-            st.write("")
-            
-            # Timer (HTML/JS)
-            timer_html = """
-            <style>
-                .timer-box { background: #111; color: #B5FF5F; font-family: monospace; font-size: 26px; text-align: center; border-radius: 8px; padding: 10px; border: 1px solid #333; }
-                .btn-grid { display: flex; gap: 5px; margin-top: 8px; }
-                .btn { flex: 1; padding: 6px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; }
-                .btn-start { background: #B5FF5F; color: black; }
-                .btn-reset { background: #333; color: white; }
-            </style>
-            <div class="timer-box"><span id="timer-display">25:00</span></div>
-            <div class="btn-grid"><button class="btn btn-start" onclick="startTimer()">START</button><button class="btn btn-reset" onclick="resetTimer()">RESET</button></div>
-            <script>
-                let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
-                function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
-                function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Time Up!"); } }, 1000); }
-                function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
-            </script>
-            """
-            components.html(timer_html, height=130)
-        
-        st.markdown("---")
-
-        # 3. MAIN NAVIGATION (VISIBILITY FIX APPLIED HERE)
+        # 2. MAIN NAVIGATION
+        # We removed the 'styles' dictionary so it uses the default (visible) colors.
         selected_page = option_menu(
-            menu_title=None, 
+            menu_title="Navigation", 
             options=[
                 "Home", 
                 "Scheduler", 
@@ -213,34 +173,55 @@ def render_sidebar():
                 "question-circle"
             ], 
             default_index=0,
-            styles={
-                "container": {
-                    "padding": "0!important", 
-                    "background-color": "#ffffff" # Force White Background
-                },
-                "icon": {
-                    "color": "#000000", # Force Black Icons
-                    "font-size": "14px"
-                }, 
-                "nav-link": {
-                    "font-size": "14px", 
-                    "text-align": "left", 
-                    "margin": "0px", 
-                    "color": "#000000", # <--- FORCE BLACK TEXT (Fixes Invisibility)
-                    "font-weight": "600"
-                },
-                "nav-link-selected": {
-                    "background-color": "#B5FF5F", 
-                    "color": "#000000", 
-                    "border-left": "4px solid #000000"
-                },
-            }
         )
+        
+        st.divider()
+
+        # 3. FOCUS TOOLS & TIMER
+        with st.expander("🎧 Focus Tools", expanded=True):
+            # Music
+            music_map = {
+                "Om Chanting": "om.mp3", 
+                "Binaural Beats": "binaural.mp3", 
+                "Flow State": "flute.mp3", 
+                "Rainfall": "rain.mp3" 
+            }
+            selected_track = st.selectbox("Soundscape", list(music_map.keys()), label_visibility="collapsed")
+            
+            # Audio Player
+            audio_file = music_map[selected_track]
+            if os.path.exists(audio_file):
+                st.audio(audio_file, format="audio/mp3", loop=True)
+            else:
+                st.caption("⚠️ Audio file missing")
+
+            st.write("")
+            
+            # Timer (HTML/JS)
+            timer_html = """
+            <style>
+                .timer-box { background: #1E1E1E; color: #00FF00; font-family: monospace; font-size: 26px; text-align: center; border-radius: 8px; padding: 10px; border: 1px solid #333; }
+                .btn { width: 48%; padding: 5px; cursor: pointer; font-weight: bold; font-size: 12px; margin-top: 5px; border-radius: 4px; border: none; }
+                .btn-start { background: #00FF00; color: black; margin-right: 2%; }
+                .btn-reset { background: #333; color: white; }
+            </style>
+            <div class="timer-box"><span id="timer-display">25:00</span></div>
+            <div>
+                <button class="btn btn-start" onclick="startTimer()">START</button>
+                <button class="btn btn-reset" onclick="resetTimer()">RESET</button>
+            </div>
+            <script>
+                let timeLeft = 25 * 60; let timerId = null; const display = document.getElementById('timer-display');
+                function updateDisplay() { let mins = Math.floor(timeLeft / 60); let secs = timeLeft % 60; display.innerText = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs; }
+                function startTimer() { if (timerId) return; timerId = setInterval(() => { if (timeLeft > 0) { timeLeft--; updateDisplay(); } else { clearInterval(timerId); alert("Time Up!"); } }, 1000); }
+                function resetTimer() { clearInterval(timerId); timerId = null; timeLeft = 25 * 60; updateDisplay(); }
+            </script>
+            """
+            components.html(timer_html, height=120)
         
         # 4. LOGOUT
         st.write("")
-        st.markdown("---")
-        if st.button("🚪 Log Out System", use_container_width=True, type="primary"):
+        if st.button("🚪 Log Out", use_container_width=True, type="primary"):
             logout_user()
 
         return selected_page
