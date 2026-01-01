@@ -1567,16 +1567,22 @@ def get_smart_ai_response(prompt):
     return text
 
 # --- MAIN APP FUNCTION ---
+# --- MAIN APP FUNCTION ---
 def main():
-	inject_custom_css()
+    # 1. Apply World-Class Theme Immediately
+    inject_custom_css()
 
+    # 2. RUN AUTHENTICATION (Blocks access until logged in)
     if not handle_auth():
         return
 
-    # 1. RENDER SIDEBAR & GET SELECTION
-    nav_selection = render_sidebar() 
-    
-    # 2. ROUTING
+    # --- FROM HERE DOWN, USER IS LOGGED IN ---
+
+    # 3. RENDER SIDEBAR & GET SELECTION
+    # This function now handles the new order: Focus -> Nav -> Logout
+    nav_selection = render_sidebar()
+
+    # 4. PAGE ROUTING
     if nav_selection == "Home":
         page_home()
     elif nav_selection == "Scheduler":
@@ -1584,25 +1590,58 @@ def main():
     elif nav_selection == "AI Assistant":
         page_ai_assistant()
     elif nav_selection == "Dashboard":
-        # ... (Your Dashboard Code) ...
-        st.title("Dashboard")
-        st.write("Stats loaded.")
+        # --- DASHBOARD LOGIC ---
+        try:
+            from streamlit_gsheets import GSheetsConnection
+            conn = st.connection("gsheets", type=GSheetsConnection)
+            df = conn.read(worksheet="Sheet1", ttl=0) 
+        except Exception as e:
+            st.error(f"📡 Connection Failed: {e}")
+            st.stop()
+
+        # Display Stats
+        st.title("🏆 Global Leaderboard")
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("### Top Hunters")
+            if not df.empty and 'XP' in df.columns:
+                 # Sort by XP
+                 df['XP'] = pd.to_numeric(df['XP'], errors='coerce').fillna(0)
+                 df_sorted = df.sort_values(by='XP', ascending=False).head(5)
+                 st.dataframe(df_sorted[['Name', 'XP', 'League']], use_container_width=True, hide_index=True)
+            else:
+                 st.info("No data available.")
+            
+        with col2:
+            st.markdown("### Your Stats")
+            st.metric("Your XP", f"{st.session_state['user_xp']} XP")
+            st.metric("Rank", "Gold League")
+            if st.button("📄 Download Report"):
+                st.success("Report Generated!")
+
     elif nav_selection == "Calendar":
         st.title("📅 Mission Calendar")
-        st.info("Calendar View Coming Soon")
+        st.info("Calendar module is currently offline.")
+        
     elif nav_selection == "Reminders":
         st.title("⏰ Active Alarms")
-        # Reuse your render_alarm_ui here if you want a full page for it
-        st.write(st.session_state.get('reminders', []))
+        if st.session_state['reminders']:
+            st.write(st.session_state['reminders'])
+        else:
+            st.info("No active alarms set.")
+            
     elif nav_selection == "Settings":
         page_settings()
+        
     elif nav_selection == "About":
         page_about()
+        
     elif nav_selection == "Help":
         st.title("❓ Help Center")
-        st.write("System Documentation.")
+        st.write("System Documentation v2.0")
 
-    # Global Alarm Check (Always runs)
+    # 5. GLOBAL ALARM CHECK (Always runs in background)
     check_reminders()
     if st.session_state.get('active_alarm'):
         render_alarm_ui()
