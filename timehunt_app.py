@@ -1623,7 +1623,6 @@ def page_calendar():
 
 # --- 10. PAGE: AI ASSISTANT ---
 
-# --- 10. PAGE: AI COMPANION (Final Fixed Version) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -1702,7 +1701,7 @@ def page_ai_assistant():
             return False
 
     # --- 4. PROCESS MESSAGE LOGIC ---
-    def process_message(prompt_text, force_image_mode=False):
+    def process_message(prompt_text):
         # A. Init Session
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
@@ -1717,10 +1716,8 @@ def page_ai_assistant():
             st.write(prompt_text)
 
         # D. DECIDE: IMAGE OR TEXT?
-        is_image_gen = force_image_mode
-        if not is_image_gen:
-            # Check intelligently if this is an image request
-            is_image_gen = check_if_image_request(prompt_text)
+        # Automatically check if this is an image request
+        is_image_gen = check_if_image_request(prompt_text)
 
         # E. EXECUTE RESPONSE
         with st.chat_message("assistant", avatar=ai_av):
@@ -1785,10 +1782,10 @@ def page_ai_assistant():
         if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a productive hourly schedule for today.")
         if c2.button("🧠 Explain Topic", use_container_width=True): process_message("Explain a complex concept simply.")
         
-        # Explicit Image Button
+        # Explicit Image Button (In Chat History Only - Optional)
         if c3.button("🎨 Generate Visual", use_container_width=True): 
-            st.session_state['trigger_image_gen'] = True
-            st.toast("Type your image prompt below!", icon="🎨")
+            # Prompt user to type it
+            st.toast("Just type your image description below! e.g., 'Generate an image of...'", icon="🎨")
             
         if c4.button("📝 Study Tips", use_container_width=True): process_message("Give me scientific study techniques.")
     else:
@@ -1813,16 +1810,10 @@ def page_ai_assistant():
                             except: pass 
 
     # --- 7. INPUT FIELD ---
-    manual_gen_mode = st.session_state.get('trigger_image_gen', False)
-    placeholder_txt = "Describe visual..." if manual_gen_mode else "Ask TimeHunt AI..."
-    
-    if prompt := st.chat_input(placeholder_txt):
-        if manual_gen_mode: 
-            st.session_state['trigger_image_gen'] = False
-            process_message(prompt, force_image_mode=True)
-        else:
-            # Auto-detect takes over here
-            process_message(prompt, force_image_mode=False)
+    if prompt := st.chat_input("Ask TimeHunt AI or describe an image..."):
+        # Auto-detect takes over here
+        process_message(prompt)
+
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 
@@ -2686,6 +2677,7 @@ def page_help():
 
 # --- 20. MAIN APPLICATION ROUTER ---
 
+# --- 20. MAIN APPLICATION ROUTER ---
 def main():
     # 1. Initialize System State
     initialize_session_state()
@@ -2723,17 +2715,6 @@ def main():
             
             st.divider()
 
-            # --- NEW: IMAGE GENERATION TRIGGER ---
-            st.markdown("#### 🎨 Visual Studio")
-            st.caption("Generate diagrams or motivational images.")
-            
-            # This button sets a flag. The next input in the chat box will be treated as an image prompt.
-            if st.button("✨ Generate Visual from Text", type="primary", use_container_width=True):
-                st.session_state['trigger_image_gen'] = True
-                st.toast("Image Mode Active. Type your description in the chat box below.", icon="🎨")
-
-            st.divider()
-            
             # Chat Management (Delete)
             if 'delete_mode' not in st.session_state: st.session_state['delete_mode'] = False
             toggle_label = "Done Managing" if st.session_state['delete_mode'] else "🗑️ Manage Chats"
