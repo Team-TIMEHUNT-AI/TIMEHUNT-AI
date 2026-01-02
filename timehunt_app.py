@@ -296,7 +296,7 @@ def upload_to_drive(image_b64):
     from googleapiclient.http import MediaIoBaseUpload
 
     try:
-        # 1. Load Credentials (reuse the same ones from Sheets)
+        # 1. Load Credentials
         if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
              creds_info = st.secrets["connections"]["gsheets"]
         else:
@@ -405,7 +405,6 @@ def save_chat_to_cloud(role, content, image_b64=None):
         }])
         
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
-        # Fix NaNs (Empty cells) to prevent errors
         df_final = df_final.fillna("")
         df_final = df_final.astype(str)
         
@@ -431,32 +430,23 @@ def load_chat_sessions():
     return []
 
 def delete_chat_session(session_id):
-    """
-    Deletes a specific chat session from the Google Sheet.
-    """
+    """Deletes a specific chat session."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        # 1. Read Data
         df = conn.read(worksheet="ChatHistory", ttl=0)
         
         if not df.empty and "SessionID" in df.columns:
-            # 2. Filter OUT the target session
-            # We keep rows where SessionID is NOT the target
             df_filtered = df[df["SessionID"].astype(str) != str(session_id)]
-            
-            # 3. Update Sheet
             conn.update(worksheet="ChatHistory", data=df_filtered)
             st.toast("Chat deleted.", icon="🗑️")
-            
     except Exception as e:
         st.error(f"Could not delete: {e}")
 
 def load_messages_for_session(session_id):
     """
     Loads messages for a specific session.
-    ✅ FIXED: Correctly handles NaN/Empty cells to prevent broken images.
+    ✅ FIXED: Handles empty cells correctly to allow images to load.
     """
     df = get_all_chats()
     
@@ -469,8 +459,8 @@ def load_messages_for_session(session_id):
         
         normalized_history = []
         for _, row in messages.iterrows():
-            # CRITICAL FIX: Handle empty cells or "nan" strings from Sheets
             img_val = row["Image"] if "Image" in row else None
+            # Check for NaN or empty string
             if pd.isna(img_val) or str(img_val).lower() == "nan" or str(img_val).strip() == "":
                 img_val = None
             
@@ -2794,13 +2784,11 @@ def page_help():
             st.write(a)
 
 # --- 20. MAIN APPLICATION ROUTER ---
-
-# --- 20. MAIN APPLICATION ROUTER ---
 def main():
     # 1. Initialize System State
     initialize_session_state()
     
-    # 2. CHECK GLOBAL ALARMS (Code Red Overlay)
+    # 2. CHECK GLOBAL ALARMS
     check_reminders()
     render_alarm_ui()
 
@@ -2813,12 +2801,10 @@ def main():
         page_onboarding()
         return 
 
-    # 5. CHAT MODE SIDEBAR (Special Layout)
+    # 5. CHAT MODE SIDEBAR
     if st.session_state.get('page_mode') == 'chat':
         with st.sidebar:
             st.markdown("### 💬 AI Controls")
-            
-            # Navigation Buttons
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("🏠 Home", use_container_width=True):
@@ -2833,16 +2819,14 @@ def main():
             
             st.divider()
 
-            # Chat Management (Delete)
             if 'delete_mode' not in st.session_state: st.session_state['delete_mode'] = False
             toggle_label = "Done Managing" if st.session_state['delete_mode'] else "🗑️ Manage Chats"
             if st.button(toggle_label, use_container_width=True):
                 st.session_state['delete_mode'] = not st.session_state['delete_mode']
                 st.rerun()
 
-            st.write("") # Spacer
+            st.write("") 
             
-            # Session List Logic
             sessions = load_chat_sessions()
             if sessions:
                 st.markdown("#### History")
@@ -2864,7 +2848,6 @@ def main():
                             st.session_state['chat_history'] = load_messages_for_session(sid)
                             st.rerun()
         
-        # Render Chat Page
         page_ai_assistant()
 
     # 6. STANDARD SIDEBAR (Main Menu)
@@ -2872,58 +2855,18 @@ def main():
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
-            
-            st.write("") # Spacer
+            st.write("") 
 
-            # --- ENHANCED AUDIO PLAYER ---
             with st.container(border=True):
                 st.markdown("### 🎧 Focus Zone")
-                
-                # CSS Animation for "Equalizer" Visual
                 st.markdown("""
-                <style>
-                .equalizer {
-                    display: flex; justify-content: center; align-items: flex-end;
-                    height: 40px; gap: 4px; margin-bottom: 15px;
-                }
-                .bar {
-                    width: 6px; background: var(--primary-color);
-                    animation: bounce 1s infinite ease-in-out;
-                    border-radius: 3px;
-                }
-                .bar:nth-child(1) { animation-duration: 0.8s; height: 15px; }
-                .bar:nth-child(2) { animation-duration: 1.1s; height: 25px; }
-                .bar:nth-child(3) { animation-duration: 1.3s; height: 35px; }
-                .bar:nth-child(4) { animation-duration: 0.9s; height: 20px; }
-                .bar:nth-child(5) { animation-duration: 1.2s; height: 30px; }
-                
-                @keyframes bounce {
-                    0%, 100% { transform: scaleY(0.5); opacity: 0.6; }
-                    50% { transform: scaleY(1.2); opacity: 1; }
-                }
-                </style>
-                <div class="equalizer">
-                    <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
-                </div>
+                <style>.equalizer { display: flex; justify-content: center; align-items: flex-end; height: 40px; gap: 4px; margin-bottom: 15px; } .bar { width: 6px; background: var(--primary-color); animation: bounce 1s infinite ease-in-out; border-radius: 3px; } .bar:nth-child(1) { animation-duration: 0.8s; height: 15px; } .bar:nth-child(2) { animation-duration: 1.1s; height: 25px; } .bar:nth-child(3) { animation-duration: 1.3s; height: 35px; } .bar:nth-child(4) { animation-duration: 0.9s; height: 20px; } .bar:nth-child(5) { animation-duration: 1.2s; height: 30px; } @keyframes bounce { 0%, 100% { transform: scaleY(0.5); opacity: 0.6; } 50% { transform: scaleY(1.2); opacity: 1; } } </style>
+                <div class="equalizer"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
                 """, unsafe_allow_html=True)
 
-                # Sound Selection
-                music_mode = st.selectbox(
-                    "Soundscape", 
-                    ["Om Chanting", "Binaural Beats", "Flute Flow", "Rainfall"], 
-                    label_visibility="collapsed"
-                )
-                
-                # Map to files
-                local_map = {
-                    "Om Chanting": "om.mp3", 
-                    "Binaural Beats": "binaural.mp3", 
-                    "Flute Flow": "flute.mp3", 
-                    "Rainfall": "rain.mp3"
-                }
+                music_mode = st.selectbox("Soundscape", ["Om Chanting", "Binaural Beats", "Flute Flow", "Rainfall"], label_visibility="collapsed")
+                local_map = {"Om Chanting": "om.mp3", "Binaural Beats": "binaural.mp3", "Flute Flow": "flute.mp3", "Rainfall": "rain.mp3"}
                 target_file = local_map.get(music_mode)
-                
-                # Check file and render
                 if target_file and os.path.exists(target_file):
                     st.audio(target_file, format="audio/mp3", loop=True)
                     st.caption(f"▶ Now Playing: {music_mode}")
@@ -2932,10 +2875,10 @@ def main():
 
             st.markdown("---")
             
-            # Main Nav
+            # UPDATED MENU OPTIONS
             nav = option_menu(
                 menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "Chat with Timehunt AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
+                options=["Home", "Scheduler", "Calendar", "AI Companion", "Timer", "Analytics", "Help Center", "About", "Settings"], 
                 icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
                 default_index=0,
                 styles={
@@ -2945,14 +2888,13 @@ def main():
                     "nav-link-selected": {"background-color": "var(--primary-color)", "color": "#000"},
                 }
             )
-            
             st.caption(f"👤 **{st.session_state.get('user_name', 'User')}**")
 
-        # --- PAGE ROUTING (MUST BE OUTSIDE st.sidebar) ---
+        # --- PAGE ROUTING ---
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
-        elif nav == " Chat with TimeHunt AI": 
+        elif nav == "AI Companion": # MATCHES THE MENU OPTION ABOVE
             st.session_state['page_mode'] = 'chat'
             st.rerun()
         elif nav == "Timer": page_timer()  
