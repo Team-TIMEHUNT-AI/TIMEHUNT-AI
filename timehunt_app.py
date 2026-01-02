@@ -847,7 +847,7 @@ def get_system_context():
     """
     return system_prompt
 
-# --- 13. AI ANALYSIS ENGINE (Updated for Gemini 2.5) ---
+# --- 13. AI ANALYSIS ENGINE (Updated for Infinite Token Output) ---
 def perform_ai_analysis(user_query):
     """
     Connects to Google Gemini (v2.5) to generate responses.
@@ -866,9 +866,7 @@ def perform_ai_analysis(user_query):
         return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
 
     # --- UPDATE: USING YOUR AVAILABLE MODELS ---
-    # We prioritize 2.5 Flash for speed/intelligence, then 2.0 Flash as backup
     models = [
-        "gemini-2.5-flash",          # Newest & Smartest Fast Model
         "gemini-2.0-flash",          # Very Stable Standard
         "gemini-2.0-flash-lite",     # Ultra Fast Backup
         "gemini-1.5-flash"           # Old Reliable
@@ -888,7 +886,8 @@ def perform_ai_analysis(user_query):
                 try:
                     # Build History
                     history = []
-                    recent_chats = st.session_state.get('chat_history', [])[-6:]
+                    # Increased context window to remember more past chat
+                    recent_chats = st.session_state.get('chat_history', [])[-10:] 
                     for msg in recent_chats:
                         role = "user" if msg.get('role') == "user" else "model"
                         text = str(msg.get('text', ''))
@@ -901,7 +900,8 @@ def perform_ai_analysis(user_query):
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
                             temperature=0.7,
-                            max_output_tokens=800 # Increased for better detailed answers
+                            # ✅ FIXED: Increased to 8192 (Gemini App Standard)
+                            max_output_tokens=8192 
                         )
                     )
                     
@@ -910,17 +910,15 @@ def perform_ai_analysis(user_query):
 
                 except Exception as model_err:
                     last_error_msg = str(model_err)
-                    # If model not found or quota full, try next model
                     if "404" in last_error_msg or "429" in last_error_msg:
                         continue
                     else:
-                        break # Break to try next key if it's an Auth error
+                        break 
                         
         except Exception as key_err:
             last_error_msg = str(key_err)
             continue
 
-    # If all fail, show the SPECIFIC error
     return f"⚠️ AI Connection Failed. Details: {last_error_msg}", "System"
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
