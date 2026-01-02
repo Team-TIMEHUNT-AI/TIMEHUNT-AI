@@ -283,63 +283,128 @@ def load_cloud_data():
 
 # --- 5. CHAT HISTORY DATABASE (Google Sheets) ---
 def get_all_chats():
-    """Reads the entire ChatHistory sheet safely."""
+    """Reads the entire ChatHistory sheet safely with zero caching."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        return conn.read(worksheet="ChatHistory", ttl=0)
+        # ttl=0 forces a fresh fetch from Google every time
+        df = conn.read(worksheet="ChatHistory", ttl=0)
+        return df
     except Exception:
-        # Return empty structure if sheet is missing
-        return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Timestamp"])
+        # Return empty structure if sheet is missing or connection fails
+        return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
 
 def save_chat_to_cloud(role, content, image_b64=None):
     """
     Saves chat text AND image data to the cloud.
+    ✅ FIX: Forces all IDs to Strings to prevent Google Sheets errors.
+    ✅ FIX: Handles empty sheets gracefully.
     """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Prepare Data
+        # 1. Prepare Data (Force Strings for Safety)
         uid = str(st.session_state.get('user_id', 'Unknown'))
         sid = str(st.session_state.get('current_session_id', 'Unknown'))
         sname = str(st.session_state.get('current_session_name', 'New Chat'))
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # Ensure image is an empty string if None, not NaN or Null
+        safe_image = image_b64 if image_b64 else ""
+        
         # 2. Get Existing Data
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
+            # If sheet is totally empty (no headers), create them
+            if df_existing.empty:
+                df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         except Exception:
             df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         
-        # 3. Create New Row (With Image Column)
-        new_row = pd.DataFrame([{
+        # 3. Create New Row
+        new_data = {
             "UserID": uid, 
             "SessionID": sid, 
             "SessionName": sname,
-            "Role": role, 
-            "Content": content, 
-            "Image": image_b64 if image_b64 else "", # Save Base64 string if exists
+            "Role": str(role), 
+            "Content": str(content), 
+            "Image": safe_image,
             "Timestamp": ts
-        }])
+        }
         
-        # 4. Update
+        new_row = pd.DataFrame([new_data])
+        
+        # 4. Append and Update
+        # We use strict string typing to prevent schema errors
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
+        
+        # Force critical columns to string before upload
+        df_final["UserID"] = df_final["UserID"].astype(str)
+        df_final["SessionID"] = df_final["SessionID"].astype(str)
+        
         conn.update(worksheet="ChatHistory", data=df_final)
         
     except Exception as e:
+        # Print error to console for debugging
         print(f"Chat Save Error: {e}")
+        # Optional: Show toast if save fails (good for debugging)
+        # st.toast(f"Save Error: {e}", icon="⚠️")
 
 def load_chat_sessions():
-    """Returns a list of unique chat sessions for the sidebar."""
+    """
+    Returns a unique list of chat sessions for the sidebar.
+    ✅ FIX: Sorts by Timestamp so new chats appear at the top.
+    """
     df = get_all_chats()
     uid = str(st.session_state.get('user_id'))
     
     if not df.empty and "UserID" in df.columns:
+        # Filter for current user
+        # Ensure UserID col is treated as string for comparison
+        df["UserID"] = df["UserID"].astype(str)
         my_chats = df[df["UserID"] == uid]
+        
         if not my_chats.empty:
-            # Return unique sessions, newest first
-            return my_chats[["SessionID", "SessionName"]].drop_duplicates().to_dict('records')[::-1]
+            # Sort by Timestamp descending (Newest first)
+            if "Timestamp" in my_chats.columns:
+                my_chats = my_chats.sort_values(by="Timestamp", ascending=False)
+            
+            # Get unique Sessions
+            unique_sessions = my_chats[["SessionID", "SessionName"]].drop_duplicates(subset=["SessionID"])
+            return unique_sessions.to_dict('records')
+            
+    return []
+
+def load_messages_for_session(session_id):
+    """
+    Loads messages for a specific session.
+    ✅ FIX: Handles missing 'Image' columns in older data.
+    """
+    df = get_all_chats()
+    
+    if not df.empty and "SessionID" in df.columns:
+        # Ensure string comparison
+        df["SessionID"] = df["SessionID"].astype(str)
+        messages = df[df["SessionID"] == str(session_id)]
+        
+        # Sort by time to ensure correct order
+        if "Timestamp" in messages.columns:
+            messages = messages.sort_values(by="Timestamp", ascending=True)
+        
+        normalized_history = []
+        for _, row in messages.iterrows():
+            # Safe Image Loading (Handle NaN/None)
+            img_val = row.get("Image", "")
+            if pd.isna(img_val) or img_val == "nan":
+                img_val = None
+                
+            normalized_history.append({
+                "role": str(row.get("Role", "user")).lower(),
+                "text": str(row.get("Content", "")),
+                "image": img_val
+            })
+        return normalized_history
     return []
 
 def load_messages_for_session(session_id):
