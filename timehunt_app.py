@@ -1912,9 +1912,8 @@ def page_ai_assistant():
 
                 with st.chat_message(ui_role, avatar=current_avatar):
                     if content_text: st.write(content_text)
-                    if content_img:
-    # ✅ CORRECTION: Now handles Google Drive Links primarily
-    image_source = str(content_img)
+# ✅ CORRECTION: Now handles Google Drive Links primarily
+                    	image_source = str(content_img)
     
     if image_source.startswith("http"):
         # This handles Pollinations URLs AND Google Drive Links
