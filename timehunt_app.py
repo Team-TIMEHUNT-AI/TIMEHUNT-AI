@@ -2084,7 +2084,6 @@ def upload_to_gemini_manager(uploaded_file_obj, api_key):
         return None
 
 # --- 10. PAGE: AI ASSISTANT (Gemini UI & Multimodal) ---
-
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -2094,7 +2093,7 @@ def page_ai_assistant():
     user_av = st.session_state.get('user_avatar', '👤')
     ai_av = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
     
-    # Load Mic Icon
+    # Load Custom Mic Icon (1767016884959.jpg)
     mic_icon_b64 = ""
     try:
         if os.path.exists("1767016884959.jpg"):
@@ -2109,63 +2108,90 @@ def page_ai_assistant():
 
     # --- 2. HELPER FUNCTIONS ---
     def render_loading_state(custom_text="Thinking..."):
-        st.markdown(f"""<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; opacity: 0.8;"><div style="width: 15px; height: 15px; background: var(--primary-color); border-radius: 50%; animation: pulse 1s infinite;"></div><div style="font-size: 14px;">{custom_text}</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; opacity: 0.8;">
+            <div style="width: 15px; height: 15px; background: var(--primary-color); border-radius: 50%; animation: pulse 1s infinite;"></div>
+            <div style="font-size: 14px;">{custom_text}</div>
+        </div>
+        <style>@keyframes pulse {{ 0% {{ opacity: 0.4; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.4; }} }}</style>
+        """, unsafe_allow_html=True)
 
     def check_if_image_request(user_text):
         triggers = ["generate image", "create image", "draw a", "visualize"]
         return any(t in user_text.lower() for t in triggers)
 
     # --- 3. CORE PROCESSING LOGIC ---
-    def process_message(prompt_text, file_data=None, file_type=None):
-        if not prompt_text and not file_data: return
+    def process_message(prompt_text, file_data=None, file_type=None, audio_bytes=None):
+        """
+        Handles Text, Files, AND Audio using Gemini Native.
+        """
+        if not prompt_text and not file_data and not audio_bytes: return
         
         # Init Session
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
-            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4]) if prompt_text else "File Analysis"
+            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4]) if prompt_text else "New Chat"
 
-        # Save & Render User Msg
+        # 1. SAVE USER MESSAGE
         msg_data = {"role": "user", "text": prompt_text}
-        if file_data: msg_data["file_type"] = file_type # Marker for history
-        st.session_state['chat_history'].append(msg_data)
-        save_chat_to_cloud("user", prompt_text)
         
+        if file_data: 
+            msg_data["file_type"] = file_type
+            save_chat_to_cloud("user", f"📎 Attached {file_type}")
+        elif audio_bytes:
+            msg_data["text"] = "🎤 [Voice Message]"
+            save_chat_to_cloud("user", "🎤 [Voice Message]")
+        else:
+            save_chat_to_cloud("user", prompt_text)
+            
+        st.session_state['chat_history'].append(msg_data)
+        
+        # 2. RENDER USER MESSAGE
         with st.chat_message("user", avatar=user_av):
             if prompt_text: st.write(prompt_text)
             if file_data and file_type and file_type.startswith("image/"):
                  st.image(file_data, width=200)
             elif file_data:
-                 st.caption(f"📎 Sent a {file_type.split('/')[-1].upper()} file.")
+                 st.caption(f"📎 Attached {file_type.split('/')[-1]}")
+            if audio_bytes:
+                 st.audio(audio_bytes, format='audio/wav')
 
-
-        # AI Response
+        # 3. AI RESPONSE GENERATION
         with st.chat_message("assistant", avatar=ai_av):
             status_box = st.empty()
             
-            # A. IMAGE GENERATION
+            # A. IMAGE GENERATION (Text Only)
             if prompt_text and check_if_image_request(prompt_text) and not file_data:
                 with status_box: render_loading_state("Generating Visuals...")
                 img_data = generate_visual_intel(prompt_text)
                 if img_data:
                     save_chat_to_cloud("model", f"Visual: {prompt_text}", image_b64=img_data)
-                    st.session_state['chat_history'].append({"role": "model", "text": f"Visual generated.", "image": img_data})
+                    st.session_state['chat_history'].append({"role": "model", "text": "Visual generated.", "image": img_data})
                     st.rerun()
                 else:
                     st.error("Visual generation failed.")
 
-            # B. MULTIMODAL INTELLIGENCE (Text + Files + Tools)
+            # B. GEMINI INTELLIGENCE (Text / Audio / Files)
             else:
-                with status_box: render_loading_state("Analyzing & Checking System...")
+                with status_box: render_loading_state("Analyzing Input...")
                 
-                # The magic happens here!
-                response_text, _ = perform_ai_analysis(prompt_text, file_data, file_type)
+                # If Audio, pass it as a file to Gemini
+                final_file_data = file_data
+                final_file_type = file_type
+                
+                if audio_bytes:
+                    final_file_data = audio_bytes
+                    final_file_type = "audio/wav" # Gemini supports wav directly
+                    prompt_text = "Listen to this audio and reply to the user helpfuly."
+
+                response_text, _ = perform_ai_analysis(prompt_text, final_file_data, final_file_type)
                 
                 # Save & Render
                 st.session_state['chat_history'].append({"role": "model", "text": response_text})
                 save_chat_to_cloud("model", response_text)
                 st.markdown(response_text)
                 
-                # Voice Output
+                # TTS Voice Output
                 try:
                     clean_text = response_text.replace('\n', ' ').replace('*', '').replace('#', '')[:300]
                     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en&tld={target_tld}"
@@ -2174,18 +2200,17 @@ def page_ai_assistant():
 
             status_box.empty()
 
-    # --- 4. UI HEADER & HELPER CHIPS ---
+    # --- 4. UI HEADER & CHIPS ---
     st.markdown('<div class="big-title">TimeHunt AI</div>', unsafe_allow_html=True)
     
     if not st.session_state.get('chat_history'):
-        st.caption(f"Ready to help. Voice Active: {voice_style}")
-        # Helper Chips located ABOVE input for cleaner look
+        st.caption(f"System Ready. Active Voice: {voice_style}")
         c1, c2, c3, c4 = st.columns(4)
         if c1.button("📅 My Schedule", use_container_width=True): process_message("What is on my schedule today?")
         if c2.button("🔔 Check Reminders", use_container_width=True): process_message("Do I have any pending reminders?")
         if c3.button("📊 Analytics", use_container_width=True): process_message("Give me a summary of my progress.")
-        if c4.button("⚙️ Check Settings", use_container_width=True): process_message("What are my current app settings?")
-        st.write("") # Spacer
+        if c4.button("⚙️ Settings", use_container_width=True): process_message("What are my current settings?")
+        st.write("") 
 
     # --- 5. CHAT HISTORY RENDERER ---
     chat_container = st.container()
@@ -2195,7 +2220,7 @@ def page_ai_assistant():
             av = ai_av if role == "assistant" else user_av
             with st.chat_message(role, avatar=av):
                 if msg.get('text'): st.write(msg['text'])
-                if msg.get('file_type'): st.caption(f"📎 Attached {msg['file_type'].split('/')[-1]}")
+                if msg.get('file_type'): st.caption(f"📎 Attached File")
                 if msg.get('image'):
                     src = str(msg['image'])
                     if src.startswith("http"): st.image(src, use_container_width=True)
@@ -2203,66 +2228,39 @@ def page_ai_assistant():
                         try: st.image(base64.b64decode(src), use_container_width=True)
                         except: pass
 
-    # --- 6. THE GEMINI-STYLE INPUT BAR (The Final Polish) ---
+    # --- 6. GEMINI INPUT BAR (10/10 UI) ---
     st.markdown("""
     <style>
-        /* Custom styling to merge components visually */
-        .stTextInput input { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
-        . mic-container button { 
-            border-top-left-radius: 0 !important; 
-            border-bottom-left-radius: 0 !important; 
-            border-left: none !important;
-            height: 48px !important; /* Match text input height */
-        }
-        .file-uploader-btn { padding-top: 2px; }
+        .stTextInput input { border-radius: 20px !important; }
+        .stButton button { border-radius: 20px !important; height: 45px !important; }
+        /* Hides the file uploader default box to make it cleaner */
+        [data-testid='stFileUploader'] { margin-top: -25px; }
     </style>
     """, unsafe_allow_html=True)
 
-    # Bottom Container for Input Controls
     with st.container():
-        # 3 Columns: File Upload | Text Input | Mic Button
-        col_file, col_text, col_mic = st.columns([0.5, 6, 0.5])
+        # Columns: File | Input | Mic
+        c_file, c_input, c_mic = st.columns([0.15, 0.75, 0.1])
         
-        with col_file:
-             # A discreet file uploader icon
-             uploaded_file = st.file_uploader("Upload", type=["png", "jpg", "jpeg", "pdf", "txt"], label_visibility="collapsed")
-
-        with col_text:
+        with c_file:
+            uploaded_file = st.file_uploader("📎", type=["png", "jpg", "pdf", "txt"], label_visibility="collapsed")
+            
+        with c_input:
             user_input = st.chat_input("Message TimeHunt AI...")
+            
+        with c_mic:
+            # Styled Mic Button
+            audio_packet = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="mic_main")
 
-        with col_mic:
-            # Custom Image Mic Button
-            if mic_icon_b64:
-                # We use HTML to create a clickable image that acts as a submit button for the form
-                # This is a bit of a hack to get a custom image button in this exact spot.
-                # A simpler way is to use a standard button with a mic emoji if this proves unstable.
-                st.markdown(f"""
-                <div class="mic-container">
-                    <button style="background: none; border: none; padding: 0; cursor: pointer;">
-                        <img src="data:image/jpeg;base64,{mic_icon_b64}" width="45" height="45" style="border-radius: 50%;">
-                    </button>
-                </div>
-                """, unsafe_allow_html=True)
-                # Note: Tying this custom HTML click to an action is complex in Streamlit. 
-                # For reliability, I will use the standard mic_recorder below it, but styled to look integrated.
-                
-            # Functional Mic Button (Styled)
-            audio_packet = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="mic_btn_main")
-
-    # --- 7. TRIGGER LOGIC ---
-    # Priority 1: File Upload
+    # --- 7. TRIGGERS ---
     if uploaded_file and user_input:
-        file_bytes = uploaded_file.getvalue()
-        file_type = uploaded_file.type
-        process_message(user_input, file_bytes, file_type)
-    
-    # Priority 2: Voice Input
+        process_message(user_input, uploaded_file.getvalue(), uploaded_file.type)
+        
     elif audio_packet:
-        st.toast("Listening...", icon="👂")
-        # Without Whisper, we can't transcribe. Show warning.
-        st.warning("⚠️ Voice transcription requires OpenAI Whisper. Please type your message.")
-
-    # Priority 3: Text Input
+        # 🎤 GEMINI NATIVE AUDIO (No Whisper Needed!)
+        audio_bytes = audio_packet['bytes']
+        process_message("", audio_bytes=audio_bytes)
+        
     elif user_input:
         process_message(user_input)
 
