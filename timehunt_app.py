@@ -853,74 +853,66 @@ def generate_visual_intel(prompt_text):
 
 def apply_watermark(image):
     """
-    Applies a LOGO IMAGE as a watermark (Fixed Size & Transparent).
-    ✅ FORCE RESIZE: Limits logo to max 120px width (prevents giant logos).
-    ✅ OPACITY: Makes the logo 70% transparent (subtle glass effect).
+    Applies a TINY watermark (Gemini Style).
+    ✅ SIZE: Reduced to 8% of width (Max 80 pixels).
+    ✅ OPACITY: 70% transparent.
     """
     import io
     import base64
     from PIL import Image
     
     try:
-        # 1. Convert main image to RGBA
         main_img = image.convert("RGBA")
         width, height = main_img.size
         
         try:
-            # 2. Load your Logo
             logo = Image.open("watermark.png").convert("RGBA")
             
-            # --- 3. FORCE SMALL SIZE (The Fix) ---
-            # Goal: 12% of image width, BUT never bigger than 120 pixels.
-            target_width = int(width * 0.12)
-            if target_width > 120: target_width = 120 # Hard limit
-            if target_width < 50: target_width = 50   # Minimum size
+            # --- STRICT SIZE LIMITS ---
+            # 1. Target only 8% of the total image width (Very small)
+            target_width = int(width * 0.08)
             
-            # Calculate height to keep aspect ratio
+            # 2. Hard Cap: Never allow it to be wider than 80 pixels
+            if target_width > 80: target_width = 80
+            # 3. Minimum: Don't let it vanish completely (min 30px)
+            if target_width < 30: target_width = 30
+            
+            # Calculate height
             aspect_ratio = logo.height / logo.width
             new_logo_height = int(target_width * aspect_ratio)
             
-            # Resize nicely
+            # Resize
             logo = logo.resize((target_width, new_logo_height), Image.Resampling.LANCZOS)
             
-            # --- 4. MAKE IT SUBTLE (Opacity) ---
-            # This makes the logo semi-transparent (like glass)
-            # 255 = Solid, 0 = Invisible. 180 is a good "watermark" level.
-            # We adjust the alpha channel of every pixel
+            # --- TRANSPARENCY (Glass Effect) ---
             logo_data = logo.getdata()
             new_data = []
             for item in logo_data:
-                # item is (R, G, B, A). We change A (Alpha)
-                # If the pixel has color (A > 0), set transparency to 180
                 if item[3] > 0:
+                    # Set opacity to 180 (out of 255)
                     new_data.append((item[0], item[1], item[2], 180)) 
                 else:
                     new_data.append(item)
             logo.putdata(new_data)
 
-            # 5. Position: Bottom Right with Padding
-            padding = 20
+            # Position: Bottom Right (Tighter padding)
+            padding = 15
             logo_x = width - target_width - padding
             logo_y = height - new_logo_height - padding
             
-            # 6. Paste!
-            # The third argument 'logo' is the mask (handles transparency)
             main_img.paste(logo, (logo_x, logo_y), logo)
 
         except FileNotFoundError:
-            print("⚠️ 'watermark.png' not found. Skipping watermark.")
-        except Exception as e:
-            print(f"⚠️ Watermark Resize Error: {e}")
+            pass # Skip if no logo found
 
-        # 7. Save and Return
+        # Save
         final_img = main_img.convert("RGB")
         buffered = io.BytesIO()
         final_img.save(buffered, format="JPEG", quality=95)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    except Exception as e:
-        print(f"Watermark Error: {e}")
-        # If everything fails, return original image
+    except Exception:
+        # Fallback to original image on error
         buffered = io.BytesIO()
         image.save(buffered, format="JPEG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
