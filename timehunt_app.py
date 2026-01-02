@@ -931,7 +931,7 @@ def apply_watermark(image):
             
             # 3. Gemini-Style Resizing
             # The Gemini logo is usually small (about 10-12% of the image width)
-            scale_factor = 0.12  # Adjust this: 0.10 is smaller, 0.15 is bigger
+            scale_factor = 0.8  # Adjust this: 0.10 is smaller, 0.15 is bigger
             
             new_logo_width = int(width * scale_factor)
             # Calculate height to keep aspect ratio
