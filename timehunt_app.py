@@ -846,34 +846,163 @@ def get_system_context():
     """
     return system_prompt
 
-# --- 13. AI ANALYSIS ENGINE (Updated for Your Available Models) ---
-def perform_ai_analysis(user_query):
+# --- AI SYSTEM TOOLS ---
+
+def get_current_time_and_date():
+    """Returns current date and time in IST."""
+    import datetime
+    ist_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
+    return ist_now.strftime("%Y-%m-%d %H:%M:%S")
+
+def get_my_schedule(date_str=None):
+    """Gets schedule for a specific date (YYYY-MM-DD) or today if none provided."""
+    import datetime
+    if not date_str:
+        date_str = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).strftime("%Y-%m-%d")
+    
+    slots = st.session_state.get('timetable_slots', [])
+    todays_tasks = [s for s in slots if s.get('Date') == date_str]
+    
+    if not todays_tasks:
+        return f"No tasks scheduled for {date_str}."
+    
+    schedule_text = f"Schedule for {date_str}:\n"
+    for s in todays_tasks:
+        status = "Done" if s['Done'] else "Pending"
+        schedule_text += f"- [{status}] {s['Time']}: {s['Activity']} ({s['Category']})\n"
+    return schedule_text
+
+def get_pending_reminders():
+    """Returns a list of all active, un-notified alarms."""
+    rems = st.session_state.get('reminders', [])
+    pending = [r for r in rems if not r.get('notified')]
+    if not pending:
+        return "No pending reminders."
+    
+    text = "Pending Reminders:\n"
+    for r in pending:
+        text += f"- {r['task']} at {r['time']}\n"
+    return text
+
+def get_app_settings():
+    """Returns current theme, voice, and user goal settings."""
+    return f"""
+    Current Settings:
+    - Theme Mode: {st.session_state.get('theme_mode')}
+    - Accent Color: {st.session_state.get('theme_color')}
+    - AI Voice: {st.session_state.get('ai_voice_style')}
+    - User Goal: {st.session_state.get('user_goal')}
     """
-    Connects to Google Gemini (v2.5/2.0) to generate responses.
+
+def get_analytics_summary():
+    """Returns a summary of XP, Level, and Task Completion rates."""
+    xp = st.session_state.get('user_xp', 0)
+    level = st.session_state.get('user_level', 1)
+    slots = st.session_state.get('timetable_slots', [])
+    total = len(slots)
+    done = len([t for t in slots if t.get('Done')])
+    rate = int((done / total * 100)) if total > 0 else 0
+    
+    return f"""
+    Analytics Summary:
+    - Level: {level}
+    - Total XP: {xp}
+    - Total Tasks: {total}
+    - Completed: {done}
+    - Success Rate: {rate}%
+    """
+
+# Tool Definitions for Gemini
+ai_tools = [
+    {"function_declarations": [
+        {
+            "name": "get_current_time_and_date",
+            "description": "Get the current date and time in IST."
+        },
+        {
+            "name": "get_my_schedule",
+            "description": "Get the user's schedule for a specific date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date_str": {"type": "string", "description": "The date in YYYY-MM-DD format. Defaults to today."}
+                }
+            }
+        },
+        {
+            "name": "get_pending_reminders",
+            "description": "Get a list of all pending alarms and reminders."
+        },
+        {
+            "name": "get_app_settings",
+            "description": "Get the current application settings like theme and voice."
+        },
+        {
+            "name": "get_analytics_summary",
+            "description": "Get a summary of user's progress, XP, and task statistics."
+        }
+    ]}
+]
+
+# Tool Call Handler
+def handle_tool_call(tool_call):
+    fn_name = tool_call.name
+    fn_args = tool_call.args
+    
+    if fn_name == "get_current_time_and_date":
+        return get_current_time_and_date()
+    elif fn_name == "get_my_schedule":
+        return get_my_schedule(**fn_args)
+    elif fn_name == "get_pending_reminders":
+        return get_pending_reminders()
+    elif fn_name == "get_app_settings":
+        return get_app_settings()
+    elif fn_name == "get_analytics_summary":
+        return get_analytics_summary()
+    return "Tool not found."
+
+# --- 13. AI ANALYSIS ENGINE (Multimodal & System-Aware) ---
+def perform_ai_analysis(user_query, file_data=None, file_type=None):
+    """
+    Handles text, images, PDFs, and system tool calls using Gemini Pro Vision.
     """
     try:
         from google import genai
         from google.genai import types
+        import io
     except ImportError:
         return "⚠️ System Error: `google-genai` library missing.", "System"
 
     # Get API Keys
     api_keys = st.session_state.get('gemini_api_keys', [])
-    
     if not api_keys:
         return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
 
-    # --- CRITICAL FIX: USING ONLY YOUR VERIFIED MODELS ---
-    # We removed 'gemini-1.5-flash' because it caused the 404 error.
-    models = [
-        "gemini-2.5-flash",          # ✅ Your Best Model (Newest)
-        "gemini-2.0-flash",          # ✅ Very Stable Standard
-        "gemini-2.0-flash-lite",     # ✅ Fast Backup
-        "gemini-flash-latest"        # ✅ Generic Fallback
-    ]
-    
+    # Use the best available model for multimodal tasks
+    model = "gemini-2.0-flash-exp" # Or gemini-1.5-pro-latest
+
     system_instruction = get_system_context()
     last_error_msg = "No attempt made"
+
+    # Prepare User Content
+    user_content_parts = [types.Part.from_text(text=user_query)]
+    
+    # Handle File Input
+    if file_data and file_type:
+        try:
+            if file_type.startswith("image/"):
+                # pass image bytes directly
+                user_content_parts.append(types.Part.from_bytes(data=file_data, mime_type=file_type))
+            elif file_type == "application/pdf":
+                # For PDFs, we need to use the File API
+                client_for_upload = genai.Client(api_key=api_keys[0])
+                file_ref = client_for_upload.files.upload(file=io.BytesIO(file_data), config={'mime_type': 'application/pdf'})
+                user_content_parts.append(types.Part.from_uri(uri=file_ref.uri, mime_type=file_type))
+            elif file_type.startswith("text/"):
+                 user_content_parts.append(types.Part.from_text(text=file_data.decode('utf-8')))
+        except Exception as e:
+            return f"⚠️ File Processing Error: {e}", "System"
+
 
     # Try each key until one works
     for key in api_keys:
@@ -882,47 +1011,65 @@ def perform_ai_analysis(user_query):
         try:
             client = genai.Client(api_key=key)
             
-            for model in models:
-                try:
-                    # Build History
-                    history = []
-                    recent_chats = st.session_state.get('chat_history', [])[-10:] 
-                    for msg in recent_chats:
-                        role = "user" if msg.get('role') == "user" else "model"
-                        text = str(msg.get('text', ''))
-                        history.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
+            # Build Chat History
+            history = []
+            recent_chats = st.session_state.get('chat_history', [])[-10:] 
+            for msg in recent_chats:
+                role = "user" if msg.get('role') == "user" else "model"
+                # Only add text parts to history to avoid complexity
+                text_content = msg.get('text', '')
+                if text_content:
+                    history.append(types.Content(role=role, parts=[types.Part.from_text(text=text_content)]))
 
-                    # Generate Response
-                    chat = client.chats.create(
-                        model=model,
-                        history=history,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_instruction,
-                            temperature=0.7,
-                            # ✅ High Token Limit prevents text cut-off
-                            max_output_tokens=8192 
-                        )
+            # Start Chat with Tools
+            chat = client.chats.create(
+                model=model,
+                history=history,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.7,
+                    max_output_tokens=8192,
+                    tools=ai_tools # Inject our system tools here
+                )
+            )
+            
+            # Send Message (Multimodal)
+            response = chat.send_message(types.Content(role="user", parts=user_content_parts))
+            
+            # Handle Tool Calls (The "Thinking" Loop)
+            function_calls = response.function_calls
+            while function_calls:
+                print(f"🤖 AI is using a tool: {function_calls[0].name}")
+                # 1. Execute the tool
+                tool_result = handle_tool_call(function_calls[0])
+                
+                # 2. Send result back to AI
+                response = chat.send_message(
+                    types.Content(
+                        role="function",
+                        parts=[types.Part.from_function_response(
+                            name=function_calls[0].name,
+                            response={"result": tool_result}
+                        )]
                     )
-                    
-                    response = chat.send_message(user_query)
-                    return response.text, "TimeHunt AI"
+                )
+                # Check if it needs to call another tool
+                function_calls = response.function_calls
 
-                except Exception as model_err:
-                    last_error_msg = str(model_err)
-                    # If this model fails (404), continue to the next model in the list
-                    if "404" in last_error_msg or "not found" in last_error_msg.lower():
-                        continue
-                    # If quota/rate limit, also try next model
-                    elif "429" in last_error_msg:
-                        continue
-                    else:
-                        break # Break on auth errors to try next key
+            return response.text, "TimeHunt AI"
+
+        except Exception as model_err:
+            last_error_msg = str(model_err)
+            print(f"AI Error: {model_err}")
+            if "429" in last_error_msg: continue # Try next key on quota error
+            else: break 
                         
         except Exception as key_err:
             last_error_msg = str(key_err)
             continue
 
     return f"⚠️ AI Connection Failed. Details: {last_error_msg}", "System"
+
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
 def check_reminders():
@@ -1892,6 +2039,52 @@ def page_calendar():
 
 # --- 10. PAGE: AI ASSISTANT ---
 
+# --- HELPER: Convert Local Image to HTML string for Buttons ---
+def get_custom_icon_html(file_path, width="28px"):
+    import base64
+    import os
+    if not os.path.exists(file_path):
+        return "🎤" # Fallback if image missing
+        
+    with open(file_path, "rb") as f:
+        data = base64.b64encode(f.read()).decode()
+    # CSS styles to make it look like a clickable icon centered vertically
+    return f"""
+    <div style="display:flex; align-items:center; justify-content:center; height:100%;">
+        <img src="data:image/jpeg;base64,{data}" 
+        style="width:{width}; height:auto; border-radius:50%; cursor:pointer; transition:transform 0.1s;">
+    </div>
+    """
+
+# --- HELPER: Upload non-image files to Gemini API ---
+def upload_to_gemini_manager(uploaded_file_obj, api_key):
+    """Uploads PDFs/Videos to Gemini's temp storage API."""
+    try:
+        from google import genai
+        import tempfile
+        import os
+        
+        client = genai.Client(api_key=api_key)
+        
+        # 1. Save Streamlit uploaded file to a temporary local file
+        suffix = "." + uploaded_file_obj.name.split('.')[-1]
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+             tmp.write(uploaded_file_obj.getvalue())
+             tmp_path = tmp.name
+
+        # 2. Upload to Gemini endpoints
+        # print(f"Uploading {uploaded_file_obj.name} to Gemini...")
+        gemini_file = client.files.upload(path=tmp_path)
+        
+        # 3. Clean up local temp file
+        os.remove(tmp_path)
+        return gemini_file
+    except Exception as e:
+        st.error(f"File Upload Error: {e}")
+        return None
+
+# --- 10. PAGE: AI ASSISTANT (Gemini UI & Multimodal) ---
+
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -1901,156 +2094,176 @@ def page_ai_assistant():
     user_av = st.session_state.get('user_avatar', '👤')
     ai_av = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
     
-    # Load Voice Preference (Default to Jarvis/US)
+    # Load Mic Icon
+    mic_icon_b64 = ""
+    try:
+        if os.path.exists("1767016884959.jpg"):
+            with open("1767016884959.jpg", "rb") as f:
+                mic_icon_b64 = base64.b64encode(f.read()).decode()
+    except: pass
+
+    # Voice Config
     voice_style = st.session_state.get('ai_voice_style', 'Jarvis (US)')
-    # Map friendly names to gTTS codes
-    voice_map = {
-        "Jarvis (US)": "us",
-        "Friday (UK)": "co.uk",
-        "Guru (Indian)": "co.in",
-        "Mate (Australian)": "com.au",
-        "French (Elegant)": "fr"
-    }
+    voice_map = {"Jarvis (US)": "us", "Friday (UK)": "co.uk", "Guru (Indian)": "co.in", "Mate (Australian)": "com.au", "French (Elegant)": "fr"}
     target_tld = voice_map.get(voice_style, "us")
 
-    # --- 2. HELPER: LOADING STATE ---
-    def render_loading_state(custom_text="Processing..."):
-        img_b64 = ""
-        try:
-            if os.path.exists("1000592991.png"):
-                with open("1000592991.png", "rb") as f:
-                    img_b64 = base64.b64encode(f.read()).decode()
-        except: pass
-        
-        st.markdown(f"""
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-            <div style="width: 20px; height: 20px;">
-                {'<img src="data:image/png;base64,' + img_b64 + '" style="width: 100%; animation: pulse 1s infinite;">' if img_b64 else '⚡'}
-            </div>
-            <div style="font-size: 13px; opacity: 0.7;">{custom_text}</div>
-        </div>
-        <style>@keyframes pulse {{ 0% {{ opacity: 0.4; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.4; }} }}</style>
-        """, unsafe_allow_html=True)
+    # --- 2. HELPER FUNCTIONS ---
+    def render_loading_state(custom_text="Thinking..."):
+        st.markdown(f"""<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px; opacity: 0.8;"><div style="width: 15px; height: 15px; background: var(--primary-color); border-radius: 50%; animation: pulse 1s infinite;"></div><div style="font-size: 14px;">{custom_text}</div></div>""", unsafe_allow_html=True)
 
-    # --- 3. AUTO-DETECT IMAGE VS TEXT ---
     def check_if_image_request(user_text):
-        triggers = ["generate image", "create image", "show me a picture", "draw a", "visualize"]
-        if any(t in user_text.lower() for t in triggers): return True
-        return False
+        triggers = ["generate image", "create image", "draw a", "visualize"]
+        return any(t in user_text.lower() for t in triggers)
 
-    # --- 4. CORE PROCESSING LOGIC ---
-    def process_message(prompt_text):
-        if not prompt_text: return
+    # --- 3. CORE PROCESSING LOGIC ---
+    def process_message(prompt_text, file_data=None, file_type=None):
+        if not prompt_text and not file_data: return
         
         # Init Session
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
-            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4])
+            st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4]) if prompt_text else "File Analysis"
 
-        # Save User Msg
-        st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
+        # Save & Render User Msg
+        msg_data = {"role": "user", "text": prompt_text}
+        if file_data: msg_data["file_type"] = file_type # Marker for history
+        st.session_state['chat_history'].append(msg_data)
         save_chat_to_cloud("user", prompt_text)
         
-        # Render User Msg Immediately
         with st.chat_message("user", avatar=user_av):
-            st.write(prompt_text)
+            if prompt_text: st.write(prompt_text)
+            if file_data and file_type and file_type.startswith("image/"):
+                 st.image(file_data, width=200)
+            elif file_data:
+                 st.caption(f"📎 Sent a {file_type.split('/')[-1].upper()} file.")
+
 
         # AI Response
         with st.chat_message("assistant", avatar=ai_av):
             status_box = st.empty()
             
             # A. IMAGE GENERATION
-            if check_if_image_request(prompt_text):
+            if prompt_text and check_if_image_request(prompt_text) and not file_data:
                 with status_box: render_loading_state("Generating Visuals...")
                 img_data = generate_visual_intel(prompt_text)
-                
                 if img_data:
-                    # Save and display
                     save_chat_to_cloud("model", f"Visual: {prompt_text}", image_b64=img_data)
                     st.session_state['chat_history'].append({"role": "model", "text": f"Visual generated.", "image": img_data})
-                    st.rerun() # Rerun to show image properly
+                    st.rerun()
                 else:
                     st.error("Visual generation failed.")
 
-            # B. TEXT INTELLIGENCE (Gemini 2.5)
+            # B. MULTIMODAL INTELLIGENCE (Text + Files + Tools)
             else:
-                with status_box: render_loading_state("Analyzing...")
-                response_text, _ = perform_ai_analysis(prompt_text)
+                with status_box: render_loading_state("Analyzing & Checking System...")
                 
-                # Save
+                # The magic happens here!
+                response_text, _ = perform_ai_analysis(prompt_text, file_data, file_type)
+                
+                # Save & Render
                 st.session_state['chat_history'].append({"role": "model", "text": response_text})
                 save_chat_to_cloud("model", response_text)
-                
-                # Render Text
                 st.markdown(response_text)
                 
-                # VOICE OUTPUT (Dynamic TLD)
+                # Voice Output
                 try:
-                    # Limit text for TTS speed
-                    clean_text = response_text.replace('\n', ' ').replace('*', '')[:300]
-                    # Using Google Translate TTS with specific Accent (TLD)
+                    clean_text = response_text.replace('\n', ' ').replace('*', '').replace('#', '')[:300]
                     tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en&tld={target_tld}"
                     st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
                 except: pass
 
             status_box.empty()
-            # No rerun needed for text to avoid flicker, just append logic above handles it
 
-    # --- 5. UI HEADER ---
+    # --- 4. UI HEADER & HELPER CHIPS ---
     st.markdown('<div class="big-title">TimeHunt AI</div>', unsafe_allow_html=True)
+    
+    if not st.session_state.get('chat_history'):
+        st.caption(f"Ready to help. Voice Active: {voice_style}")
+        # Helper Chips located ABOVE input for cleaner look
+        c1, c2, c3, c4 = st.columns(4)
+        if c1.button("📅 My Schedule", use_container_width=True): process_message("What is on my schedule today?")
+        if c2.button("🔔 Check Reminders", use_container_width=True): process_message("Do I have any pending reminders?")
+        if c3.button("📊 Analytics", use_container_width=True): process_message("Give me a summary of my progress.")
+        if c4.button("⚙️ Check Settings", use_container_width=True): process_message("What are my current app settings?")
+        st.write("") # Spacer
 
-    # --- 6. HISTORY RENDERER ---
+    # --- 5. CHAT HISTORY RENDERER ---
     chat_container = st.container()
     with chat_container:
-        if not st.session_state.get('chat_history'):
-            # Empty State
-            st.caption(f"Voice Active: {voice_style}")
-            c1, c2 = st.columns(2)
-            if c1.button("📅 Plan My Day", use_container_width=True): process_message("Create a schedule for today.")
-            if c2.button("🎨 Create Image", use_container_width=True): st.toast("Type description below!", icon="🖌️")
-        else:
-            # History Loop
-            for msg in st.session_state['chat_history']:
-                role = "assistant" if msg.get('role') in ["model", "ai"] else "user"
-                av = ai_av if role == "assistant" else user_av
-                with st.chat_message(role, avatar=av):
-                    if msg.get('text'): st.write(msg['text'])
-                    if msg.get('image'):
-                        src = str(msg['image'])
-                        if src.startswith("http"): st.image(src, use_container_width=True)
-                        else: 
-                            try: st.image(base64.b64decode(src), use_container_width=True)
-                            except: pass
+        for msg in st.session_state['chat_history']:
+            role = "assistant" if msg.get('role') in ["model", "ai"] else "user"
+            av = ai_av if role == "assistant" else user_av
+            with st.chat_message(role, avatar=av):
+                if msg.get('text'): st.write(msg['text'])
+                if msg.get('file_type'): st.caption(f"📎 Attached {msg['file_type'].split('/')[-1]}")
+                if msg.get('image'):
+                    src = str(msg['image'])
+                    if src.startswith("http"): st.image(src, use_container_width=True)
+                    else: 
+                        try: st.image(base64.b64decode(src), use_container_width=True)
+                        except: pass
 
-    # --- 7. INPUT AREA (10/10 Layout) ---
-    # We place the mic RIGHT next to the chat input using columns
-    st.write("")
-    input_cols = st.columns([8, 1])
+    # --- 6. THE GEMINI-STYLE INPUT BAR (The Final Polish) ---
+    st.markdown("""
+    <style>
+        /* Custom styling to merge components visually */
+        .stTextInput input { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+        . mic-container button { 
+            border-top-left-radius: 0 !important; 
+            border-bottom-left-radius: 0 !important; 
+            border-left: none !important;
+            height: 48px !important; /* Match text input height */
+        }
+        .file-uploader-btn { padding-top: 2px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Bottom Container for Input Controls
+    with st.container():
+        # 3 Columns: File Upload | Text Input | Mic Button
+        col_file, col_text, col_mic = st.columns([0.5, 6, 0.5])
+        
+        with col_file:
+             # A discreet file uploader icon
+             uploaded_file = st.file_uploader("Upload", type=["png", "jpg", "jpeg", "pdf", "txt"], label_visibility="collapsed")
+
+        with col_text:
+            user_input = st.chat_input("Message TimeHunt AI...")
+
+        with col_mic:
+            # Custom Image Mic Button
+            if mic_icon_b64:
+                # We use HTML to create a clickable image that acts as a submit button for the form
+                # This is a bit of a hack to get a custom image button in this exact spot.
+                # A simpler way is to use a standard button with a mic emoji if this proves unstable.
+                st.markdown(f"""
+                <div class="mic-container">
+                    <button style="background: none; border: none; padding: 0; cursor: pointer;">
+                        <img src="data:image/jpeg;base64,{mic_icon_b64}" width="45" height="45" style="border-radius: 50%;">
+                    </button>
+                </div>
+                """, unsafe_allow_html=True)
+                # Note: Tying this custom HTML click to an action is complex in Streamlit. 
+                # For reliability, I will use the standard mic_recorder below it, but styled to look integrated.
+                
+            # Functional Mic Button (Styled)
+            audio_packet = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="mic_btn_main")
+
+    # --- 7. TRIGGER LOGIC ---
+    # Priority 1: File Upload
+    if uploaded_file and user_input:
+        file_bytes = uploaded_file.getvalue()
+        file_type = uploaded_file.type
+        process_message(user_input, file_bytes, file_type)
     
-    with input_cols[0]:
-        user_input = st.chat_input("Message TimeHunt AI...")
+    # Priority 2: Voice Input
+    elif audio_packet:
+        st.toast("Listening...", icon="👂")
+        # Without Whisper, we can't transcribe. Show warning.
+        st.warning("⚠️ Voice transcription requires OpenAI Whisper. Please type your message.")
 
-    with input_cols[1]:
-        # The Mic Button - styled to look integrated
-        # Note: 'key' must be unique to avoid duplicate ID errors
-        audio_packet = mic_recorder(
-            start_prompt="🎤", 
-            stop_prompt="⏹️", 
-            just_once=True,
-            key=f"mic_btn_{len(st.session_state['chat_history'])}" 
-        )
-
-    # --- 8. TRIGGER LOGIC ---
-    # Case A: Voice Input
-    if audio_packet:
-        st.toast("Processing Voice...", icon="🧠")
-        # Currently mic_recorder doesn't transcribe natively offline.
-        # We simulate "Hearing" by asking the user to confirm or (if you had Whisper) transcribing.
-        # Since we don't have Whisper installed, we'll assume the user typed for now to avoid breaking.
-        st.warning("⚠️ Voice-to-Text requires the 'OpenAI Whisper' key. Please type for now.")
-    
-    # Case B: Text Input
-    if user_input:
+    # Priority 3: Text Input
+    elif user_input:
         process_message(user_input)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
