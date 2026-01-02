@@ -962,9 +962,10 @@ def handle_tool_call(tool_call):
     return "Tool not found."
 
 # --- 13. AI ANALYSIS ENGINE (Multimodal & System-Aware) ---
+# --- 13. AI ANALYSIS ENGINE (Multimodal & System-Aware) ---
 def perform_ai_analysis(user_query, file_data=None, file_type=None):
     """
-    Handles text, images, PDFs, and system tool calls using Gemini Pro Vision.
+    Handles text, images, audio, PDFs, and system tool calls using Gemini 2.0 Flash.
     """
     try:
         from google import genai
@@ -973,55 +974,69 @@ def perform_ai_analysis(user_query, file_data=None, file_type=None):
     except ImportError:
         return "⚠️ System Error: `google-genai` library missing.", "System"
 
-    # Get API Keys
+    # 1. Get API Keys
     api_keys = st.session_state.get('gemini_api_keys', [])
     if not api_keys:
         return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
 
-    # Use the best available model for multimodal tasks
-    model = "gemini-2.0-flash-exp" # Or gemini-1.5-pro-latest
+    # 2. Select Model (Gemini 2.0 Flash is best for Multimodal/Tools)
+    model = "gemini-2.0-flash" 
 
     system_instruction = get_system_context()
     last_error_msg = "No attempt made"
 
-    # Prepare User Content
-    user_content_parts = [types.Part.from_text(text=user_query)]
+    # 3. Prepare User Content Parts
+    # Start with the text query
+    user_content_parts = []
+    if user_query:
+        user_content_parts.append(types.Part.from_text(text=user_query))
     
-    # Handle File Input
+    # Handle File Inputs (Images, Audio, PDFs)
     if file_data and file_type:
         try:
+            # Case A: Images (Direct Bytes)
             if file_type.startswith("image/"):
-                # pass image bytes directly
                 user_content_parts.append(types.Part.from_bytes(data=file_data, mime_type=file_type))
+            
+            # Case B: Audio (Direct Bytes - Replaces Whisper)
+            elif file_type.startswith("audio/"):
+                user_content_parts.append(types.Part.from_bytes(data=file_data, mime_type=file_type))
+                
+            # Case C: PDFs (Must use File API)
             elif file_type == "application/pdf":
-                # For PDFs, we need to use the File API
+                # Create a temporary client just for the upload
                 client_for_upload = genai.Client(api_key=api_keys[0])
-                file_ref = client_for_upload.files.upload(file=io.BytesIO(file_data), config={'mime_type': 'application/pdf'})
+                file_ref = client_for_upload.files.upload(
+                    file=io.BytesIO(file_data), 
+                    config={'mime_type': 'application/pdf'}
+                )
                 user_content_parts.append(types.Part.from_uri(uri=file_ref.uri, mime_type=file_type))
+                
+            # Case D: Text Files
             elif file_type.startswith("text/"):
-                 user_content_parts.append(types.Part.from_text(text=file_data.decode('utf-8')))
+                 text_val = file_data.decode('utf-8')
+                 user_content_parts.append(types.Part.from_text(text=text_val))
+                 
         except Exception as e:
             return f"⚠️ File Processing Error: {e}", "System"
 
-
-    # Try each key until one works
+    # 4. Execute Request (Try keys until one works)
     for key in api_keys:
         if not isinstance(key, str): continue 
         
         try:
             client = genai.Client(api_key=key)
             
-            # Build Chat History
+            # Build Chat History (Text Only for context window efficiency)
             history = []
             recent_chats = st.session_state.get('chat_history', [])[-10:] 
             for msg in recent_chats:
                 role = "user" if msg.get('role') == "user" else "model"
-                # Only add text parts to history to avoid complexity
                 text_content = msg.get('text', '')
                 if text_content:
                     history.append(types.Content(role=role, parts=[types.Part.from_text(text=text_content)]))
 
-            # Start Chat with Tools
+            # Initialize Chat with TOOLS
             chat = client.chats.create(
                 model=model,
                 history=history,
@@ -1029,39 +1044,42 @@ def perform_ai_analysis(user_query, file_data=None, file_type=None):
                     system_instruction=system_instruction,
                     temperature=0.7,
                     max_output_tokens=8192,
-                    tools=ai_tools # Inject our system tools here
+                    tools=ai_tools # Inject the system tools we defined earlier
                 )
             )
             
-            # Send Message (Multimodal)
+            # Send Message
             response = chat.send_message(types.Content(role="user", parts=user_content_parts))
             
-            # Handle Tool Calls (The "Thinking" Loop)
+            # 5. Handle Tool Calls (The "Thinking" Loop)
+            # This allows the AI to ask for schedule/settings and get an answer back
             function_calls = response.function_calls
+            
+            # Loop ensures we handle multiple tool calls in a row if needed
             while function_calls:
-                print(f"🤖 AI is using a tool: {function_calls[0].name}")
-                # 1. Execute the tool
-                tool_result = handle_tool_call(function_calls[0])
+                # Execute the tool
+                active_call = function_calls[0]
+                tool_result = handle_tool_call(active_call)
                 
-                # 2. Send result back to AI
+                # Send result back to AI so it can form a final answer
                 response = chat.send_message(
                     types.Content(
                         role="function",
                         parts=[types.Part.from_function_response(
-                            name=function_calls[0].name,
+                            name=active_call.name,
                             response={"result": tool_result}
                         )]
                     )
                 )
-                # Check if it needs to call another tool
+                # Check if it wants to call another tool
                 function_calls = response.function_calls
 
             return response.text, "TimeHunt AI"
 
         except Exception as model_err:
             last_error_msg = str(model_err)
-            print(f"AI Error: {model_err}")
-            if "429" in last_error_msg: continue # Try next key on quota error
+            # If quota error (429), try next key. Else break.
+            if "429" in last_error_msg: continue 
             else: break 
                         
         except Exception as key_err:
@@ -1069,7 +1087,6 @@ def perform_ai_analysis(user_query, file_data=None, file_type=None):
             continue
 
     return f"⚠️ AI Connection Failed. Details: {last_error_msg}", "System"
-
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
 def check_reminders():
