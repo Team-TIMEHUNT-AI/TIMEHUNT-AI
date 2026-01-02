@@ -296,34 +296,29 @@ def get_all_chats():
 
 def save_chat_to_cloud(role, content, image_b64=None):
     """
-    Saves chat text AND image data to the cloud.
-    ✅ FIX: Forces all IDs to Strings to prevent Google Sheets errors.
-    ✅ FIX: Handles empty sheets gracefully.
+    Saves chat to cloud with DEBUGGING enabled.
     """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Prepare Data (Force Strings for Safety)
+        # 1. Prepare Data
         uid = str(st.session_state.get('user_id', 'Unknown'))
         sid = str(st.session_state.get('current_session_id', 'Unknown'))
         sname = str(st.session_state.get('current_session_name', 'New Chat'))
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Ensure image is an empty string if None, not NaN or Null
         safe_image = image_b64 if image_b64 else ""
-        
-        # 2. Get Existing Data
+
+        # 2. Read Existing Data
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
-            # If sheet is totally empty (no headers), create them
             if df_existing.empty:
                 df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         except Exception:
             df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         
         # 3. Create New Row
-        new_data = {
+        new_row = pd.DataFrame([{
             "UserID": uid, 
             "SessionID": sid, 
             "SessionName": sname,
@@ -331,25 +326,23 @@ def save_chat_to_cloud(role, content, image_b64=None):
             "Content": str(content), 
             "Image": safe_image,
             "Timestamp": ts
-        }
+        }])
         
-        new_row = pd.DataFrame([new_data])
-        
-        # 4. Append and Update
-        # We use strict string typing to prevent schema errors
+        # 4. Combine & CLEAN DATA (Crucial Fix)
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
         
-        # Force critical columns to string before upload
-        df_final["UserID"] = df_final["UserID"].astype(str)
-        df_final["SessionID"] = df_final["SessionID"].astype(str)
+        # Fill NaN values with empty strings (Google Sheets hates NaNs)
+        df_final = df_final.fillna("")
         
+        # Force everything to string to prevent schema errors
+        df_final = df_final.astype(str)
+        
+        # 5. Update
         conn.update(worksheet="ChatHistory", data=df_final)
         
     except Exception as e:
-        # Print error to console for debugging
-        print(f"Chat Save Error: {e}")
-        # Optional: Show toast if save fails (good for debugging)
-        # st.toast(f"Save Error: {e}", icon="⚠️")
+        # !!! THIS WILL SHOW THE REAL ERROR ON YOUR SCREEN !!!
+        st.error(f"❌ Cloud Save Error: {e}")
 
 def load_chat_sessions():
     """
