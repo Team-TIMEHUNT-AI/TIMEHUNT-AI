@@ -23,6 +23,72 @@ from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import tempfile
 
+def upload_to_drive(image_b64, filename_prefix="img"):
+    """
+    Uploads Base64 image to Google Drive with a specific filename.
+    Returns a public direct link.
+    """
+    import io
+    import base64
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+
+    try:
+        # 1. Load Credentials & Folder ID
+        if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+             creds_info = st.secrets["connections"]["gsheets"]
+        else:
+             return ""
+
+        folder_id = st.secrets.get("DRIVE_FOLDER_ID")
+        if not folder_id:
+            st.error("⚠️ DRIVE_FOLDER_ID missing in secrets.toml")
+            return ""
+
+        # 2. Authenticate
+        # Note: We use the same creds but strictly for Drive scope here
+        creds = service_account.Credentials.from_service_account_info(
+            creds_info,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
+        service = build('drive', 'v3', credentials=creds)
+
+        # 3. Create Unique Filename (UserID_SessionID_Time)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        clean_name = f"{filename_prefix}_{timestamp}.jpg"
+
+        file_metadata = {
+            'name': clean_name,
+            'parents': [folder_id]
+        }
+        
+        # 4. Decode and Upload
+        img_data = base64.b64decode(image_b64)
+        media = MediaIoBaseUpload(io.BytesIO(img_data), mimetype='image/jpeg')
+
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        file_id = file.get('id')
+
+        # 5. Make Public (So Streamlit can render it)
+        service.permissions().create(
+            fileId=file_id,
+            body={'type': 'anyone', 'role': 'reader'},
+            fields='id',
+        ).execute()
+
+        # 6. Return Direct Link
+        return f"https://drive.google.com/uc?id={file_id}"
+
+    except Exception as e:
+        st.error(f"Drive Upload Error: {e}")
+        return ""
+
 # --- 1. LIVE CLOCK COMPONENT (Updated for Visibility) ---
 def render_live_clock():
     """
@@ -363,10 +429,6 @@ def get_all_chats():
         return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
 
 def save_chat_to_cloud(role, content, image_b64=None):
-    """
-    Saves chat to Google Sheets. 
-    If an image exists, it uploads to Google Drive FIRST, then saves the Link.
-    """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -379,17 +441,26 @@ def save_chat_to_cloud(role, content, image_b64=None):
         final_image_value = ""
         
         if image_b64:
+            # Check if it's already a link (legacy support)
             if str(image_b64).startswith("http"):
                 final_image_value = image_b64
             else:
-                with st.spinner("Syncing visual to Cloud..."):
-                    link = upload_to_drive(image_b64)
-                    final_image_value = link if link else ""
+                with st.spinner("☁️ Syncing High-Res Image to Drive..."):
+                    # PASS USER ID AND SESSION ID HERE FOR NAMING
+                    name_tag = f"{uid}_{sid}"
+                    link = upload_to_drive(image_b64, filename_prefix=name_tag)
+                    
+                    if link:
+                        final_image_value = link
+                        st.toast("Image saved to Drive!", icon="💾")
+                    else:
+                        final_image_value = "" # Upload failed
 
         # Read & Update Sheet
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
-            if df_existing.empty:
+            # Handle empty sheet case
+            if df_existing is None or df_existing.empty:
                 df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         except Exception:
             df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
@@ -405,8 +476,8 @@ def save_chat_to_cloud(role, content, image_b64=None):
         }])
         
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
-        df_final = df_final.fillna("")
-        df_final = df_final.astype(str)
+        # Ensure strict string conversion to avoid errors
+        df_final = df_final.fillna("").astype(str)
         
         conn.update(worksheet="ChatHistory", data=df_final)
         
@@ -1721,8 +1792,6 @@ def page_calendar():
             })
             sync_data()
             st.rerun()
-
-# --- 10. PAGE: AI ASSISTANT ---
 
 # --- 10. PAGE: AI ASSISTANT ---
 
