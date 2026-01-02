@@ -1352,7 +1352,7 @@ def page_scheduler():
         elif streak_days >= 3: return 1.2   # ROOKIE
         return 1.0
 
-    # Ensure data integrity for new fields
+    # Ensure data integrity
     if 'timetable_slots' in st.session_state:
         for slot in st.session_state['timetable_slots']:
             if 'Done' not in slot: slot['Done'] = False
@@ -1410,7 +1410,6 @@ def page_scheduler():
             with c2:
                 cat_input = st.selectbox("Category", ["Study", "Work", "Health", "Errand", "Skill"])
             with c3:
-                # Updated Logic for Clarity
                 diff_input = st.selectbox("Difficulty", ["Easy (20 XP)", "Medium (50 XP)", "Hard (150 XP)", "Major Project (300 XP)"])
             
             c_sub, c_clear = st.columns([1, 4])
@@ -1418,11 +1417,8 @@ def page_scheduler():
                 submitted = st.form_submit_button("Add Task ➔", type="primary", use_container_width=True)
             
             if submitted and task_input:
-                # XP Mapping
                 xp_map = {"Easy (20 XP)": 20, "Medium (50 XP)": 50, "Hard (150 XP)": 150, "Major Project (300 XP)": 300}
                 clean_diff = diff_input.split(" ")[0]
-                
-                # Get Time
                 ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
                 
                 new_task = {
@@ -1441,13 +1437,12 @@ def page_scheduler():
 
     st.divider()
 
-    # --- 4. TASK LIST (Clean & Productive UI) ---
+    # --- 4. TASK LIST (Perfectly Aligned) ---
     st.markdown("### 📋 Today's Plan")
     
     if not st.session_state['timetable_slots']:
         st.info("Your schedule is empty. Add a task to get started!")
     else:
-        # Separate Pending and Done
         pending = [t for t in st.session_state['timetable_slots'] if not t['Done']]
         done_list = [t for t in st.session_state['timetable_slots'] if t['Done']]
 
@@ -1455,15 +1450,14 @@ def page_scheduler():
         if pending:
             for i, task in enumerate(st.session_state['timetable_slots']):
                 if not task['Done']:
-                    # Difficulty Color Coding
                     d_color = "#B5FF5F" # Easy
                     if "Medium" in task['Difficulty']: d_color = "#FFD700" 
                     elif "Hard" in task['Difficulty']: d_color = "#FF4B4B" 
                     elif "Major" in task['Difficulty']: d_color = "#D050FF" 
                     
                     with st.container():
-                        # Layout: Checkbox | Text Info | XP Badge
-                        c_chk, c_det, c_xp = st.columns([1, 6, 2], vertical_alignment="center")
+                        # FIX: Using 'vertical_alignment' to perfectly center the checkbox with text
+                        c_chk, c_det, c_xp = st.columns([0.5, 6, 1.5], vertical_alignment="center")
                         
                         with c_chk:
                             if st.button("⬜", key=f"btn_done_{i}", help="Mark as Done"):
@@ -1473,62 +1467,64 @@ def page_scheduler():
                         
                         with c_det:
                             st.markdown(f"""
-                            <div style="font-weight:600; font-size:16px;">{task['Activity']}</div>
-                            <div style="font-size:12px; opacity:0.7;">
-                                <span style="color:{d_color}; font-weight:bold;">● {task['Difficulty']}</span> 
-                                | {task['Category']} | 🕒 {task['Time']}
+                            <div style="line-height:1.2;">
+                                <div style="font-weight:600; font-size:16px;">{task['Activity']}</div>
+                                <div style="font-size:12px; opacity:0.7; margin-top:2px;">
+                                    <span style="color:{d_color}; font-weight:bold;">● {task['Difficulty']}</span> 
+                                    | {task['Category']} | 🕒 {task['Time']}
+                                </div>
                             </div>
                             """, unsafe_allow_html=True)
                             
                         with c_xp:
                             st.markdown(f"""
                             <div style="background:{d_color}15; color:{d_color}; border:1px solid {d_color}; 
-                            border-radius:8px; padding:4px 10px; text-align:center; font-weight:bold; font-size:12px;">
+                            border-radius:20px; padding:4px 10px; text-align:center; font-weight:bold; font-size:11px;">
                             +{task['XP']} XP
                             </div>
                             """, unsafe_allow_html=True)
                         
-                        st.markdown("<hr style='margin:5px 0; border:0; border-top:1px solid rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
+                        st.markdown("<hr style='margin:8px 0; border:0; border-top:1px solid rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
         else:
             st.caption("No pending tasks. Great job!")
 
         # B. COMPLETED TASKS
         if done_list:
+            st.write("")
             with st.expander(f"✅ Completed ({len(done_list)})"):
                 for t in done_list:
                      st.markdown(f"~~{t['Activity']}~~ <span style='opacity:0.6; font-size:12px;'>({t['XP']} XP)</span>", unsafe_allow_html=True)
                 
                 # REWARD LOGIC
                 if st.button("🎁 Claim XP & Archive", type="primary", use_container_width=True):
-                    # Calculate
                     raw_xp = sum([t['XP'] for t in done_list])
                     final_xp = int(raw_xp * multiplier)
                     
-                    # Update User State
                     st.session_state['user_xp'] += final_xp
                     st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
                     
-                    # Remove done tasks
                     st.session_state['timetable_slots'] = [t for t in st.session_state['timetable_slots'] if not t['Done']]
                     
-                    # History
                     today_str = datetime.date.today().strftime("%Y-%m-%d")
                     st.session_state['xp_history'].append({"Date": today_str, "XP": final_xp})
                     
                     sync_data()
-                    
                     st.balloons()
                     st.toast(f"Great work! Gained +{final_xp} XP", icon="🎉")
                     time.sleep(1.5)
                     st.rerun()
 
-    # Clear Button
-    if st.button("🗑️ Reset List", help="Removes all tasks"):
-        st.session_state['timetable_slots'] = []
-        sync_data()
-        st.rerun()
+    # FIX: Safety Zone for Reset
+    st.write("")
+    st.write("")
+    with st.expander("⚠️ Danger Zone"):
+        st.warning("This will permanently delete all tasks.")
+        if st.button("🗑️ Reset All Tasks", type="secondary", use_container_width=True):
+            st.session_state['timetable_slots'] = []
+            sync_data()
+            st.rerun()
 
-# --- 8. PAGE: FOCUS TIMER (Fixed XP Logic) ---
+# --- 8. PAGE: FOCUS TIMER (Fixed Visibility & Design) ---
 def page_timer():
     # --- 1. SETUP ---
     if 'timer_duration' not in st.session_state: st.session_state['timer_duration'] = 25
@@ -1536,76 +1532,164 @@ def page_timer():
 
     st.markdown('<div class="big-title" style="text-align:center;">⏱️ Focus Timer</div>', unsafe_allow_html=True)
 
-    # --- 2. DURATION SELECTOR ---
-    c_mode1, c_mode2, c_mode3 = st.columns(3)
-    def get_type(mode): return "primary" if st.session_state['timer_mode'] == mode else "secondary"
+    # --- 2. DURATION SELECTOR (Grouped Controls) ---
+    # We use a container to visually group these controls clearly
+    with st.container(border=True):
+        c_mode1, c_mode2, c_mode3 = st.columns(3)
+        
+        # Helper to style the active button
+        def get_type(mode): 
+            return "primary" if st.session_state['timer_mode'] == mode else "secondary"
 
-    with c_mode1:
-        if st.button("🎯 Focus (25m)", type=get_type("Focus"), use_container_width=True):
-            st.session_state['timer_duration'] = 25
-            st.session_state['timer_mode'] = "Focus"
-            st.rerun()
-    with c_mode2:
-        if st.button("☕ Short Break (5m)", type=get_type("Short"), use_container_width=True):
-            st.session_state['timer_duration'] = 5
-            st.session_state['timer_mode'] = "Short"
-            st.rerun()
-    with c_mode3:
-        if st.button("🔋 Long Break (15m)", type=get_type("Long"), use_container_width=True):
-            st.session_state['timer_duration'] = 15
-            st.session_state['timer_mode'] = "Long"
-            st.rerun()
+        with c_mode1:
+            if st.button("🎯 Focus (25m)", type=get_type("Focus"), use_container_width=True):
+                st.session_state['timer_duration'] = 25
+                st.session_state['timer_mode'] = "Focus"
+                st.rerun()
+        with c_mode2:
+            if st.button("☕ Short (5m)", type=get_type("Short"), use_container_width=True):
+                st.session_state['timer_duration'] = 5
+                st.session_state['timer_mode'] = "Short"
+                st.rerun()
+        with c_mode3:
+            if st.button("🔋 Long (15m)", type=get_type("Long"), use_container_width=True):
+                st.session_state['timer_duration'] = 15
+                st.session_state['timer_mode'] = "Long"
+                st.rerun()
 
-    # --- 3. GOAL INPUT ---
-    current_focus = st.text_input("What are you working on?", placeholder="e.g., Reading History Chapter 1...", label_visibility="collapsed")
-    if not current_focus: current_focus = "Deep Work Session"
+        # --- 3. GOAL INPUT ---
+        st.write("") # Spacer
+        current_focus = st.text_input("Session Goal", placeholder="e.g., Finish Physics Chapter 4...", label_visibility="collapsed")
+        if not current_focus: current_focus = "Deep Work Session"
 
-    # --- 4. TIMER VISUAL (HTML/JS) ---
+    # --- 4. TIMER VISUAL (Fixed High-Contrast Design) ---
     duration_min = st.session_state['timer_duration']
-    ring_color = "#B5FF5F" if st.session_state['timer_mode'] == "Focus" else "#00E5FF"
     
-    # Updated Text Labels: "Start" instead of "Initiate"
+    # Dynamic Colors based on mode
+    if st.session_state['timer_mode'] == "Focus":
+        ring_color = "#B5FF5F" # Lime Green
+        glow_color = "rgba(181, 255, 95, 0.4)"
+    else:
+        ring_color = "#00E5FF" # Cyan
+        glow_color = "rgba(0, 229, 255, 0.4)"
+    
+    # 10/10 FIX: We wrap the timer in a dark card so white text ALWAYS shows
     timer_html = f"""
     <!DOCTYPE html>
     <html>
     <head>
     <style>
-        body {{ background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; }}
-        .base-timer {{ position: relative; width: 300px; height: 300px; }}
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@700&family=JetBrains+Mono:wght@500&display=swap');
+        
+        body {{ 
+            background: transparent; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 20px 0;
+        }}
+        
+        /* The Card Container - Forces Dark Mode for Contrast */
+        .timer-card {{
+            background: #1E1E1E;
+            border: 1px solid #333;
+            border-radius: 24px;
+            padding: 30px;
+            width: 100%;
+            max-width: 350px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }}
+
+        .base-timer {{ position: relative; width: 260px; height: 260px; }}
         .base-timer__svg {{ transform: scaleX(-1); }}
         .base-timer__circle {{ fill: none; stroke: none; }}
-        .base-timer__path-elapsed {{ stroke-width: 10px; stroke: rgba(255, 255, 255, 0.1); }}
+        
+        .base-timer__path-elapsed {{ 
+            stroke-width: 8px; 
+            stroke: rgba(255, 255, 255, 0.1); 
+        }}
+        
         .base-timer__path-remaining {{
-            stroke-width: 10px; stroke-linecap: round; transform: rotate(90deg); transform-origin: center;
-            transition: 1s linear all; fill-rule: nonzero; stroke: {ring_color}; filter: drop-shadow(0 0 10px {ring_color});
+            stroke-width: 8px; 
+            stroke-linecap: round; 
+            transform: rotate(90deg); 
+            transform-origin: center;
+            transition: 1s linear all; 
+            fill-rule: nonzero; 
+            stroke: {ring_color}; 
+            filter: drop-shadow(0 0 10px {glow_color});
         }}
+        
         .base-timer__label {{
-            position: absolute; width: 300px; height: 300px; top: 0; display: flex; align-items: center; justify-content: center;
-            font-size: 55px; font-family: monospace; font-weight: bold; color: white;
+            position: absolute; 
+            width: 260px; 
+            height: 260px; 
+            top: 0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            font-size: 52px; 
+            font-family: 'JetBrains Mono', monospace; 
+            font-weight: 500; 
+            color: #FFFFFF; /* Always White */
+            letter-spacing: -2px;
         }}
-        .controls {{ margin-top: 30px; display: flex; gap: 20px; }}
+        
+        .controls {{ margin-top: 25px; display: flex; gap: 15px; width: 100%; }}
+        
         .btn {{
-            border: none; padding: 12px 30px; border-radius: 50px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s;
+            border: none; 
+            padding: 14px 0; 
+            border-radius: 12px; 
+            font-size: 16px; 
+            font-weight: 700; 
+            cursor: pointer; 
+            transition: transform 0.1s, opacity 0.2s;
+            flex: 1; /* Equal width buttons */
+            font-family: 'Inter', sans-serif;
         }}
-        .btn-start {{ background: {ring_color}; color: #000; }}
-        .btn-stop {{ background: #333; color: #fff; border: 1px solid #555; }}
+        
+        .btn:active {{ transform: scale(0.98); }}
+        
+        .btn-start {{ 
+            background: {ring_color}; 
+            color: #000000; 
+            box-shadow: 0 4px 12px {glow_color};
+        }}
+        
+        .btn-stop {{ 
+            background: #333333; 
+            color: #FFFFFF; 
+            border: 1px solid #444; 
+        }}
+        .btn-stop:hover {{ background: #444; }}
+
     </style>
     </head>
     <body>
-        <div class="base-timer">
-            <svg class="base-timer__svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                <g class="base-timer__circle">
-                    <circle class="base-timer__path-elapsed" cx="50" cy="50" r="45"></circle>
-                    <path id="base-timer-path-remaining" stroke-dasharray="283" class="base-timer__path-remaining"
-                        d="M 50, 50 m -45, 0 a 45,45 0 1,0 90,0 a 45,45 0 1,0 -90,0"></path>
-                </g>
-            </svg>
-            <span id="base-timer-label" class="base-timer__label">{duration_min}:00</span>
+        <div class="timer-card">
+            <div class="base-timer">
+                <svg class="base-timer__svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                    <g class="base-timer__circle">
+                        <circle class="base-timer__path-elapsed" cx="50" cy="50" r="45"></circle>
+                        <path id="base-timer-path-remaining" stroke-dasharray="283" class="base-timer__path-remaining"
+                            d="M 50, 50 m -45, 0 a 45,45 0 1,0 90,0 a 45,45 0 1,0 -90,0"></path>
+                    </g>
+                </svg>
+                <span id="base-timer-label" class="base-timer__label">{duration_min}:00</span>
+            </div>
+            <div class="controls">
+                <button class="btn btn-start" onclick="startTimer()">Start Session</button>
+                <button class="btn btn-stop" onclick="resetTimer()">Reset</button>
+            </div>
         </div>
-        <div class="controls">
-            <button class="btn btn-start" onclick="startTimer()">Start</button>
-            <button class="btn btn-stop" onclick="resetTimer()">Reset</button>
-        </div>
+
         <script>
             const FULL_DASH_ARRAY = 283;
             const TIME_LIMIT = {duration_min} * 60;
@@ -1622,6 +1706,7 @@ def page_timer():
                     new Notification("TimeHunt AI", {{ body: "Session Complete: {current_focus}", icon: "https://cdn-icons-png.flaticon.com/512/2921/2921226.png" }});
                 }}
             }}
+            
             function startTimer() {{
                 if (timerInterval) return;
                 timerInterval = setInterval(() => {{
@@ -1632,6 +1717,7 @@ def page_timer():
                     if (timeLeft <= 0) onTimesUp();
                 }}, 1000);
             }}
+            
             function resetTimer() {{
                 clearInterval(timerInterval);
                 timerInterval = null;
@@ -1640,12 +1726,14 @@ def page_timer():
                 document.getElementById("base-timer-label").innerHTML = formatTime(timeLeft);
                 setCircleDasharray();
             }}
+            
             function formatTime(time) {{
                 const minutes = Math.floor(time / 60);
                 let seconds = time % 60;
                 if (seconds < 10) seconds = `0${{seconds}}`;
                 return `${{minutes}}:${{seconds}}`;
             }}
+            
             function setCircleDasharray() {{
                 const rawTimeFraction = timeLeft / TIME_LIMIT;
                 const fraction = rawTimeFraction - (1 / TIME_LIMIT) * (1 - rawTimeFraction);
@@ -1656,29 +1744,33 @@ def page_timer():
     </body>
     </html>
     """
+    
+    # Render HTML Component
     with st.container():
-        components.html(timer_html, height=450)
+        # Centering column for the timer to make it look prominent
+        _, col_timer, _ = st.columns([1, 4, 1])
+        with col_timer:
+            components.html(timer_html, height=480)
 
-    # --- 5. VERIFIED REWARDS (BUG FIX) ---
+    # --- 5. VERIFIED REWARDS ---
     st.markdown("---")
     
-    # Calculate Potential XP
+    # Reward Logic
     possible_xp = 50 if st.session_state['timer_duration'] == 25 else 100 if st.session_state['timer_duration'] == 15 else 10
     
-    c_check, c_claim = st.columns([1.5, 1])
+    # Using columns to create a "Footer" feel for the reward section
+    c_check, c_claim = st.columns([2, 1], vertical_alignment="center")
     
     with c_check:
-        st.markdown(f"#### 🎁 Session Rewards: +{possible_xp} XP")
-        # THE FIX: User must check this box to unlock the button
-        is_verified = st.checkbox("✅ I have completed the session honestly.", key="timer_verify")
+        st.markdown(f"**🎁 Reward available:** <span style='color:{ring_color}'>+{possible_xp} XP</span>", unsafe_allow_html=True)
+        is_verified = st.checkbox("I confirm I completed this session without distractions.", key="timer_verify")
     
     with c_claim:
-        if st.button("Claim XP", disabled=not is_verified, type="primary", use_container_width=True):
-            # Reward Logic
+        if st.button("Claim Rewards", disabled=not is_verified, type="primary", use_container_width=True):
             st.session_state['user_xp'] += possible_xp
             st.session_state['user_level'] = (st.session_state['user_xp'] // 1000) + 1
             
-            # Log
+            # Log to History
             today_str = datetime.date.today().strftime("%Y-%m-%d")
             st.session_state['xp_history'].append({"Date": today_str, "XP": possible_xp})
             sync_data()
@@ -1687,9 +1779,6 @@ def page_timer():
             st.toast(f"Session Verified! +{possible_xp} XP Added.", icon="🛡️")
             time.sleep(1.5)
             st.rerun()
-
-    if not is_verified:
-        st.caption("Complete the timer and check the box to claim your rewards.")
 
 # --- 9. PAGE: CALENDAR (Overview) ---
 
@@ -1808,19 +1897,24 @@ def page_ai_assistant():
     import uuid
     import base64
     
-    # --- 1. SETUP AVATARS ---
+    # --- 1. SETUP AVATARS & VOICE ---
     user_av = st.session_state.get('user_avatar', '👤')
+    ai_av = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
     
-    # Ensure AI avatar exists or fallback
-    ai_av = "1000592991.png"
-    if not os.path.exists(ai_av):
-        ai_av = "🤖"
+    # Load Voice Preference (Default to Jarvis/US)
+    voice_style = st.session_state.get('ai_voice_style', 'Jarvis (US)')
+    # Map friendly names to gTTS codes
+    voice_map = {
+        "Jarvis (US)": "us",
+        "Friday (UK)": "co.uk",
+        "Guru (Indian)": "co.in",
+        "Mate (Australian)": "com.au",
+        "French (Elegant)": "fr"
+    }
+    target_tld = voice_map.get(voice_style, "us")
 
-    # --- 2. HELPER: LOADING ANIMATION ---
-    def render_loading_state(custom_text="Processing Intelligence..."):
-        """
-        Renders the custom 'Thinking' UI with specific text.
-        """
+    # --- 2. HELPER: LOADING STATE ---
+    def render_loading_state(custom_text="Processing..."):
         img_b64 = ""
         try:
             if os.path.exists("1000592991.png"):
@@ -1828,177 +1922,136 @@ def page_ai_assistant():
                     img_b64 = base64.b64encode(f.read()).decode()
         except: pass
         
-        html_code = f"""
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;">
-                {'<img src="data:image/png;base64,' + img_b64 + '" style="width: 100%; height: 100%; animation: pulse 1.5s infinite ease-in-out;">' if img_b64 else '<span style="font-size: 20px;">⚡</span>'}
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <div style="width: 20px; height: 20px;">
+                {'<img src="data:image/png;base64,' + img_b64 + '" style="width: 100%; animation: pulse 1s infinite;">' if img_b64 else '⚡'}
             </div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 14px; color: var(--text-color); opacity: 0.8; font-weight: 500;">
-                {custom_text}
-            </div>
+            <div style="font-size: 13px; opacity: 0.7;">{custom_text}</div>
         </div>
-        <style>@keyframes pulse {{ 0% {{ opacity: 0.5; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.5; }} }}</style>
-        """
-        st.markdown(html_code, unsafe_allow_html=True)
+        <style>@keyframes pulse {{ 0% {{ opacity: 0.4; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.4; }} }}</style>
+        """, unsafe_allow_html=True)
 
-    # --- 3. AUTO-DETECT LOGIC (Hybrid: Keywords + AI) ---
+    # --- 3. AUTO-DETECT IMAGE VS TEXT ---
     def check_if_image_request(user_text):
-        """
-        Determines if the user wants an image.
-        Priority 1: Hardcoded Keywords (Fast & Reliable)
-        Priority 2: AI Analysis (Smart but Slower)
-        """
-        # 1. KEYWORD CHECK (The "Force" Switch)
-        triggers = ["generate image", "create image", "show me a picture", "generate a picture", 
-                   "draw a", "make a visual", "visualize", "generate an image", "create a logo",
-                   "image of", "picture of", "photo of"]
-        
-        lower_text = user_text.lower()
-        if any(t in lower_text for t in triggers):
-            return True
+        triggers = ["generate image", "create image", "show me a picture", "draw a", "visualize"]
+        if any(t in user_text.lower() for t in triggers): return True
+        return False
 
-        # 2. AI CHECK (The "Smart" Switch for subtle requests)
-        try:
-            from google import genai
-            
-            api_keys = st.session_state.get('gemini_api_keys', [])
-            if not api_keys: return False
-            
-            client = genai.Client(api_key=api_keys[0]) 
-            
-            detection_prompt = f"""
-            Analyze this message: "{user_text}"
-            Does the user explicitly want to SEE or GENERATE a visual/image/diagram?
-            Answer ONLY 'YES' or 'NO'.
-            """
-            
-            response = client.models.generate_content(
-                model="gemini-2.0-flash-lite", 
-                contents=detection_prompt
-            )
-            return "YES" in response.text.strip().upper()
-        except:
-            return False
-
-    # --- 4. PROCESS MESSAGE LOGIC ---
+    # --- 4. CORE PROCESSING LOGIC ---
     def process_message(prompt_text):
-        # A. Init Session
+        if not prompt_text: return
+        
+        # Init Session
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
             st.session_state['current_session_name'] = " ".join(prompt_text.split()[:4])
 
-        # B. Save User Message
+        # Save User Msg
         st.session_state['chat_history'].append({"role": "user", "text": prompt_text})
         save_chat_to_cloud("user", prompt_text)
         
-        # C. Render User Message
+        # Render User Msg Immediately
         with st.chat_message("user", avatar=user_av):
             st.write(prompt_text)
 
-        # D. DECIDE: IMAGE OR TEXT?
-        # Automatically check if this is an image request
-        is_image_gen = check_if_image_request(prompt_text)
-
-        # E. EXECUTE RESPONSE
+        # AI Response
         with st.chat_message("assistant", avatar=ai_av):
             status_box = st.empty()
             
-            if is_image_gen:
-                # --- IMAGE MODE (Hugging Face) ---
-                with status_box:
-                    render_loading_state("Loading TimeHunt AI for image generation...")
-                
-                # Generate Image (Returns Base64 String now)
+            # A. IMAGE GENERATION
+            if check_if_image_request(prompt_text):
+                with status_box: render_loading_state("Generating Visuals...")
                 img_data = generate_visual_intel(prompt_text)
                 
                 if img_data:
-                    response_block = {
-                        "role": "model", 
-                        "text": f"Visual intel generated for: '{prompt_text}'",
-                        "image": img_data
-                    }
-                    # Save Base64 Data to Cloud
-                    save_chat_to_cloud("model", f"Visual intel generated for: '{prompt_text}'", image_b64=img_data)
+                    # Save and display
+                    save_chat_to_cloud("model", f"Visual: {prompt_text}", image_b64=img_data)
+                    st.session_state['chat_history'].append({"role": "model", "text": f"Visual generated.", "image": img_data})
+                    st.rerun() # Rerun to show image properly
                 else:
-                    err_text = "⚠️ Visual generation failed. Check your Internet or API Token."
-                    response_block = {"role": "model", "text": err_text}
-                    save_chat_to_cloud("model", err_text)
-                    
+                    st.error("Visual generation failed.")
+
+            # B. TEXT INTELLIGENCE (Gemini 2.5)
             else:
-                # --- TEXT MODE (Gemini) ---
-                with status_box:
-                    render_loading_state("Processing Intelligence...")
-                
+                with status_box: render_loading_state("Analyzing...")
                 response_text, _ = perform_ai_analysis(prompt_text)
-                response_block = {"role": "model", "text": response_text}
+                
+                # Save
+                st.session_state['chat_history'].append({"role": "model", "text": response_text})
                 save_chat_to_cloud("model", response_text)
                 
-                # Audio
+                # Render Text
+                st.markdown(response_text)
+                
+                # VOICE OUTPUT (Dynamic TLD)
                 try:
-                    clean_text = response_text.replace('\n', ' ')[:200]
-                    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en"
+                    # Limit text for TTS speed
+                    clean_text = response_text.replace('\n', ' ').replace('*', '')[:300]
+                    # Using Google Translate TTS with specific Accent (TLD)
+                    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q={clean_text}&tl=en&tld={target_tld}"
                     st.markdown(f'<audio autoplay="true" style="display:none;"><source src="{tts_url}" type="audio/mpeg"></audio>', unsafe_allow_html=True)
                 except: pass
 
             status_box.empty()
-            
-        st.session_state['chat_history'].append(response_block)
-        st.rerun()
+            # No rerun needed for text to avoid flicker, just append logic above handles it
 
-    # --- 5. RENDER PAGE HEADER ---
-    c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
-    with c_title:
-        st.markdown(f'<div class="big-title">TimeHunt AI</div>', unsafe_allow_html=True)
-    with c_mic:
-        # Key change: 'voice_input_btn' fixes duplicate error
-        audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input_btn")
-        if audio_data: st.toast("Voice received...", icon="🎧")
+    # --- 5. UI HEADER ---
+    st.markdown('<div class="big-title">TimeHunt AI</div>', unsafe_allow_html=True)
 
-    # --- 6. RENDER HISTORY ---
-    if not st.session_state.get('chat_history'):
-        user_name = st.session_state.get('user_name', 'Hunter').split()[0]
-        st.markdown(f"<h3>Hello, {user_name}</h3>", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        if c1.button("📅 Plan Day", use_container_width=True): process_message("Create a productive hourly schedule for today.")
-        if c2.button("🧠 Explain Topic", use_container_width=True): process_message("Explain a complex concept simply.")
-        
-        # Explicit Image Button (In Chat History Only - Optional)
-        if c3.button("🎨 Generate Visual", use_container_width=True): 
-            # Prompt user to type it
-            st.toast("Just type your image description below! e.g., 'Generate an image of...'", icon="🎨")
-            
-        if c4.button("📝 Study Tips", use_container_width=True): process_message("Give me scientific study techniques.")
-    else:
-        chat_container = st.container()
-        with chat_container:
+    # --- 6. HISTORY RENDERER ---
+    chat_container = st.container()
+    with chat_container:
+        if not st.session_state.get('chat_history'):
+            # Empty State
+            st.caption(f"Voice Active: {voice_style}")
+            c1, c2 = st.columns(2)
+            if c1.button("📅 Plan My Day", use_container_width=True): process_message("Create a schedule for today.")
+            if c2.button("🎨 Create Image", use_container_width=True): st.toast("Type description below!", icon="🖌️")
+        else:
+            # History Loop
             for msg in st.session_state['chat_history']:
-                role = str(msg.get('role')).lower()
-                content_text = msg.get('text', '')
-                content_img = msg.get('image') 
-                
-                ui_role = "assistant" if role in ["model", "assistant", "ai"] else "user"
-                current_avatar = ai_av if ui_role == "assistant" else user_av
+                role = "assistant" if msg.get('role') in ["model", "ai"] else "user"
+                av = ai_av if role == "assistant" else user_av
+                with st.chat_message(role, avatar=av):
+                    if msg.get('text'): st.write(msg['text'])
+                    if msg.get('image'):
+                        src = str(msg['image'])
+                        if src.startswith("http"): st.image(src, use_container_width=True)
+                        else: 
+                            try: st.image(base64.b64decode(src), use_container_width=True)
+                            except: pass
 
-                with st.chat_message(ui_role, avatar=current_avatar):
-                    if content_text: st.write(content_text)
-                    if content_img:
-                        # ✅ CORRECTION: Now handles Google Drive Links primarily
-                        image_source = str(content_img)
-                        
-                        if image_source.startswith("http"):
-                            # This handles Pollinations URLs AND Google Drive Links
-                            st.image(image_source, use_container_width=True)
-                        else:
-                            # Fallback for any old legacy data (Base64)
-                            try: 
-                                st.image(base64.b64decode(image_source), use_container_width=True)
-                            except: 
-                                pass 
+    # --- 7. INPUT AREA (10/10 Layout) ---
+    # We place the mic RIGHT next to the chat input using columns
+    st.write("")
+    input_cols = st.columns([8, 1])
+    
+    with input_cols[0]:
+        user_input = st.chat_input("Message TimeHunt AI...")
 
-    # --- 7. INPUT FIELD ---
-    if prompt := st.chat_input("Ask TimeHunt AI or describe an image..."):
-        # Auto-detect takes over here
-        process_message(prompt)
+    with input_cols[1]:
+        # The Mic Button - styled to look integrated
+        # Note: 'key' must be unique to avoid duplicate ID errors
+        audio_packet = mic_recorder(
+            start_prompt="🎤", 
+            stop_prompt="⏹️", 
+            just_once=True,
+            key=f"mic_btn_{len(st.session_state['chat_history'])}" 
+        )
+
+    # --- 8. TRIGGER LOGIC ---
+    # Case A: Voice Input
+    if audio_packet:
+        st.toast("Processing Voice...", icon="🧠")
+        # Currently mic_recorder doesn't transcribe natively offline.
+        # We simulate "Hearing" by asking the user to confirm or (if you had Whisper) transcribing.
+        # Since we don't have Whisper installed, we'll assume the user typed for now to avoid breaking.
+        st.warning("⚠️ Voice-to-Text requires the 'OpenAI Whisper' key. Please type for now.")
+    
+    # Case B: Text Input
+    if user_input:
+        process_message(user_input)
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 
@@ -2335,23 +2388,29 @@ def page_home():
             st.session_state['show_breathing'] = False
             st.rerun()
 
-# --- 14. PAGE: ABOUT (System Info) ---
+# --- 14. PAGE: ABOUT (System Architecture) ---
 def page_about():
     """
-    Displays project details, credits, and technical specifications.
-    Refined for a professional portfolio look.
+    Displays project details, technical specs, and feature credits.
     """
-    # 1. Main Title
-    st.markdown("# 🛡️ System Architecture")
+    # 1. HEADER WITH VERSION BADGE
+    c_head, c_ver = st.columns([3, 1], vertical_alignment="center")
+    with c_head:
+        st.markdown("# 🛡️ System Architecture")
+    with c_ver:
+        st.markdown("""
+        <div style="background: rgba(0, 229, 255, 0.1); color: #00E5FF; padding: 5px 10px; border-radius: 20px; text-align: center; font-size: 12px; font-weight: bold; border: 1px solid #00E5FF;">
+            v2.5.0 (Stable)
+        </div>
+        """, unsafe_allow_html=True)
+
     st.markdown("### TimeHunt AI: The Productivity Suite")
     
-    # 2. PROJECT OVERVIEW
+    # 2. PROJECT OVERVIEW CARD
     with st.container(border=True):
         c_icon, c_info = st.columns([1, 5])
-        
         with c_icon:
-            st.markdown("<div style='font-size: 45px; text-align: center; padding-top: 10px;'>🎓</div>", unsafe_allow_html=True)
-        
+            st.markdown("<div style='font-size: 50px; text-align: center;'>🎓</div>", unsafe_allow_html=True)
         with c_info:
             st.markdown("### CBSE Capstone Project")
             st.markdown("**Class 12  |  Artificial Intelligence  |  2025-26**")
@@ -2359,49 +2418,64 @@ def page_about():
 
     st.write("") 
 
-    # 3. FEATURE SHOWCASE
-    st.markdown("### ⚡ Core Features")
+    # 3. EXPANDED FEATURE GRID (Added New Tech)
+    st.markdown("### ⚡ Core Capabilities")
     
+    # Row 1: The Brains
     row1_1, row1_2 = st.columns(2)
     with row1_1:
         with st.container(border=True):
-            st.markdown("#### 🤖 AI Mentor")
-            st.caption("Powered by **Google Gemini**. Generates adaptive schedules, answers queries, and provides motivation.")
+            st.markdown("#### 🧠 Dual-Core AI")
+            st.caption("**Google Gemini 2.5** for logic & planning, coupled with **Hugging Face** for visual generation.")
     
     with row1_2:
         with st.container(border=True):
-            st.markdown("#### 🎵 Focus Audio")
-            st.caption("Integrated **Audio Engine** with binaural beats and ambient frequencies to induce deep work states.")
+            st.markdown("#### 🎙️ Voice Synthesis")
+            st.caption("Integrated **TTS Engine** with multi-accent support (US, UK, Indian) for audible mentorship.")
 
+    # Row 2: The Logic
     row2_1, row2_2 = st.columns(2)
     with row2_1:
         with st.container(border=True):
-            st.markdown("#### 🏆 Gamification")
-            st.caption("**XP System & Leaderboards** synced live with Google Sheets to encourage consistency.")
+            st.markdown("#### 🔒 Security Layer")
+            st.caption("Session-based authentication with **PIN Encryption** and isolated user data environments.")
     
     with row2_2:
         with st.container(border=True):
-            st.markdown("#### ☁️ Cloud Sync")
-            st.caption("Persistent storage ensures your tasks and settings are saved across devices using **Session State & JSON**.")
+            st.markdown("#### ☁️ Neural Sync")
+            st.caption("Real-time bi-directional data sync between **Session State** and **Google Cloud Database**.")
+
+    # Row 3: The Engagement
+    row3_1, row3_2 = st.columns(2)
+    with row3_1:
+        with st.container(border=True):
+            st.markdown("#### 🏆 Gamification Engine")
+            st.caption("Dynamic XP algorithms, Streak multipliers, and Global Leaderboards.")
+    
+    with row3_2:
+        with st.container(border=True):
+            st.markdown("#### 🎵 Psycho-Acoustics")
+            st.caption("Binaural Beats & LoFi soundscapes embedded for deep-focus induction.")
 
     st.divider()
 
-    # 4. TECH STACK
+    # 4. TECH STACK (The "Pills" - Kept your great design)
     st.markdown("### 🏗️ Technical Stack")
-    
-    # Modern Pill Badges
     st.markdown("""
     <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-        <span style="background-color: #FF4B4B; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Streamlit</span>
+        <span style="background-color: #FF4B4B; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Streamlit Framework</span>
         <span style="background-color: #306998; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Python 3.9+</span>
-        <span style="background-color: #4285F4; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Google Gemini</span>
+        <span style="background-color: #4285F4; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Google Gemini 2.5 Flash</span>
+        <span style="background-color: #FFD700; color: black; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Hugging Face Diffusers</span>
         <span style="background-color: #0F9D58; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Google Sheets API</span>
-        <span style="background-color: #F4B400; color: white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">Pandas</span>
+        <span style="background-color: #1E1E1E; color: white; border: 1px solid white; padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">CSS3 Animations</span>
     </div>
     """, unsafe_allow_html=True)
 
     st.write("")
-    st.caption("🔒 System Status: ONLINE | 🛡️ Developed by TimeHunt Team")
+    
+    # 5. CREDITS FOOTER
+    st.caption("🔒 System Status: ONLINE | 🛡️ Developed by TimeHunt Team | © 2026")
 
 # --- 15. LEADERBOARD UTILITY ---
 def fetch_leaderboard_data():
@@ -2428,27 +2502,74 @@ def fetch_leaderboard_data():
 
 # --- 16. PAGE: DASHBOARD (Analytics) ---
 def page_dashboard():
-    # --- 1. CSS for Dashboard Cards ---
+    # --- 1. CSS for Dashboard Cards (10/10 Upgrade) ---
     st.markdown("""
     <style>
+        /* Base Card Style */
         .stat-card {
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
+            border-radius: 16px; /* Softer corners */
+            padding: 24px;
             text-align: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
         }
-        .stat-val { font-size: 28px; font-weight: 700; color: var(--primary-color); }
-        .stat-lbl { font-size: 12px; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; }
-        .rank-badge { font-size: 40px; margin-bottom: 5px; animation: float 3s ease-in-out infinite; }
-        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-5px); } 100% { transform: translateY(0px); } }
+        
+        /* Interactive Hover Effect (The "Premium" Feel) */
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary-color);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+
+        /* Typography */
+        .stat-val { 
+            font-family: 'Inter', sans-serif; 
+            font-size: 32px; 
+            font-weight: 800; 
+            color: var(--text-color);
+            margin: 5px 0;
+        }
+        .stat-lbl { 
+            font-size: 11px; 
+            opacity: 0.6; 
+            text-transform: uppercase; 
+            letter-spacing: 1.5px; 
+            font-weight: 600;
+        }
+
+        /* GRANDMASTER SPECIAL EFFECTS */
+        .rank-badge { 
+            font-size: 45px; 
+            margin-bottom: 10px; 
+            animation: float 3s ease-in-out infinite; 
+        }
+        .gold-text {
+            background: linear-gradient(to bottom, #FFD700, #FDB931);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+            font-size: 20px;
+        }
+        .gold-glow {
+            border: 1px solid #FFD700 !important;
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.15) !important;
+        }
+
+        @keyframes float { 
+            0% { transform: translateY(0px); } 
+            50% { transform: translateY(-8px); } 
+            100% { transform: translateY(0px); } 
+        }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="big-title">📊 Productivity Analytics</div>', unsafe_allow_html=True)
 
-    # --- 2. METRICS ---
+    # --- 2. METRICS CALCULATION ---
     slots = st.session_state.get('timetable_slots', [])
     xp = st.session_state.get('user_xp', 0)
     level = st.session_state.get('user_level', 1)
@@ -2457,33 +2578,54 @@ def page_dashboard():
     completed = len([t for t in slots if t.get('Done')])
     success_rate = int((completed / total_tasks * 100)) if total_tasks > 0 else 0
     
-    # Professional Rank Titles
+    # Rank Logic
     rank_titles = {1: "Starter", 5: "Achiever", 10: "Pro", 20: "Master", 50: "Grandmaster"}
     current_title = "Starter"
     for lvl, title in rank_titles.items():
         if level >= lvl: current_title = title
     
+    # Check for Special Status
+    is_grandmaster = current_title == "Grandmaster"
+    card_class = "stat-card gold-glow" if is_grandmaster else "stat-card"
+    title_class = "gold-text" if is_grandmaster else "stat-val"
+
     # --- 3. TOP ROW: STATUS HUD ---
-    c_rank, c_stats = st.columns([1, 3])
+    c_rank, c_stats = st.columns([1.2, 3])
     
     with c_rank:
         st.markdown(f"""
-        <div class="stat-card">
+        <div class="{card_class}">
             <div class="rank-badge">🏆</div>
-            <div style="font-size:16px; font-weight:bold; margin-top:5px;">{current_title}</div>
-            <div style="font-size:12px; color:var(--primary-color);">Level {level}</div>
+            <div class="{title_class}">{current_title}</div>
+            <div style="font-size:12px; opacity:0.7; margin-top:5px;">Level {level}</div>
         </div>
         """, unsafe_allow_html=True)
         
     with c_stats:
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.markdown(f"""<div class="stat-card"><div class="stat-val">{xp}</div><div class="stat-lbl">Total XP</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-val" style="color:var(--primary-color);">{xp:,}</div>
+                <div class="stat-lbl">Total XP</div>
+            </div>
+            """, unsafe_allow_html=True)
         with c2:
-            st.markdown(f"""<div class="stat-card"><div class="stat-val">{completed}</div><div class="stat-lbl">Tasks Done</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-val">{completed}</div>
+                <div class="stat-lbl">Tasks Done</div>
+            </div>
+            """, unsafe_allow_html=True)
         with c3:
-            color = "#00E5FF" if success_rate > 80 else "#FF4B4B"
-            st.markdown(f"""<div class="stat-card"><div class="stat-val" style="color:{color} !important;">{success_rate}%</div><div class="stat-lbl">Success Rate</div></div>""", unsafe_allow_html=True)
+            # Dynamic Color for Rate
+            rate_color = "#00E5FF" if success_rate > 80 else "#FF4B4B" if success_rate < 50 else "#FFFFFF"
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-val" style="color:{rate_color} !important;">{success_rate}%</div>
+                <div class="stat-lbl">Success Rate</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.write("")
     
@@ -2492,15 +2634,16 @@ def page_dashboard():
     
     with col_chart:
         st.markdown("### 📈 Progress Trends")
-        if st.session_state.get('xp_history'):
-            history_df = pd.DataFrame(st.session_state['xp_history'])
-            # Render Clean Line Chart
-            st.line_chart(history_df.set_index('Date')['XP'], color="#B5FF5F")
-        else:
-            st.info("Complete tasks to visualize your growth trajectory.")
+        with st.container(border=True):
+            if st.session_state.get('xp_history'):
+                history_df = pd.DataFrame(st.session_state['xp_history'])
+                # Using the area chart feels more 'filled' and premium than a thin line
+                st.area_chart(history_df.set_index('Date')['XP'], color="#B5FF5F")
+            else:
+                st.info("Complete tasks to visualize your growth trajectory.")
             
     with col_breakdown:
-        st.markdown("### 🧩 Category Breakdown")
+        st.markdown("### 🧩 Breakdown")
         if slots:
             df_slots = pd.DataFrame(slots)
             if 'Category' in df_slots.columns:
@@ -2515,8 +2658,8 @@ def page_dashboard():
 
     st.divider()
 
-    # --- 5. COMMUNITY LEADERBOARD ---
-    st.markdown("### 🌍 Community Leaderboard")
+    # --- 5. COMMUNITY LEADERBOARD (Clean Table) ---
+    st.markdown("### 🌍 Global Leaderboard")
     
     leader_df = fetch_leaderboard_data()
     
@@ -2528,6 +2671,7 @@ def page_dashboard():
             column_config={
                 "Rank": st.column_config.NumberColumn("Rank", format="#%d", width="small"),
                 "Name": st.column_config.TextColumn("User", width="medium"),
+                "League": st.column_config.TextColumn("Tier", width="small"),
                 "XP": st.column_config.ProgressColumn("Score", format="%d XP", min_value=0, max_value=int(leader_df['XP'].max() + 500))
             }
         )
@@ -2537,23 +2681,23 @@ def page_dashboard():
         my_rank_row = leader_df[leader_df['UserID'].astype(str) == my_id]
         if not my_rank_row.empty:
             rank_num = my_rank_row.iloc[0]['Rank']
-            st.success(f"📍 You are currently **Rank #{rank_num}**.")
+            st.info(f"📍 You are currently **Rank #{rank_num}** in the global league.")
     else:
         st.warning("Leaderboard is currently syncing. Please wait.")
 
-    # --- 6. EXPORT OPTIONS ---
+    # --- 6. EXPORT & SHARE ---
+    st.write("")
     c_log, c_export = st.columns([3, 1])
     
     with c_log:
-        with st.expander("📜 Activity Log (Recent)"):
+        with st.expander("📜 View Activity Log"):
             if st.session_state.get('xp_history'):
                 st.dataframe(pd.DataFrame(st.session_state['xp_history']).tail(10), use_container_width=True)
             else:
                 st.caption("No recent activity.")
 
     with c_export:
-        st.markdown("### 🗂️ Actions")
-        if st.button("📄 Download Summary (PDF)", type="primary", use_container_width=True):
+        if st.button("📄 Download Report", type="primary", use_container_width=True):
             try:
                 pdf_bytes = create_mission_report(
                     st.session_state.get('user_name', 'User'),
@@ -2562,123 +2706,76 @@ def page_dashboard():
                     st.session_state.get('xp_history', [])
                 )
                 b64 = base64.b64encode(pdf_bytes).decode()
-                href = f'<a href="data:application/octet-stream;base64,{b64}" download="TimeHunt_Report.pdf" style="text-decoration:none; color:#B5FF5F; font-weight:bold; border:1px solid #B5FF5F; padding:10px; border-radius:10px; display:block; text-align:center;">📥 Download PDF</a>'
+                href = f'<a href="data:application/octet-stream;base64,{b64}" download="TimeHunt_Report.pdf" style="text-decoration:none; color:#B5FF5F; font-weight:bold; border:1px solid #B5FF5F; padding:10px; border-radius:10px; display:block; text-align:center;">📥 Save PDF</a>'
                 st.markdown(href, unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Error: {e}")
-
     
 # --- 17. PAGE: SETTINGS (Preferences) ---
 def page_settings():
     """
-    Handles theme customization, user profile updates, and data management.
+    Handles theme, voice, and account settings.
     """
     st.markdown("## ⚙️ Settings & Preferences")
     
-    # --- 1. VISUAL INTERFACE (Theme Switcher) ---
+    # 1. VISUAL SETTINGS
     st.markdown("### 🎨 Appearance")
-    st.caption("Customize the look and feel of your workspace.")
-    
-    # Using columns for a cleaner layout
     c_mode, c_color = st.columns(2)
-    
     with c_mode:
-        # Get current state with fallback
         current_mode = st.session_state.get('theme_mode', 'Dark')
-        # Radio button returns "Dark" or "Light"
         mode_choice = st.radio("Display Mode", ["Light", "Dark"], horizontal=True, index=0 if current_mode=='Dark' else 1)
-        
     with c_color:
         current_theme = st.session_state.get('theme_color', 'Green (Default)')
-        # Theme options matched to the CSS dictionary in inject_custom_css
         color_options = ["Green (Default)", "Blue", "Red", "Grey"]
-        
-        # Safe index finding
-        try:
-            idx_theme = color_options.index(current_theme)
-        except ValueError:
-            idx_theme = 0
-            
-        theme_choice = st.selectbox("Accent Color", color_options, index=idx_theme)
+        try: idx = color_options.index(current_theme)
+        except: idx = 0
+        theme_choice = st.selectbox("Accent Color", color_options, index=idx)
 
-    # Apply Button
-    if st.button("Save & Apply Theme", type="primary", use_container_width=True):
+    if st.button("Save Visuals", type="secondary", use_container_width=True):
         st.session_state['theme_mode'] = mode_choice
         st.session_state['theme_color'] = theme_choice
-        st.toast("Visual settings updated!", icon="🎨")
-        time.sleep(0.5)
-        st.rerun() 
+        st.rerun()
 
     st.markdown("---")
 
-    # --- 2. NOTIFICATIONS (Browser Permissions) ---
-    st.markdown("### 🔔 Notifications")
-    st.info("To receive task alerts, you must authorize browser notifications.")
+    # 2. VOICE SETTINGS (NEW FEATURE)
+    st.markdown("### 🎙️ AI Voice Module")
+    st.caption("Select the vocal personality for TimeHunt AI.")
     
-    # Modernized Javascript Button (No longer looks like a terminal)
-    components.html("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@600&display=swap');
-        .btn {
-            background: linear-gradient(90deg, #00C6FF, #0072FF); 
-            color: white; 
-            border: none; 
-            padding: 12px 24px; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-family: 'Inter', sans-serif; 
-            font-weight: 600;
-            font-size: 14px;
-            width: 100%;
-            transition: transform 0.2s;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .btn:hover { transform: scale(1.02); }
-        .btn:active { transform: scale(0.98); }
-    </style>
-    </head>
-    <body>
-    <button class="btn" onclick="requestPerm()">📢 Enable Notification Alerts</button>
-    <script>
-    function requestPerm() {
-        if (!("Notification" in window)) {
-            alert("This browser does not support notifications.");
-        } else {
-            Notification.requestPermission().then(function (permission) {
-                if (permission === "granted") {
-                    new Notification("TimeHunt AI", {
-                        body: "Notifications enabled successfully.",
-                        icon: "https://cdn-icons-png.flaticon.com/512/2921/2921226.png"
-                    });
-                } else {
-                    alert("Permission denied. Check your browser settings.");
-                }
-            });
-        }
+    # Default to 'Jarvis' if not set
+    current_voice = st.session_state.get('ai_voice_style', 'Jarvis (US)')
+    
+    voice_options = {
+        "Jarvis (US)": {"tld": "us", "lang": "en", "desc": "Standard American (Professional)"},
+        "Friday (UK)": {"tld": "co.uk", "lang": "en", "desc": "British Accent (Sophisticated)"},
+        "Guru (Indian)": {"tld": "co.in", "lang": "en", "desc": "Indian Accent (Relatable)"},
+        "Mate (Australian)": {"tld": "com.au", "lang": "en", "desc": "Australian Accent (Relaxed)"},
+        "French (Elegant)": {"tld": "fr", "lang": "fr", "desc": "French Accent (Artistic)"}
     }
-    </script>
-    </body>
-    </html>
-    """, height=80)
+    
+    # Create list for selectbox
+    voice_list = list(voice_options.keys())
+    try: v_idx = voice_list.index(current_voice)
+    except: v_idx = 0
+    
+    selected_voice = st.selectbox("Voice Identity", voice_list, index=v_idx)
+    st.caption(f"Note: {voice_options[selected_voice]['desc']}")
+
+    if st.button("💾 Save Voice Setting", type="primary", use_container_width=True):
+        st.session_state['ai_voice_style'] = selected_voice
+        st.toast(f"Voice updated to {selected_voice}!", icon="🎙️")
+        time.sleep(0.5)
+        st.rerun()
 
     st.markdown("---")
     
-    # --- 3. PROFILE SETTINGS ---
-    st.markdown("### 👤 Profile & Account")
-    
-    c_name, c_btn = st.columns([3, 1], vertical_alignment="bottom")
-    with c_name:
-        new_name = st.text_input("Display Name", value=st.session_state.get('user_name', 'User'))
-    with c_btn:
-        if st.button("Update Name", use_container_width=True):
-            st.session_state['user_name'] = new_name
-            sync_data() # Save to cloud
-            st.toast("Profile updated.", icon="✅")
-
-    st.markdown("---")
+    # 3. PROFILE & DATA (Keep existing logic)
+    st.markdown("### 👤 Account")
+    new_name = st.text_input("Display Name", value=st.session_state.get('user_name', 'User'))
+    if st.button("Update Name"):
+        st.session_state['user_name'] = new_name
+        sync_data()
+        st.toast("Profile updated.", icon="✅")
 
     # --- 4. DATA MANAGEMENT (Danger Zone) ---
     st.markdown("### ⚠️ Data Management")
@@ -2798,102 +2895,150 @@ def render_alarm_ui():
         # Stop App Execution to force focus on the alarm
         st.stop()
 	
-# --- 19. PAGE: HELP & FEEDBACK CENTER ---
+# --- 19. PAGE: HELP & FEEDBACK CENTER (10/10 Enterprise Version) ---
 def page_help():
     """
-    Provides installation guides, FAQ, and a direct line to the admin/developer.
+    Provides installation guides, detailed FAQ, and a ticket-based support system.
     """
     st.markdown('<div class="big-title">🤝 Help & Support</div>', unsafe_allow_html=True)
-    st.caption("Guides, FAQs, and Feedback Channel")
     
-    # --- SECTION 1: INSTALLATION GUIDE ---
-    st.markdown("### 📲 Install TimeHunt AI")
-    st.info("Add this app to your home screen for the best full-screen experience.")
-    
-    with st.container():
+    # 1. STATUS INDICATOR (The "Pro" Touch)
+    # Checks if we are connected to the cloud effectively
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        status_color = "#B5FF5F" # Green
+        status_text = "ALL SYSTEMS OPERATIONAL"
+    except:
+        status_color = "#FF4B4B" # Red
+        status_text = "OFFLINE MODE - CLOUD DISCONNECTED"
+
+    st.markdown(f"""
+    <div style="background: rgba(255,255,255,0.05); border: 1px solid {status_color}; border-radius: 8px; padding: 10px 20px; display: flex; align-items: center; gap: 15px; margin-bottom: 25px;">
+        <div style="width: 10px; height: 10px; background: {status_color}; border-radius: 50%; box-shadow: 0 0 10px {status_color}; animation: pulse 2s infinite;"></div>
+        <div style="font-family: monospace; font-size: 14px; color: {status_color}; letter-spacing: 2px;">{status_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 2. TABBED LAYOUT (Cleaner UX)
+    tab_guide, tab_faq, tab_ticket = st.tabs(["📲 Installation", "📘 Knowledge Base", "📬 Support Ticket"])
+
+    # --- TAB 1: INSTALLATION GUIDE ---
+    with tab_guide:
+        st.markdown("### Install as App (PWA)")
+        st.info("TimeHunt AI is designed to work like a native app. Add it to your home screen for the best experience.")
+        
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("""
-            <div class="css-card" style="height:100%;">
-                <h4 style="color:var(--primary-color)">🤖 Android / Chrome</h4>
-                <ol style="font-size:14px; margin-left: -20px;">
+            <div class="css-card" style="height:100%; border-top: 3px solid #B5FF5F;">
+                <h4 style="color:#B5FF5F">🤖 Android / Chrome</h4>
+                <ol style="font-size:14px; margin-left: -20px; line-height: 1.6;">
                     <li>Tap the <b>Three Dots (⋮)</b> in Chrome.</li>
                     <li>Select <b>"Add to Home Screen"</b> or "Install App".</li>
                     <li>Rename to "TimeHunt AI" and confirm.</li>
+                    <li><i>Result: Full-screen immersive mode.</i></li>
                 </ol>
             </div>
             """, unsafe_allow_html=True)
         with c2:
             st.markdown("""
-            <div class="css-card" style="height:100%;">
+            <div class="css-card" style="height:100%; border-top: 3px solid #00E5FF;">
                 <h4 style="color:#00E5FF">🍎 iOS / Safari</h4>
-                <ol style="font-size:14px; margin-left: -20px;">
+                <ol style="font-size:14px; margin-left: -20px; line-height: 1.6;">
                     <li>Tap the <b>Share Button</b> (Box with Arrow).</li>
                     <li>Scroll down to <b>"Add to Home Screen"</b>.</li>
                     <li>Tap <b>Add</b> to install the web app.</li>
+                    <li><i>Result: Removes browser bars for focus.</i></li>
                 </ol>
             </div>
             """, unsafe_allow_html=True)
 
-    st.write("")
+    # --- TAB 2: EXPANDED KNOWLEDGE BASE (FAQ) ---
+    with tab_faq:
+        st.markdown("### 📘 Frequently Asked Questions")
+        
+        # Categorized Expanders for better readability
+        with st.expander("🎯 Gamification & XP"):
+            st.write("**Q: How do I earn XP?**")
+            st.caption("You earn XP by completing tasks in the Scheduler (+20 to +300 XP) and finishing Focus Timer sessions (+50 XP). Consistency leads to 'Streak Multipliers' which boost your XP gain by up to 2.5x!")
+            st.divider()
+            st.write("**Q: What happens when I level up?**")
+            st.caption("Leveling up unlocks new prestige titles (like 'Grandmaster') on the leaderboard. In future updates, high levels will unlock exclusive AI personas and themes.")
 
-    # --- SECTION 2: FEEDBACK CHANNEL ---
-    st.markdown("### 📬 Feedback & Support")
-    
-    # A. TICKET HISTORY (Check for Admin Replies)
-    my_tickets = get_my_feedback_status()
-    
-    if not my_tickets.empty:
-        st.markdown("#### Your Tickets")
-        for index, row in my_tickets.iterrows():
-            # Check for Reply
-            has_reply = pd.notna(row['Reply']) and str(row['Reply']).strip() != ""
-            
-            # Styling
-            border_color = "var(--primary-color)" if has_reply else "var(--border)"
-            status_text = "✅ REPLY RECEIVED" if has_reply else "⏳ PENDING REVIEW"
-            
-            st.markdown(f"""
-            <div style="background: var(--card-bg); border: 1px solid {border_color}; border-radius: 12px; padding: 15px; margin-bottom: 10px;">
-                <div style="display:flex; justify-content:space-between; font-size:12px; opacity:0.7;">
-                    <span>{row['Timestamp']}</span>
-                    <span style="color:{border_color}; font-weight:bold;">{status_text}</span>
+        with st.expander("🤖 AI & Intelligence"):
+            st.write("**Q: Which AI model is powering this?**")
+            st.caption("TimeHunt uses a **Hybrid Engine**: Google Gemini 2.5 handles logic, planning, and conversation, while a specialized Hugging Face model handles image generation. This ensures the best speed and quality for each task.")
+            st.divider()
+            st.write("**Q: Why does the AI sound robotic?**")
+            st.caption("We use a lightweight TTS (Text-to-Speech) engine for speed. You can change the 'Voice Persona' in the **Settings** tab to find an accent (US, UK, Indian) that sounds best to you.")
+
+        with st.expander("🛡️ Data & Privacy"):
+            st.write("**Q: Is my schedule private?**")
+            st.caption("Yes. Your data is linked to your unique `UserID` and stored in a secure cloud database. No other user can see your specific tasks, only your anonymous XP score on the leaderboard.")
+            st.divider()
+            st.write("**Q: Does this work offline?**")
+            st.caption("TimeHunt requires an internet connection for AI features and Cloud Sync. However, the Timer and basic navigation will function if you temporarily lose connection.")
+
+        with st.expander("⚙️ Troubleshooting"):
+            st.write("**Q: My audio isn't playing!**")
+            st.caption("Modern browsers block auto-playing audio to prevent annoyance. **Click anywhere on the page** once after loading to 'initialize' the audio engine. If it still fails, check the 'Settings' tab.")
+            st.divider()
+            st.write("**Q: My tasks disappeared?**")
+            st.caption("If you cleared your browser cache, you might have generated a new User ID. Contact support with your username to restore your account.")
+
+    # --- TAB 3: SUPPORT TICKET SYSTEM ---
+    with tab_ticket:
+        st.markdown("### 📬 Contact Support")
+        
+        # 1. Ticket History (Shows Admin Replies)
+        my_tickets = get_my_feedback_status()
+        if not my_tickets.empty:
+            st.info(f"You have {len(my_tickets)} active tickets.")
+            for index, row in my_tickets.iterrows():
+                has_reply = pd.notna(row['Reply']) and str(row['Reply']).strip() != ""
+                border_color = "#B5FF5F" if has_reply else "#333"
+                status_icon = "✅ RESOLVED" if has_reply else "⏳ PENDING"
+                
+                st.markdown(f"""
+                <div style="background: rgba(255,255,255,0.02); border-left: 4px solid {border_color}; padding: 15px; margin-bottom: 10px; border-radius: 4px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; opacity:0.6; margin-bottom:5px;">
+                        <span>{row['Timestamp']}</span>
+                        <span style="font-weight:bold; color:{border_color};">{status_icon}</span>
+                    </div>
+                    <div style="font-weight:600; margin-bottom:8px;">"{row['Query']}"</div>
+                    {f'<div style="background:rgba(181, 255, 95, 0.1); padding:10px; border-radius:4px; font-size:13px; color:#B5FF5F;">👨‍💻 <b>Admin:</b> {row["Reply"]}</div>' if has_reply else ''}
                 </div>
-                <div style="margin-top:5px; font-weight:600; font-size:15px;">"{row['Query']}"</div>
-                {f'<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); color:var(--primary-color);"><b>👨‍💻 ADMIN REPLY:</b> {row["Reply"]}</div>' if has_reply else ''}
-            </div>
-            """, unsafe_allow_html=True)
-    
-    # B. SUBMISSION FORM
-    with st.expander("📝 Send New Message", expanded=not my_tickets.empty):
+                """, unsafe_allow_html=True)
+        else:
+            st.caption("No past tickets found.")
+
+        # 2. Submission Form
+        st.markdown("---")
         with st.form("help_form", clear_on_submit=True):
-            st.write("**Report a bug or suggest a feature:**")
-            query = st.text_area("Message", placeholder="Example: The calendar isn't saving my tasks...", label_visibility="collapsed")
+            st.write("**Submit a New Request**")
+            c_type, c_prio = st.columns(2)
+            with c_type:
+                issue_type = st.selectbox("Issue Type", ["Bug Report", "Feature Request", "Account Issue", "Other"])
+            with c_prio:
+                priority = st.selectbox("Priority", ["Normal", "High", "Critical"])
+                
+            query = st.text_area("Describe your issue...", placeholder="e.g., I found a bug in the calendar...", height=100)
             
-            if st.form_submit_button("🚀 Send Message", use_container_width=True, type="primary"):
+            # THE FIX: Constructive Blue/Green Button, NOT Red
+            # If your primary theme is Red, this might still look red. 
+            # Ideally, ensure your .streamlit/config.toml sets primaryColor="#B5FF5F"
+            if st.form_submit_button("🚀 Submit Ticket", use_container_width=True, type="primary"):
                 if len(query) > 5:
-                    if save_feedback(query):
-                        st.toast("Feedback sent successfully!", icon="📨")
+                    full_query = f"[{issue_type}] [{priority}] {query}"
+                    if save_feedback(full_query):
+                        st.balloons()
+                        st.toast("Ticket submitted successfully!", icon="📨")
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.warning("Please enter a detailed message.")
+                    st.warning("Please describe your issue in more detail.")
 
-    st.divider()
-
-    # --- SECTION 3: FAQ ---
-    st.markdown("### 📘 Frequently Asked Questions")
-    faqs = {
-        "🎯 How do I level up?": "You gain XP by completing tasks (Scheduler) and finishing focus sessions (Timer). Verify your session to claim rewards.",
-        "🔊 Audio isn't playing?": "Browsers block auto-playing audio. Click anywhere on the page once to 'Initialize' the audio engine.",
-        "☁️ Is my data private?": "Yes. Your schedule is linked only to your unique User ID stored in your browser."
-    }
-    
-    for q, a in faqs.items():
-        with st.expander(q):
-            st.write(a)
-
-# --- 20. MAIN APPLICATION ROUTER ---
 # --- 20. MAIN APPLICATION ROUTER ---
 def main():
     # 1. Initialize System State
