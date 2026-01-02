@@ -846,11 +846,10 @@ def get_system_context():
     """
     return system_prompt
 
-# --- 13. AI ANALYSIS ENGINE (Updated for Infinite Token Output) ---
+# --- 13. AI ANALYSIS ENGINE (Updated for Your Available Models) ---
 def perform_ai_analysis(user_query):
     """
-    Connects to Google Gemini (v2.5) to generate responses.
-    Prioritizes the smartest models available in your specific list.
+    Connects to Google Gemini (v2.5/2.0) to generate responses.
     """
     try:
         from google import genai
@@ -864,11 +863,13 @@ def perform_ai_analysis(user_query):
     if not api_keys:
         return "⚠️ Auth Error: No API Keys found. Check secrets.toml", "System"
 
-    # --- UPDATE: USING YOUR AVAILABLE MODELS ---
+    # --- CRITICAL FIX: USING ONLY YOUR VERIFIED MODELS ---
+    # We removed 'gemini-1.5-flash' because it caused the 404 error.
     models = [
-        "gemini-2.0-flash",          # Very Stable Standard
-        "gemini-2.0-flash-lite",     # Ultra Fast Backup
-        "gemini-1.5-flash"           # Old Reliable
+        "gemini-2.5-flash",          # ✅ Your Best Model (Newest)
+        "gemini-2.0-flash",          # ✅ Very Stable Standard
+        "gemini-2.0-flash-lite",     # ✅ Fast Backup
+        "gemini-flash-latest"        # ✅ Generic Fallback
     ]
     
     system_instruction = get_system_context()
@@ -885,7 +886,6 @@ def perform_ai_analysis(user_query):
                 try:
                     # Build History
                     history = []
-                    # Increased context window to remember more past chat
                     recent_chats = st.session_state.get('chat_history', [])[-10:] 
                     for msg in recent_chats:
                         role = "user" if msg.get('role') == "user" else "model"
@@ -899,7 +899,7 @@ def perform_ai_analysis(user_query):
                         config=types.GenerateContentConfig(
                             system_instruction=system_instruction,
                             temperature=0.7,
-                            # ✅ FIXED: Increased to 8192 (Gemini App Standard)
+                            # ✅ High Token Limit prevents text cut-off
                             max_output_tokens=8192 
                         )
                     )
@@ -909,10 +909,14 @@ def perform_ai_analysis(user_query):
 
                 except Exception as model_err:
                     last_error_msg = str(model_err)
-                    if "404" in last_error_msg or "429" in last_error_msg:
+                    # If this model fails (404), continue to the next model in the list
+                    if "404" in last_error_msg or "not found" in last_error_msg.lower():
+                        continue
+                    # If quota/rate limit, also try next model
+                    elif "429" in last_error_msg:
                         continue
                     else:
-                        break 
+                        break # Break on auth errors to try next key
                         
         except Exception as key_err:
             last_error_msg = str(key_err)
