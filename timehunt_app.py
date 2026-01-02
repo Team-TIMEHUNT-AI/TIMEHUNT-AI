@@ -853,34 +853,119 @@ def generate_visual_intel(prompt_text):
 
 def apply_watermark(image):
     """
-    Helper function to apply the TimeHunt AI ∞ 🏹 watermark
+    Applies a LOGO IMAGE as a watermark (Gemini Style).
+    - Resizes logo relative to the main image (Subtle size).
+    - Places it at the extreme bottom right.
     """
     import io
     import base64
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
     
     try:
-        image = image.convert("RGBA")
-        txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
-        draw = ImageDraw.Draw(txt_layer)
+        # 1. Convert main image to RGBA (to handle transparency)
+        main_img = image.convert("RGBA")
+        width, height = main_img.size
         
-        text = "TimeHunt AI  ∞ 🏹"
-        font_size = int(image.size[0] / 35)
-        
-        try: font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
-        except: font = ImageFont.load_default()
+        try:
+            # 2. Load your Logo Image
+            # MAKE SURE your file is named 'watermark.png'
+            logo = Image.open("watermark.png").convert("RGBA")
+            
+            # 3. Gemini-Style Resizing
+            # The Gemini logo is usually small (about 10-12% of the image width)
+            scale_factor = 0.12  # Adjust this: 0.10 is smaller, 0.15 is bigger
+            
+            new_logo_width = int(width * scale_factor)
+            # Calculate height to keep aspect ratio
+            aspect_ratio = logo.height / logo.width
+            new_logo_height = int(new_logo_width * aspect_ratio)
+            
+            logo = logo.resize((new_logo_width, new_logo_height), Image.Resampling.LANCZOS)
+            
+            # 4. Position: Extreme Bottom Right (with 20px padding)
+            logo_x = width - new_logo_width - 20
+            logo_y = height - new_logo_height - 20
+            
+            # 5. Paste the logo (using itself as a mask for transparency)
+            main_img.paste(logo, (logo_x, logo_y), logo)
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        x = image.size[0] - (bbox[2] - bbox[0]) - 20
-        y = image.size[1] - (bbox[3] - bbox[1]) - 20
+        except FileNotFoundError:
+            print("⚠️ 'watermark.png' not found. Skipping watermark.")
+            # Optional: Fallback to text if image is missing
+            # You can leave this empty if you prefer NO watermark when file is missing
+            pass
 
-        draw.text((x+2, y+2), text, font=font, fill=(0, 0, 0, 120))
-        draw.text((x, y), text, font=font, fill=(255, 255, 255, 230))
-        
-        watermarked = Image.alpha_composite(image, txt_layer).convert("RGB")
+        # 6. Save and Return
+        # Convert back to RGB to save as JPEG (JPEG doesn't support transparency)
+        final_img = main_img.convert("RGB")
         
         buffered = io.BytesIO()
-        watermarked.save(buffered, format="JPEG", quality=95)
+        final_img.save(buffered, format="JPEG", quality=95)
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    except Exception as e:
+        print(f"Watermark Error: {e}")
+        # If anything fails, return original image without watermark
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+def apply_watermark(image):
+    """
+    Applies a LOGO IMAGE as a watermark (Gemini Style).
+    - Resizes logo relative to the main image (Subtle size).
+    - Places it at the extreme bottom right.
+    """
+    import io
+    import base64
+    from PIL import Image
+    
+    try:
+        # 1. Convert main image to RGBA (to handle transparency)
+        main_img = image.convert("RGBA")
+        width, height = main_img.size
+        
+        try:
+            # 2. Load your Logo Image
+            # MAKE SURE your file is named 'watermark.png'
+            logo = Image.open("watermark.png").convert("RGBA")
+            
+            # 3. Gemini-Style Resizing
+            # The Gemini logo is usually small (about 10-12% of the image width)
+            scale_factor = 0.12  # Adjust this: 0.10 is smaller, 0.15 is bigger
+            
+            new_logo_width = int(width * scale_factor)
+            # Calculate height to keep aspect ratio
+            aspect_ratio = logo.height / logo.width
+            new_logo_height = int(new_logo_width * aspect_ratio)
+            
+            logo = logo.resize((new_logo_width, new_logo_height), Image.Resampling.LANCZOS)
+            
+            # 4. Position: Extreme Bottom Right (with 20px padding)
+            logo_x = width - new_logo_width - 20
+            logo_y = height - new_logo_height - 20
+            
+            # 5. Paste the logo (using itself as a mask for transparency)
+            main_img.paste(logo, (logo_x, logo_y), logo)
+
+        except FileNotFoundError:
+            print("⚠️ 'watermark.png' not found. Skipping watermark.")
+            # Optional: Fallback to text if image is missing
+            # You can leave this empty if you prefer NO watermark when file is missing
+            pass
+
+        # 6. Save and Return
+        # Convert back to RGB to save as JPEG (JPEG doesn't support transparency)
+        final_img = main_img.convert("RGB")
+        
+        buffered = io.BytesIO()
+        final_img.save(buffered, format="JPEG", quality=95)
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    except Exception as e:
+        print(f"Watermark Error: {e}")
+        # If anything fails, return original image without watermark
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
     except:
         # If watermark fails, return clean image
