@@ -430,6 +430,29 @@ def load_chat_sessions():
             return unique_sessions.to_dict('records')
     return []
 
+def delete_chat_session(session_id):
+    """
+    Deletes a specific chat session from the Google Sheet.
+    """
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # 1. Read Data
+        df = conn.read(worksheet="ChatHistory", ttl=0)
+        
+        if not df.empty and "SessionID" in df.columns:
+            # 2. Filter OUT the target session
+            # We keep rows where SessionID is NOT the target
+            df_filtered = df[df["SessionID"].astype(str) != str(session_id)]
+            
+            # 3. Update Sheet
+            conn.update(worksheet="ChatHistory", data=df_filtered)
+            st.toast("Chat deleted.", icon="🗑️")
+            
+    except Exception as e:
+        st.error(f"Could not delete: {e}")
+
 def load_messages_for_session(session_id):
     """
     Loads messages for a specific session.
@@ -460,6 +483,7 @@ def load_messages_for_session(session_id):
     return []
 
 # --- 6. FEEDBACK & SUPPORT SYSTEM ---
+
 def save_feedback(query_text):
     """Submits user feedback/bugs to the 'Feedbacks' sheet."""
     try:
@@ -1889,12 +1913,18 @@ def page_ai_assistant():
                 with st.chat_message(ui_role, avatar=current_avatar):
                     if content_text: st.write(content_text)
                     if content_img:
-                        # Handle both URL (Pollinations) and Base64 (HuggingFace)
-                        if str(content_img).startswith("http"):
-                            st.image(content_img, use_container_width=True)
-                        else:
-                            try: st.image(base64.b64decode(content_img), use_container_width=True)
-                            except: pass 
+    # ✅ CORRECTION: Now handles Google Drive Links primarily
+    image_source = str(content_img)
+    
+    if image_source.startswith("http"):
+        # This handles Pollinations URLs AND Google Drive Links
+        st.image(image_source, use_container_width=True)
+    else:
+        # Fallback for any old legacy data (Base64)
+        try: 
+            st.image(base64.b64decode(image_source), use_container_width=True)
+        except: 
+            pass 
 
     # --- 7. INPUT FIELD ---
     if prompt := st.chat_input("Ask TimeHunt AI or describe an image..."):
