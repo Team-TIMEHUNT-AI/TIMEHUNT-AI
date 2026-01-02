@@ -281,35 +281,120 @@ def load_cloud_data():
     except Exception as e:
         print(f"Cloud Load Error: {e}")
 
-# --- 5. CHAT HISTORY DATABASE (Google Sheets) ---
+# --- 5. CHAT HISTORY DATABASE (Google Sheets + Drive) ---
+
+# --- HELPER: Upload to Google Drive ---
+def upload_to_drive(image_b64):
+    """
+    Uploads an image to Google Drive using the Service Account.
+    Returns a direct link that allows the app to display the image.
+    """
+    import io
+    import json
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+
+    try:
+        # 1. Load Credentials (reuse the same ones from Sheets)
+        # Check if secrets exist in the standard Streamlit format
+        if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+             creds_info = st.secrets["connections"]["gsheets"]
+        else:
+             print("⚠️ No Google Credentials found.")
+             return ""
+
+        # Create Credentials Object
+        creds = service_account.Credentials.from_service_account_info(
+            creds_info,
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
+        
+        # 2. Build Drive Service
+        service = build('drive', 'v3', credentials=creds)
+        folder_id = st.secrets.get("DRIVE_FOLDER_ID")
+
+        if not folder_id:
+            print("⚠️ DRIVE_FOLDER_ID missing in secrets.")
+            return ""
+
+        # 3. Prepare File Metadata
+        file_metadata = {
+            'name': f"TimeHunt_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
+            'parents': [folder_id]
+        }
+        
+        # Convert Base64 back to binary stream
+        img_data = base64.b64decode(image_b64)
+        media = MediaIoBaseUpload(io.BytesIO(img_data), mimetype='image/jpeg')
+
+        # 4. Upload File
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        file_id = file.get('id')
+
+        # 5. Set Permissions (Anyone with link can view)
+        # This allows the app to display the image without the user logging into Google
+        permission = {
+            'type': 'anyone',
+            'role': 'reader',
+        }
+        service.permissions().create(
+            fileId=file_id,
+            body=permission,
+            fields='id',
+        ).execute()
+
+        # 6. Return Display Link
+        # This link format allows Streamlit to render it directly
+        return f"https://drive.google.com/uc?id={file_id}"
+
+    except Exception as e:
+        print(f"Drive Upload Error: {e}")
+        return ""
+
 def get_all_chats():
-    """Reads the entire ChatHistory sheet safely with zero caching."""
+    """Reads the entire ChatHistory sheet safely."""
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # ttl=0 forces a fresh fetch from Google every time
-        df = conn.read(worksheet="ChatHistory", ttl=0)
-        return df
+        return conn.read(worksheet="ChatHistory", ttl=0)
     except Exception:
-        # Return empty structure if sheet is missing or connection fails
         return pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
 
 def save_chat_to_cloud(role, content, image_b64=None):
     """
-    Saves chat to cloud with DEBUGGING enabled.
+    Saves chat to Google Sheets. 
+    If an image exists, it uploads to Google Drive FIRST, then saves the Link.
     """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Prepare Data
+        # 1. Prepare Metadata
         uid = str(st.session_state.get('user_id', 'Unknown'))
         sid = str(st.session_state.get('current_session_id', 'Unknown'))
         sname = str(st.session_state.get('current_session_name', 'New Chat'))
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        safe_image = image_b64 if image_b64 else ""
+        
+        # 2. IMAGE HANDLING (Drive Upload)
+        final_image_value = ""
+        
+        if image_b64:
+            # If it's already a URL (e.g. from Pollinations), save as is
+            if str(image_b64).startswith("http"):
+                final_image_value = image_b64
+            # If it's Base64 (from HuggingFace), upload to Drive
+            else:
+                with st.spinner("Syncing visual to Google Drive..."):
+                    link = upload_to_drive(image_b64)
+                    final_image_value = link if link else "[Upload Failed]"
 
-        # 2. Read Existing Data
+        # 3. Read Existing Sheet
         try:
             df_existing = conn.read(worksheet="ChatHistory", ttl=0)
             if df_existing.empty:
@@ -317,56 +402,68 @@ def save_chat_to_cloud(role, content, image_b64=None):
         except Exception:
             df_existing = pd.DataFrame(columns=["UserID", "SessionID", "SessionName", "Role", "Content", "Image", "Timestamp"])
         
-        # 3. Create New Row
+        # 4. Create New Row
         new_row = pd.DataFrame([{
             "UserID": uid, 
             "SessionID": sid, 
             "SessionName": sname,
             "Role": str(role), 
             "Content": str(content), 
-            "Image": safe_image,
+            "Image": final_image_value, # Saves the Link, not the heavy code
             "Timestamp": ts
         }])
         
-        # 4. Combine & CLEAN DATA (Crucial Fix)
+        # 5. Append & Clean
         df_final = pd.concat([df_existing, new_row], ignore_index=True)
-        
-        # Fill NaN values with empty strings (Google Sheets hates NaNs)
         df_final = df_final.fillna("")
-        
-        # Force everything to string to prevent schema errors
         df_final = df_final.astype(str)
         
-        # 5. Update
+        # 6. Update Sheet
         conn.update(worksheet="ChatHistory", data=df_final)
         
     except Exception as e:
-        # !!! THIS WILL SHOW THE REAL ERROR ON YOUR SCREEN !!!
         st.error(f"❌ Cloud Save Error: {e}")
 
 def load_chat_sessions():
-    """
-    Returns a unique list of chat sessions for the sidebar.
-    ✅ FIX: Sorts by Timestamp so new chats appear at the top.
-    """
+    """Returns a unique list of chat sessions."""
     df = get_all_chats()
     uid = str(st.session_state.get('user_id'))
     
     if not df.empty and "UserID" in df.columns:
-        # Filter for current user
-        # Ensure UserID col is treated as string for comparison
         df["UserID"] = df["UserID"].astype(str)
         my_chats = df[df["UserID"] == uid]
         
         if not my_chats.empty:
-            # Sort by Timestamp descending (Newest first)
             if "Timestamp" in my_chats.columns:
                 my_chats = my_chats.sort_values(by="Timestamp", ascending=False)
-            
-            # Get unique Sessions
             unique_sessions = my_chats[["SessionID", "SessionName"]].drop_duplicates(subset=["SessionID"])
             return unique_sessions.to_dict('records')
+    return []
+
+def load_messages_for_session(session_id):
+    """Loads messages for a specific session and handles Image Links."""
+    df = get_all_chats()
+    
+    if not df.empty and "SessionID" in df.columns:
+        df["SessionID"] = df["SessionID"].astype(str)
+        try:
+            messages = df[df["SessionID"] == str(session_id)].sort_values(by="Timestamp")
+        except KeyError:
+            messages = df[df["SessionID"] == str(session_id)]
+        
+        normalized_history = []
+        for _, row in messages.iterrows():
+            # Get Image Link or Data
+            img_val = row["Image"] if "Image" in row else None
+            if pd.isna(img_val) or str(img_val).lower() == "nan" or str(img_val) == "":
+                img_val = None
             
+            normalized_history.append({
+                "role": str(row["Role"]).lower(),
+                "text": str(row["Content"]),
+                "image": img_val # This will now be a Google Drive Link
+            })
+        return normalized_history
     return []
 
 def load_messages_for_session(session_id):
