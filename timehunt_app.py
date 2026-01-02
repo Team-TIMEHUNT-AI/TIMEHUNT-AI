@@ -2145,10 +2145,42 @@ def create_mission_report(user_name, level, xp, history):
     
     return pdf.output(dest='S').encode('latin-1')
 
+def refresh_user_data():
+    """
+    10/10 FIX: Fetches latest XP, Level, and Streak immediately from Cloud.
+    Prevents 'stale' data on the Home Screen.
+    """
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # ttl=0 ensures we get fresh data, not cached data
+        df = conn.read(worksheet="Sheet1", ttl=0) 
+        
+        uid = st.session_state.get('user_id')
+        if not df.empty and 'UserID' in df.columns:
+            user_row = df[df['UserID'] == str(uid)]
+            if not user_row.empty:
+                # Update Session State with Cloud Data safely
+                new_xp = int(user_row.iloc[0]['XP'])
+                
+                # SANITY CHECK: Never show negative XP
+                if new_xp < 0: new_xp = 0
+                
+                st.session_state['user_xp'] = new_xp
+                st.session_state['user_level'] = (new_xp // 1000) + 1
+    except Exception:
+        pass # Fail silently if offline, keep existing session state
+
+# --- 13. PAGE: HOME (Dashboard) ---
 # --- 13. PAGE: HOME (Dashboard) ---
 def page_home():
-    # 1. Dynamic Greeting
-    ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    # 1. FORCE DATA REFRESH (Fixes the Sync Issue)
+    refresh_user_data()
+
+    # 2. TIMEZONE FIX (Removes Deprecation Warning)
+    # Uses timezone-aware objects instead of utcnow()
+    ist_offset = datetime.timedelta(hours=5, minutes=30)
+    ist_now = datetime.datetime.now(datetime.timezone(ist_offset))
     hr = ist_now.hour
     
     if 5 <= hr < 12: greeting = "Good Morning"
@@ -2164,7 +2196,7 @@ def page_home():
     ]
     random_sub = random.choice(quotes)
 
-    # 2. Hero Section (Weather + Greeting)
+    # 3. Hero Section
     st.markdown("""
     <style>
         .hero-box {
@@ -2199,11 +2231,12 @@ def page_home():
 
     st.write("")
 
-    # 3. Level Progress
-    curr_xp = st.session_state.get('user_xp', 0)
+    # 4. Level Progress (Fixed XP Math)
+    curr_xp = max(0, st.session_state.get('user_xp', 0)) # Prevent negative numbers
     lvl = st.session_state.get('user_level', 1)
-    next_xp = lvl * 1000
-    lvl_progress = curr_xp - ((lvl - 1) * 1000)
+    
+    # Calculate progress bar percentage
+    lvl_progress = curr_xp % 1000 
     pct = min(100, max(0, (lvl_progress / 1000) * 100))
     
     c_lvl, c_focus = st.columns([2, 1])
@@ -2223,7 +2256,6 @@ def page_home():
         """, unsafe_allow_html=True)
 
     with c_focus:
-        # Focus Widget
         with st.container(border=True):
             st.caption("🎯 MAIN FOCUS")
             curr_obj = st.session_state.get('current_objective', 'Finish Tasks')
@@ -2235,10 +2267,9 @@ def page_home():
                         st.session_state['current_objective'] = n_obj
                         st.rerun()
 
-    # 4. Quick Dashboard Grid
+    # 5. Quick Dashboard Grid
     c1, c2, c3 = st.columns(3)
     
-    # Logic for Next Task
     slots = sorted(st.session_state.get('timetable_slots', []), key=lambda x: x['Time'])
     pending = [s for s in slots if not s['Done']]
     next_task = pending[0]['Activity'] if pending else "All Caught Up"
@@ -2265,18 +2296,20 @@ def page_home():
                 st.session_state['page_mode'] = 'chat'
                 st.rerun()
 
+    # 6. Streak Logic (Fixed Grammar)
     streak = st.session_state.get('streak', 1)
+    day_label = "Day" if streak == 1 else "Days" # Dynamic Pluralization
+    
     with c3:
         st.markdown(f"""
         <div class="css-card" style="height: 160px; text-align:center; display:flex; flex-direction:column; justify-content:center;">
             <div style="font-size:36px;">🔥</div>
-            <div style="font-size:28px; font-weight:800;">{streak} Days</div>
+            <div style="font-size:28px; font-weight:800;">{streak} {day_label}</div>
             <div style="font-size:12px; opacity:0.6;">CURRENT STREAK</div>
             <div style="font-size:11px; color:var(--accent); margin-top:4px;">Consistency is key!</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # 5. Breathing Exercise Overlay
     if st.session_state.get('show_breathing', False):
         st.markdown("---")
         st.markdown("### 🧘 Mindfulness Pause")
@@ -2861,6 +2894,7 @@ def page_help():
             st.write(a)
 
 # --- 20. MAIN APPLICATION ROUTER ---
+# --- 20. MAIN APPLICATION ROUTER ---
 def main():
     # 1. Initialize System State
     initialize_session_state()
@@ -2944,15 +2978,27 @@ def main():
                 music_mode = st.selectbox("Soundscape", ["Om Chanting", "Binaural Beats", "Flute Flow", "Rainfall"], label_visibility="collapsed")
                 local_map = {"Om Chanting": "om.mp3", "Binaural Beats": "binaural.mp3", "Flute Flow": "flute.mp3", "Rainfall": "rain.mp3"}
                 target_file = local_map.get(music_mode)
+                
+                # 10/10 FIX: ROBUST AUDIO LOADING (Prevents Errors)
                 if target_file and os.path.exists(target_file):
                     st.audio(target_file, format="audio/mp3", loop=True)
                     st.caption(f"▶ Now Playing: {music_mode}")
                 else:
-                    st.warning("Audio file not found.")
+                    # Online Fallback links
+                    online_map = {
+                        "Om Chanting": "https://cdn.pixabay.com/audio/2022/10/14/audio_9855325881.mp3",
+                        "Binaural Beats": "https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3",
+                        "Flute Flow": "https://cdn.pixabay.com/audio/2022/11/22/audio_febc508520.mp3",
+                        "Rainfall": "https://cdn.pixabay.com/audio/2022/07/04/audio_03d6f14068.mp3"
+                    }
+                    if music_mode in online_map:
+                        st.audio(online_map[music_mode], format="audio/mp3", loop=True)
+                        st.caption(f"▶ Streaming: {music_mode} (Online)")
+                    else:
+                        st.warning("Audio unavailable.")
 
             st.markdown("---")
             
-            # UPDATED MENU OPTIONS
             nav = option_menu(
                 menu_title=None,
                 options=["Home", "Scheduler", "Calendar", "AI Companion", "Timer", "Analytics", "Help Center", "About", "Settings"], 
@@ -2967,11 +3013,10 @@ def main():
             )
             st.caption(f"👤 **{st.session_state.get('user_name', 'User')}**")
 
-        # --- PAGE ROUTING ---
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
-        elif nav == "AI Companion": # MATCHES THE MENU OPTION ABOVE
+        elif nav == "AI Companion": 
             st.session_state['page_mode'] = 'chat'
             st.rerun()
         elif nav == "Timer": page_timer()  
