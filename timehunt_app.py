@@ -853,124 +853,76 @@ def generate_visual_intel(prompt_text):
 
 def apply_watermark(image):
     """
-    Applies a LOGO IMAGE as a watermark (Gemini Style).
-    - Resizes logo relative to the main image (Subtle size).
-    - Places it at the extreme bottom right.
+    Applies a LOGO IMAGE as a watermark (Fixed Size & Transparent).
+    ✅ FORCE RESIZE: Limits logo to max 120px width (prevents giant logos).
+    ✅ OPACITY: Makes the logo 70% transparent (subtle glass effect).
     """
     import io
     import base64
     from PIL import Image
     
     try:
-        # 1. Convert main image to RGBA (to handle transparency)
+        # 1. Convert main image to RGBA
         main_img = image.convert("RGBA")
         width, height = main_img.size
         
         try:
-            # 2. Load your Logo Image
-            # MAKE SURE your file is named 'watermark.png'
+            # 2. Load your Logo
             logo = Image.open("watermark.png").convert("RGBA")
             
-            # 3. Gemini-Style Resizing
-            # The Gemini logo is usually small (about 10-12% of the image width)
-            scale_factor = 0.12  # Adjust this: 0.10 is smaller, 0.15 is bigger
+            # --- 3. FORCE SMALL SIZE (The Fix) ---
+            # Goal: 12% of image width, BUT never bigger than 120 pixels.
+            target_width = int(width * 0.12)
+            if target_width > 120: target_width = 120 # Hard limit
+            if target_width < 50: target_width = 50   # Minimum size
             
-            new_logo_width = int(width * scale_factor)
             # Calculate height to keep aspect ratio
             aspect_ratio = logo.height / logo.width
-            new_logo_height = int(new_logo_width * aspect_ratio)
+            new_logo_height = int(target_width * aspect_ratio)
             
-            logo = logo.resize((new_logo_width, new_logo_height), Image.Resampling.LANCZOS)
+            # Resize nicely
+            logo = logo.resize((target_width, new_logo_height), Image.Resampling.LANCZOS)
             
-            # 4. Position: Extreme Bottom Right (with 20px padding)
-            logo_x = width - new_logo_width - 20
-            logo_y = height - new_logo_height - 20
+            # --- 4. MAKE IT SUBTLE (Opacity) ---
+            # This makes the logo semi-transparent (like glass)
+            # 255 = Solid, 0 = Invisible. 180 is a good "watermark" level.
+            # We adjust the alpha channel of every pixel
+            logo_data = logo.getdata()
+            new_data = []
+            for item in logo_data:
+                # item is (R, G, B, A). We change A (Alpha)
+                # If the pixel has color (A > 0), set transparency to 180
+                if item[3] > 0:
+                    new_data.append((item[0], item[1], item[2], 180)) 
+                else:
+                    new_data.append(item)
+            logo.putdata(new_data)
+
+            # 5. Position: Bottom Right with Padding
+            padding = 20
+            logo_x = width - target_width - padding
+            logo_y = height - new_logo_height - padding
             
-            # 5. Paste the logo (using itself as a mask for transparency)
+            # 6. Paste!
+            # The third argument 'logo' is the mask (handles transparency)
             main_img.paste(logo, (logo_x, logo_y), logo)
 
         except FileNotFoundError:
             print("⚠️ 'watermark.png' not found. Skipping watermark.")
-            # Optional: Fallback to text if image is missing
-            # You can leave this empty if you prefer NO watermark when file is missing
-            pass
+        except Exception as e:
+            print(f"⚠️ Watermark Resize Error: {e}")
 
-        # 6. Save and Return
-        # Convert back to RGB to save as JPEG (JPEG doesn't support transparency)
+        # 7. Save and Return
         final_img = main_img.convert("RGB")
-        
         buffered = io.BytesIO()
         final_img.save(buffered, format="JPEG", quality=95)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
     except Exception as e:
         print(f"Watermark Error: {e}")
-        # If anything fails, return original image without watermark
+        # If everything fails, return original image
         buffered = io.BytesIO()
         image.save(buffered, format="JPEG")
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
-def apply_watermark(image):
-    """
-    Applies a LOGO IMAGE as a watermark (Gemini Style).
-    - Resizes logo relative to the main image (Subtle size).
-    - Places it at the extreme bottom right.
-    """
-    import io
-    import base64
-    from PIL import Image
-    
-    try:
-        # 1. Convert main image to RGBA (to handle transparency)
-        main_img = image.convert("RGBA")
-        width, height = main_img.size
-        
-        try:
-            # 2. Load your Logo Image
-            # MAKE SURE your file is named 'watermark.png'
-            logo = Image.open("watermark.png").convert("RGBA")
-            
-            # 3. Gemini-Style Resizing
-            # The Gemini logo is usually small (about 10-12% of the image width)
-            scale_factor = 0.8  # Adjust this: 0.10 is smaller, 0.15 is bigger
-            
-            new_logo_width = int(width * scale_factor)
-            # Calculate height to keep aspect ratio
-            aspect_ratio = logo.height / logo.width
-            new_logo_height = int(new_logo_width * aspect_ratio)
-            
-            logo = logo.resize((new_logo_width, new_logo_height), Image.Resampling.LANCZOS)
-            
-            # 4. Position: Extreme Bottom Right (with 20px padding)
-            logo_x = width - new_logo_width - 20
-            logo_y = height - new_logo_height - 20
-            
-            # 5. Paste the logo (using itself as a mask for transparency)
-            main_img.paste(logo, (logo_x, logo_y), logo)
-
-        except FileNotFoundError:
-            print("⚠️ 'watermark.png' not found. Skipping watermark.")
-            # Optional: Fallback to text if image is missing
-            # You can leave this empty if you prefer NO watermark when file is missing
-            pass
-
-        # 6. Save and Return
-        # Convert back to RGB to save as JPEG (JPEG doesn't support transparency)
-        final_img = main_img.convert("RGB")
-        
-        buffered = io.BytesIO()
-        final_img.save(buffered, format="JPEG", quality=95)
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
-
-    except Exception as e:
-        print(f"Watermark Error: {e}")
-        # If anything fails, return original image without watermark
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG")
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
-    except:
-        # If watermark fails, return clean image
-        buffered = io.BytesIO()
-        image.convert("RGB").save(buffered, format="JPEG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 # --- 6. PAGE: ONBOARDING (User Login & Setup) ---
