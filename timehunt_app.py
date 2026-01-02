@@ -977,45 +977,57 @@ def generate_visual_intel(prompt_text):
     """
     1. Tries Hugging Face Official (Best Quality, High Limits)
     2. If that fails, auto-switches to Pollinations Flux (Backup)
-    3. Adds Watermark if possible
+    3. Adds Watermark
+    Returns: Base64 String of the final image.
     """
     import base64
     import io
     import random
     import requests
     from PIL import Image, ImageDraw, ImageFont
+    from huggingface_hub import InferenceClient
 
     # --- 1. TRY HUGGING FACE (OFFICIAL) ---
     try:
-        from huggingface_hub import InferenceClient
-        
+        # Check for Token
         hf_token = st.secrets.get("HF_TOKEN")
-        if hf_token:
-            client = InferenceClient(token=hf_token)
-            
-            # Use Stable Diffusion v1.5 (Fast & Reliable)
-            image = client.text_to_image(
-                f"{prompt_text}, cinematic lighting, highly detailed, 8k",
-                model="runwayml/stable-diffusion-v1-5"
-            )
-            
-            # If successful, go to watermarking
-            return apply_watermark(image)
+        if not hf_token:
+            # This warning will show in your app if the token is missing
+            st.warning("⚠️ HF_TOKEN missing in secrets.toml. Switching to backup generator.")
+            raise ValueError("Missing HF_TOKEN")
+
+        client = InferenceClient(token=hf_token)
+        
+        # Using a fast, reliable model (Stable Diffusion v1.5)
+        # You can change this to "stabilityai/stable-diffusion-2-1" for different styles
+        image = client.text_to_image(
+            f"{prompt_text}, cinematic lighting, highly detailed, 8k, masterpiece",
+            model="runwayml/stable-diffusion-v1-5"
+        )
+        
+        # If successful, apply watermark and return
+        return apply_watermark(image)
             
     except Exception as e:
-        # If HF fails, print the error but DON'T stop. Switch to Backup.
-        print(f"⚠️ Primary AI Failed: {e}. Switching to Backup...")
+        # ⚠️ DIAGNOSTIC: This prints the specific error to your app console/UI
+        # So you know WHY Hugging Face failed (Auth error? Quota? Internet?)
+        print(f"⚠️ Primary AI Failed: {e}") 
+        # Optional: Uncomment the next line to see the error on the app screen for debugging
+        # st.error(f"Hugging Face Error: {e}")
 
     # --- 2. FALLBACK: POLLINATIONS.AI (FLUX) ---
     try:
-        # Random seed bypasses some caching issues
+        # We add a random seed to prevent caching old images
         seed = random.randint(1, 99999)
-        url = f"https://image.pollinations.ai/prompt/{prompt_text}?model=flux&width=1024&height=768&seed={seed}&nologo=true"
+        # Added 'nologo=true' and 'enhance=true'
+        url = f"https://image.pollinations.ai/prompt/{prompt_text}?model=flux&width=1024&height=768&seed={seed}&nologo=true&enhance=true"
         
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         if response.status_code == 200:
             image = Image.open(io.BytesIO(response.content))
             return apply_watermark(image)
+        else:
+            st.error(f"Backup Gen Failed: Status {response.status_code}")
             
     except Exception as e:
         st.error(f"❌ All AI Models Failed. Error: {e}")
@@ -1025,9 +1037,7 @@ def generate_visual_intel(prompt_text):
 
 def apply_watermark(image):
     """
-    Applies a TINY watermark (Gemini Style).
-    ✅ SIZE: Reduced to 8% of width (Max 80 pixels).
-    ✅ OPACITY: 70% transparent.
+    Applies a TINY watermark (Gemini Style) and returns Base64 string.
     """
     import io
     import base64
@@ -1037,53 +1047,50 @@ def apply_watermark(image):
         main_img = image.convert("RGBA")
         width, height = main_img.size
         
+        # Try to load local watermark.png
         try:
             logo = Image.open("watermark.png").convert("RGBA")
             
-            # --- STRICT SIZE LIMITS ---
-            # 1. Target only 8% of the total image width (Very small)
-            target_width = int(width * 0.08)
+            # 1. Target only 10% of the total image width
+            target_width = int(width * 0.10)
+            if target_width > 100: target_width = 100
+            if target_width < 40: target_width = 40
             
-            # 2. Hard Cap: Never allow it to be wider than 80 pixels
-            if target_width > 80: target_width = 80
-            # 3. Minimum: Don't let it vanish completely (min 30px)
-            if target_width < 30: target_width = 30
-            
-            # Calculate height
+            # 2. Resize maintaining aspect ratio
             aspect_ratio = logo.height / logo.width
             new_logo_height = int(target_width * aspect_ratio)
-            
-            # Resize
             logo = logo.resize((target_width, new_logo_height), Image.Resampling.LANCZOS)
             
-            # --- TRANSPARENCY (Glass Effect) ---
+            # 3. Transparency (Glass Effect)
             logo_data = logo.getdata()
             new_data = []
             for item in logo_data:
+                # If pixel has color, reduce alpha to 180 (translucent)
                 if item[3] > 0:
-                    # Set opacity to 180 (out of 255)
                     new_data.append((item[0], item[1], item[2], 180)) 
                 else:
                     new_data.append(item)
             logo.putdata(new_data)
 
-            # Position: Bottom Right (Tighter padding)
-            padding = 15
+            # 4. Position: Bottom Right
+            padding = 20
             logo_x = width - target_width - padding
             logo_y = height - new_logo_height - padding
             
+            # Paste
             main_img.paste(logo, (logo_x, logo_y), logo)
 
         except FileNotFoundError:
-            pass # Skip if no logo found
+            pass # Skip if no logo file found
 
-        # Save
+        # Save to Buffer as Base64
         final_img = main_img.convert("RGB")
         buffered = io.BytesIO()
         final_img.save(buffered, format="JPEG", quality=95)
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    except Exception:
+    except Exception as e:
+        print(f"Watermark Error: {e}")
         # Fallback to original image on error
         buffered = io.BytesIO()
         image.save(buffered, format="JPEG")
