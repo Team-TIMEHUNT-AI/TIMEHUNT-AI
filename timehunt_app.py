@@ -1734,6 +1734,8 @@ def page_calendar():
 
 # --- 10. PAGE: AI ASSISTANT ---
 
+# --- 10. PAGE: AI ASSISTANT ---
+
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -1879,7 +1881,7 @@ def page_ai_assistant():
     # --- 5. RENDER PAGE HEADER ---
     c_title, c_mic = st.columns([5, 1], vertical_alignment="bottom")
     with c_title:
-        st.markdown(f'<div class="big-title">AI Companion 🤖</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="big-title">TimeHunt AI</div>', unsafe_allow_html=True)
     with c_mic:
         # Key change: 'voice_input_btn' fixes duplicate error
         audio_data = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", just_once=True, key="voice_input_btn")
@@ -1912,24 +1914,24 @@ def page_ai_assistant():
 
                 with st.chat_message(ui_role, avatar=current_avatar):
                     if content_text: st.write(content_text)
-# ✅ CORRECTION: Now handles Google Drive Links primarily
-                    	image_source = str(content_img)
-    
-    if image_source.startswith("http"):
-        # This handles Pollinations URLs AND Google Drive Links
-        st.image(image_source, use_container_width=True)
-    else:
-        # Fallback for any old legacy data (Base64)
-        try: 
-            st.image(base64.b64decode(image_source), use_container_width=True)
-        except: 
-            pass 
+                    if content_img:
+                        # ✅ CORRECTION: Now handles Google Drive Links primarily
+                        image_source = str(content_img)
+                        
+                        if image_source.startswith("http"):
+                            # This handles Pollinations URLs AND Google Drive Links
+                            st.image(image_source, use_container_width=True)
+                        else:
+                            # Fallback for any old legacy data (Base64)
+                            try: 
+                                st.image(base64.b64decode(image_source), use_container_width=True)
+                            except: 
+                                pass 
 
     # --- 7. INPUT FIELD ---
     if prompt := st.chat_input("Ask TimeHunt AI or describe an image..."):
         # Auto-detect takes over here
         process_message(prompt)
-
 
 # --- 11. VISUAL STYLING (THEME ENGINE) ---
 
@@ -2933,7 +2935,7 @@ def main():
             # Main Nav
             nav = option_menu(
                 menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "AI Companion", "Timer", "Analytics", "Help Center", "About", "Settings"], 
+                options=["Home", "Scheduler", "Calendar", "Chat with Timehunt AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
                 icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
                 default_index=0,
                 styles={
@@ -2950,7 +2952,7 @@ def main():
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
         elif nav == "Calendar": page_calendar()
-        elif nav == "AI Companion": 
+        elif nav == " Chat with TimeHunt AI": 
             st.session_state['page_mode'] = 'chat'
             st.rerun()
         elif nav == "Timer": page_timer()  
