@@ -9,3 +9,5 @@ google-genai
 Pillow
 huggingface_hub
 requests
+google-api-python-client
+google-auth
