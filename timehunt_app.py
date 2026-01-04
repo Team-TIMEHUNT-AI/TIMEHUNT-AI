@@ -2591,7 +2591,7 @@ def page_home():
                     if st.button("Save"):
                         st.session_state['current_objective'] = n_obj
                         with st.spinner("Saving..."):
-update_user_setting("MainFocus", n_obj)
+                        	update_user_setting("MainFocus", n_obj)
                         st.rerun()
 
     # 5. Quick Dashboard Grid
