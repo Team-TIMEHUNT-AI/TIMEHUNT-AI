@@ -1426,9 +1426,8 @@ def page_onboarding():
                                 existing_user = df[df['Name'] == name_input]
                                 if not existing_user.empty:
                                     stored_pin = str(existing_user.iloc[0]['PIN']).strip()
-                                    
-                                                                        if str(pin_input) == stored_pin:
-                                                                        	row = existing_user.iloc[0]
+                                    if str(pin_input) == stored_pin:
+                                        row = existing_user.iloc[0]
                                         st.session_state['user_name'] = row['Name']
                                         st.session_state['user_id'] = row['UserID']
                                         st.session_state['user_xp'] = int(row['XP'])
