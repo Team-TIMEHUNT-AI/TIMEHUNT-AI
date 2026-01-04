@@ -1401,7 +1401,7 @@ def page_onboarding():
         # --- STEP 1: LOGIN / REGISTER ---
         if step == 1:
             st.markdown('<div class="login-card">', unsafe_allow_html=True)
-            st.markdown('<div class="app-header">TIME HUNT</div>', unsafe_allow_html=True)
+            st.markdown('<div class="app-header">TIME HUNT AI</div>', unsafe_allow_html=True)
             st.markdown('<div class="sub-header">Productivity Intelligence</div>', unsafe_allow_html=True)
             
             
@@ -1426,18 +1426,17 @@ def page_onboarding():
                                 existing_user = df[df['Name'] == name_input]
                                 if not existing_user.empty:
                                     stored_pin = str(existing_user.iloc[0]['PIN']).strip()
-                                    if str(pin_input) == stored_pin:
+                                                                        if str(pin_input) == stored_pin:
                                         row = existing_user.iloc[0]
                                         st.session_state['user_name'] = row['Name']
                                         st.session_state['user_id'] = row['UserID']
                                         st.session_state['user_xp'] = int(row['XP'])
                                         st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
-                                        st.session_state['current_objective'] = clean_val(row.get('MainFocus'), 'Finish Tasks')
-                                        st.session_state['theme_mode'] = clean_val(row.get('ThemeMode'), 'Light')
-                                        st.session_state['theme_color'] = clean_val(row.get('ThemeColor'), 'Green (Default)')
-                                        st.session_state['ai_voice_style'] = clean_val(row.get('AIVoice'), 'Jarvis (US)')
+                                        st.session_state['current_objective'] = clean_text(row.get('MainFocus'), 'Finish Tasks')
+                                        st.session_state['theme_mode'] = clean_text(row.get('ThemeMode'), 'Light')
+                                        st.session_state['theme_color'] = clean_text(row.get('ThemeColor'), 'Green (Default)')
+                                        st.session_state['ai_voice_style'] = clean_text(row.get('AIVoice'), 'Jarvis (US)')
                                         st.session_state['onboarding_complete'] = True
-                                        
                                         st.toast(f"Welcome back, {name_input}!", icon="👋")
                                         load_cloud_data()
                                         time.sleep(1.0) 
