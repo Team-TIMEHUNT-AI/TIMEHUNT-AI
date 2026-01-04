@@ -215,8 +215,38 @@ def sync_data():
         conn.update(worksheet="Reminders", data=df_final)
         
     except Exception as e:
-        # Show a discreet warning icon instead of crashing
+        # Show a warning icon instead of crashing
         st.toast(f"Sync Issue: {e}", icon="⚠️")
+
+# --- USER GENERAL SETTING'S FUNCTION ---
+def update_user_setting(column_name, new_value):
+    """
+    Updates a specific setting (column) for the current user in Sheet1.
+    """
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # 1. Read Data
+        df = conn.read(worksheet="Sheet1", ttl=0)
+        uid = str(st.session_state.get('user_id'))
+        
+        if not df.empty and "UserID" in df.columns:
+            # 2. Find User Index
+            # We convert to string to ensure matching works
+            df["UserID"] = df["UserID"].astype(str)
+            mask = df["UserID"] == uid
+            
+            if mask.any():
+                # 3. Update the value
+                df.loc[mask, column_name] = str(new_value)
+                
+                # 4. Save back to Cloud
+                conn.update(worksheet="Sheet1", data=df)
+                return True
+    except Exception as e:
+        st.error(f"Save Failed: {e}")
+    return False
 
 # --- 3. WEATHER UTILITY ---
 def get_real_time_weather(city="Jaipur"):
@@ -1400,12 +1430,18 @@ def page_onboarding():
                                         st.session_state['user_id'] = row['UserID']
                                         st.session_state['user_xp'] = int(row['XP'])
                                         st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
+                                        st.session_state['current_objective'] = row.get('MainFocus', 'Finish Tasks')
+                                        st.session_state['theme_mode'] = row.get('ThemeMode', 'Light')
+                                        st.session_state['theme_color'] = row.get('ThemeColor', 'Green (Default)')
+                                        st.session_state['ai_voice_style'] = row.get('AIVoice', 'Jarvis (US)')
+                                        # --------------------------------
+                                        
                                         st.session_state['onboarding_complete'] = True
                                         
                                         st.toast(f"Welcome back, {name_input}!", icon="👋")
                                         load_cloud_data()
                                         
-                                        time.sleep(1.0) # Pause BEFORE rerun
+                                        time.sleep(1.0) 
                                         st.rerun()
                                     else:
                                         # Wrong PIN
@@ -2554,6 +2590,8 @@ def page_home():
                     n_obj = st.text_input("Goal", value=curr_obj)
                     if st.button("Save"):
                         st.session_state['current_objective'] = n_obj
+                        with st.spinner("Saving..."):
+update_user_setting("MainFocus", n_obj)
                         st.rerun()
 
     # 5. Quick Dashboard Grid
@@ -2970,7 +3008,12 @@ def page_settings():
     if st.button("Save Visuals", type="secondary", use_container_width=True):
         st.session_state['theme_mode'] = mode_choice
         st.session_state['theme_color'] = theme_choice
+        update_user_setting("ThemeMode", mode_choice)
+        update_user_setting("ThemeColor", theme_choice)
+        # --------------------------
+        
         st.rerun()
+
 
     st.markdown("---")
 
@@ -2994,11 +3037,44 @@ def page_settings():
     try: v_idx = voice_list.index(current_voice)
     except: v_idx = 0
     
+        # ... inside page_settings ...
+
+    # Create list for selectbox
+    voice_list = list(voice_options.keys())
+    try: v_idx = voice_list.index(current_voice)
+    except: v_idx = 0
+    
     selected_voice = st.selectbox("Voice Identity", voice_list, index=v_idx)
     st.caption(f"Note: {voice_options[selected_voice]['desc']}")
 
+    if st.button("🔊 Listen to Preview", type="secondary"):
+        with st.spinner("Generating voice sample..."):
+            try:
+                from gtts import gTTS
+                import io
+                target_tld = voice_options[selected_voice]['tld']
+                target_lang = voice_options[selected_voice]['lang']
+
+                voice_name = selected_voice.split(" (")[0]
+                sample_text = f"Hello, I am {voice_name}. I am ready to assist you with your tasks."
+                
+                
+                tts = gTTS(text=sample_text, lang=target_lang, tld=target_tld, slow=False)
+                audio_fp = io.BytesIO()
+                tts.write_to_fp(audio_fp)
+                audio_fp.seek(0)
+                
+                
+                st.audio(audio_fp, format='audio/mp3')
+                
+            except Exception as e:
+                st.error(f"Could not generate preview. Error: {e}")
+
+    st.write("") 
+
     if st.button("💾 Save Voice Setting", type="primary", use_container_width=True):
         st.session_state['ai_voice_style'] = selected_voice
+        update_user_setting("AIVoice", selected_voice)  
         st.toast(f"Voice updated to {selected_voice}!", icon="🎙️")
         time.sleep(0.5)
         st.rerun()
