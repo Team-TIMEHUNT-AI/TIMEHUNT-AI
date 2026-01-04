@@ -16,7 +16,15 @@ import calendar
 from streamlit_mic_recorder import mic_recorder
 from gtts import gTTS
 import tempfile
+import pandas as pd
+import numpy as np
 
+def clean_text(value, default_text):
+    """Converts nan/float junk to clean string."""
+    if pd.isna(value) or value == "nan" or str(value).lower() == "nan" or value is None:
+        return default_text
+    return str(value)
+	
 # --- PATH CONFIGURATION ---
 # Ensures assets load correctly regardless of where the script is run
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -220,32 +228,32 @@ def sync_data():
 
 # --- USER GENERAL SETTING'S FUNCTION ---
 def update_user_setting(column_name, new_value):
-    """
-    Updates a specific setting (column) for the current user in Sheet1.
-    """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # 1. Read Data
+        # 1. Read & Force String Types (Crucial Fix)
         df = conn.read(worksheet="Sheet1", ttl=0)
+        df = df.astype(str) 
+        
         uid = str(st.session_state.get('user_id'))
         
-        if not df.empty and "UserID" in df.columns:
-            # 2. Find User Index
-            # We convert to string to ensure matching works
-            df["UserID"] = df["UserID"].astype(str)
-            mask = df["UserID"] == uid
+        # 2. Check if Column Exists
+        if column_name not in df.columns:
+            st.error(f"⚠️ Column '{column_name}' missing in GSheet!")
+            return False
+
+        # 3. Find & Update
+        mask = df["UserID"] == uid
+        if mask.any():
+            df.loc[mask, column_name] = str(new_value)
+            conn.update(worksheet="Sheet1", data=df)
+            return True
+        else:
+            st.warning(f"User ID {uid} not found in database.")
             
-            if mask.any():
-                # 3. Update the value
-                df.loc[mask, column_name] = str(new_value)
-                
-                # 4. Save back to Cloud
-                conn.update(worksheet="Sheet1", data=df)
-                return True
     except Exception as e:
-        st.error(f"Save Failed: {e}")
+        st.error(f"Save Error: {e}")
     return False
 
 # --- 3. WEATHER UTILITY ---
@@ -1396,7 +1404,7 @@ def page_onboarding():
             st.markdown('<div class="app-header">TIME HUNT</div>', unsafe_allow_html=True)
             st.markdown('<div class="sub-header">Productivity Intelligence</div>', unsafe_allow_html=True)
             
-            # Inputs
+            
             default_val = st.session_state.get('suggested_name_choice', "")
             name_input = st.text_input("Username", value=default_val, placeholder="Create or Enter Username...", key="login_name").strip()
             pin_input = st.text_input("PIN Code (4-Digits)", placeholder="####", type="password", key="login_pin", max_chars=4)
@@ -1407,40 +1415,32 @@ def page_onboarding():
                 if name_input and len(pin_input) >= 1:
                     with st.spinner("Authenticating..."):
                         try:
-                            # Connect to Google Sheets
+                           
                             from streamlit_gsheets import GSheetsConnection
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             df = conn.read(worksheet="Sheet1", ttl=0)
                             
-                            # Check if User Exists
+                           
                             if not df.empty and 'Name' in df.columns:
-                                # Clean PIN Data (Remove decimals/spaces)
-                                df['PIN'] = df['PIN'].astype(str).replace(r'\.0$', '', regex=True).str.zfill(4)
-                                
+                                df['PIN'] = df['PIN'].astype(str).replace(r'\.0$', '', regex=True).str.zfill(4)     
                                 existing_user = df[df['Name'] == name_input]
-                                
                                 if not existing_user.empty:
-                                    # RETURNING USER -> Verify PIN
                                     stored_pin = str(existing_user.iloc[0]['PIN']).strip()
                                     
-                                    if str(pin_input) == stored_pin:
-                                        # Success
-                                        row = existing_user.iloc[0]
+                                                                        if str(pin_input) == stored_pin:
+                                                                        	row = existing_user.iloc[0]
                                         st.session_state['user_name'] = row['Name']
                                         st.session_state['user_id'] = row['UserID']
                                         st.session_state['user_xp'] = int(row['XP'])
                                         st.session_state['user_level'] = (st.session_state['user_xp'] // 500) + 1
-                                        st.session_state['current_objective'] = row.get('MainFocus', 'Finish Tasks')
-                                        st.session_state['theme_mode'] = row.get('ThemeMode', 'Light')
-                                        st.session_state['theme_color'] = row.get('ThemeColor', 'Green (Default)')
-                                        st.session_state['ai_voice_style'] = row.get('AIVoice', 'Jarvis (US)')
-                                        # --------------------------------
-                                        
+                                        st.session_state['current_objective'] = clean_val(row.get('MainFocus'), 'Finish Tasks')
+                                        st.session_state['theme_mode'] = clean_val(row.get('ThemeMode'), 'Light')
+                                        st.session_state['theme_color'] = clean_val(row.get('ThemeColor'), 'Green (Default)')
+                                        st.session_state['ai_voice_style'] = clean_val(row.get('AIVoice'), 'Jarvis (US)')
                                         st.session_state['onboarding_complete'] = True
                                         
                                         st.toast(f"Welcome back, {name_input}!", icon="👋")
                                         load_cloud_data()
-                                        
                                         time.sleep(1.0) 
                                         st.rerun()
                                     else:
@@ -2471,32 +2471,41 @@ def create_mission_report(user_name, level, xp, history):
     return pdf.output(dest='S').encode('latin-1')
 
 def refresh_user_data():
-    """
-    10/10 FIX: Fetches latest XP, Level, and Streak immediately from Cloud.
-    Prevents 'stale' data on the Home Screen.
-    """
     try:
         from streamlit_gsheets import GSheetsConnection
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # ttl=0 ensures we get fresh data, not cached data
         df = conn.read(worksheet="Sheet1", ttl=0) 
         
-        uid = st.session_state.get('user_id')
+        uid = str(st.session_state.get('user_id'))
+        
         if not df.empty and 'UserID' in df.columns:
-            user_row = df[df['UserID'] == str(uid)]
+            # Force string comparison
+            df['UserID'] = df['UserID'].astype(str)
+            user_row = df[df['UserID'] == uid]
+            
             if not user_row.empty:
-                # Update Session State with Cloud Data safely
-                new_xp = int(user_row.iloc[0]['XP'])
+                row = user_row.iloc[0]
                 
-                # SANITY CHECK: Never show negative XP
-                if new_xp < 0: new_xp = 0
-                
-                st.session_state['user_xp'] = new_xp
+                # 1. XP (Keep existing logic)
+                try: new_xp = int(float(row['XP'])) 
+                except: new_xp = 0
+                st.session_state['user_xp'] = max(0, new_xp)
                 st.session_state['user_level'] = (new_xp // 1000) + 1
-    except Exception:
-        pass # Fail silently if offline, keep existing session state
 
-# --- 13. PAGE: HOME (Dashboard) ---
+                # 2. LOAD SETTINGS SAFELY (Using the clean_text tool)
+                # This prevents "nan" from appearing
+                focus_val = clean_text(row.get('MainFocus'), "Finish Tasks")
+                st.session_state['current_objective'] = focus_val
+                
+                theme_val = clean_text(row.get('ThemeMode'), "Light")
+                st.session_state['theme_mode'] = theme_val
+                
+                voice_val = clean_text(row.get('AIVoice'), "Jarvis (US)")
+                st.session_state['ai_voice_style'] = voice_val
+
+    except Exception as e:
+        pass 
+
 # --- 13. PAGE: HOME (Dashboard) ---
 def page_home():
     # 1. FORCE DATA REFRESH (Fixes the Sync Issue)
