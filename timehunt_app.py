@@ -2067,6 +2067,52 @@ def upload_to_gemini_manager(uploaded_file_obj, api_key):
         st.error(f"File Upload Error: {e}")
         return None
 
+def parse_and_add_ai_schedule(ai_response_text):
+    """
+    Scans AI response for JSON code blocks containing schedule data 
+    and adds them to the Session State automatically.
+    """
+    import json
+    import re
+
+    # 1. Regex to find JSON inside ```json ... ``` or just [...]
+    json_match = re.search(r'```json\n(.*?)\n```', ai_response_text, re.DOTALL)
+    
+    if json_match:
+        try:
+            # Parse the JSON string into a Python List
+            data_str = json_match.group(1)
+            new_tasks = json.loads(data_str)
+            
+            count = 0
+            ist_now = datetime.datetime.now()
+            today_str = ist_now.strftime("%Y-%m-%d")
+
+            # 2. Add to Session State
+            for task in new_tasks:
+                # Basic validation
+                if "Activity" in task and "Time" in task:
+                    st.session_state['timetable_slots'].append({
+                        "Date": today_str,
+                        "Time": task['Time'],
+                        "Activity": task['Activity'],
+                        "Category": task.get('Category', 'General'),
+                        "Difficulty": "Medium", # Default
+                        "XP": 50,
+                        "Done": False
+                    })
+                    count += 1
+            
+            # 3. Save to Cloud
+            if count > 0:
+                sync_data()
+                return count
+                
+        except Exception as e:
+            print(f"Auto-Schedule Error: {e}")
+            
+    return 0
+
 # --- 10. PAGE: AI ASSISTANT (Gemini UI & Fixed Audio) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
@@ -2207,6 +2253,13 @@ def page_ai_assistant():
                 use_search = (mode == "Web Search")
                 response_text, _ = perform_ai_analysis(prompt, final_file_data, final_file_type, enable_search=use_search)
                 
+                # --- NEW CODE START: CHECK FOR AUTO-SCHEDULE ---
+                added_count = parse_and_add_ai_schedule(response_text)
+                if added_count > 0:
+                    response_text += f"\n\n✅ **Success:** I have automatically added {added_count} tasks to your Scheduler."
+                    st.toast(f"Auto-Scheduled {added_count} tasks!", icon="📅")
+                # --- NEW CODE END ---
+
                 st.session_state['chat_history'].append({"role": "model", "text": response_text})
                 save_chat_to_cloud("model", response_text)
                 st.rerun()
@@ -3330,6 +3383,159 @@ def page_help():
                 else:
                     st.warning("Please describe your issue in more detail.")
 
+# --- PAGE: STUDY ZONE (AI Flashcards) ---
+def page_study_zone():
+    st.markdown('<div class="big-title">🧠 AI Study Zone</div>', unsafe_allow_html=True)
+    st.caption("Turn any topic into a revision game.")
+
+    # 1. Input Area
+    with st.container(border=True):
+        topic = st.text_input("Enter Topic or Paste Notes", placeholder="e.g. Physics Electrostatics, Python Lists...")
+        
+        # Difficulty Selector
+        diff = st.select_slider("Complexity", options=["Basic", "Intermediate", "Advanced (JEE Level)"])
+        
+        if st.button("⚡ Generate Flashcards", type="primary"):
+            if topic:
+                with st.spinner(f"Consulting the archives on {topic}..."):
+                    # Prompt Engineering for JSON output
+                    prompt = f"""
+                    Create 5 flashcards for the topic: '{topic}'. Difficulty: {diff}.
+                    Return ONLY raw JSON format (no markdown formatting) like this:
+                    [
+                        {{"q": "Question here?", "a": "Answer here"}},
+                        {{"q": "Next question?", "a": "Next answer"}}
+                    ]
+                    """
+                    response, _ = perform_ai_analysis(prompt)
+                    
+                    try:
+                        # Clean up code blocks if Gemini adds them
+                        clean_json = response.replace("```json", "").replace("```", "").strip()
+                        import json
+                        cards = json.loads(clean_json)
+                        st.session_state['flashcards'] = cards
+                        st.session_state['card_index'] = 0
+                        st.session_state['show_answer'] = False
+                        st.rerun()
+                    except:
+                        st.error("AI returned invalid data. Please try again.")
+            else:
+                st.warning("Please enter a topic.")
+
+    # 2. Flashcard Display
+    if 'flashcards' in st.session_state and st.session_state['flashcards']:
+        cards = st.session_state['flashcards']
+        idx = st.session_state.get('card_index', 0)
+        show_ans = st.session_state.get('show_answer', False)
+        
+        # Progress Bar
+        progress = (idx + 1) / len(cards)
+        st.progress(progress)
+        st.caption(f"Card {idx + 1} of {len(cards)}")
+
+        # The Card UI
+        card_bg = "#1E1E1E"
+        text_content = cards[idx]['a'] if show_ans else cards[idx]['q']
+        text_color = "#B5FF5F" if show_ans else "#FFFFFF"
+        label = "ANSWER" if show_ans else "QUESTION"
+
+        st.markdown(f"""
+        <div style="
+            background: {card_bg}; 
+            border: 2px solid {text_color}; 
+            border-radius: 20px; 
+            padding: 50px; 
+            text-align: center; 
+            min-height: 250px; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            animation: fadeIn 0.5s;
+        ">
+            <div style="color: #666; font-size: 12px; letter-spacing: 2px; margin-bottom: 20px;">{label}</div>
+            <div style="font-size: 24px; font-weight: bold; color: {text_color};">{text_content}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.write("")
+        
+        # Controls
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            if show_ans:
+                if st.button("Next Card ➡️", use_container_width=True, type="primary"):
+                    if idx < len(cards) - 1:
+                        st.session_state['card_index'] += 1
+                        st.session_state['show_answer'] = False
+                    else:
+                        st.balloons()
+                        st.toast("Session Complete! +50 XP")
+                        st.session_state['user_xp'] += 50
+                        st.session_state['flashcards'] = [] # Reset
+                    st.rerun()
+            else:
+                if st.button("👀 Reveal Answer", use_container_width=True):
+                    st.session_state['show_answer'] = True
+                    st.rerun()
+
+# --- PAGE: EISENHOWER MATRIX ---
+def page_eisenhower():
+    st.markdown('<div class="big-title">📐 Eisenhower Matrix</div>', unsafe_allow_html=True)
+    st.caption("Prioritize tasks by Urgency and Importance.")
+
+    slots = st.session_state.get('timetable_slots', [])
+    pending = [t for t in slots if not t['Done']]
+
+    if not pending:
+        st.info("No pending tasks to categorize.")
+        return
+
+    # Logic to categorize tasks
+    # We use 'Difficulty' as Importance and 'Time' vs Current Time as Urgency
+    
+    q1 = [] # Do First (Hard + Urgent)
+    q2 = [] # Schedule (Hard + Not Urgent)
+    q3 = [] # Delegate (Easy + Urgent)
+    q4 = [] # Delete (Easy + Not Urgent)
+
+    current_hr = datetime.datetime.now().hour
+    
+    for t in pending:
+        # Simple heuristic logic
+        is_hard = "Hard" in t['Difficulty'] or "Major" in t['Difficulty']
+        
+        try:
+            task_hr = int(t['Time'].split(":")[0])
+            is_urgent = (task_hr - current_hr) < 3 and (task_hr - current_hr) > -5
+        except:
+            is_urgent = False
+
+        if is_hard and is_urgent: q1.append(t)
+        elif is_hard and not is_urgent: q2.append(t)
+        elif not is_hard and is_urgent: q3.append(t)
+        else: q4.append(t)
+
+    # Render Grid
+    c1, c2 = st.columns(2)
+    
+    def render_quadrant(title, tasks, color, icon):
+        st.markdown(f"""
+        <div style="background:{color}15; border:1px solid {color}; border-radius:10px; padding:15px; height:100%; min-height:200px;">
+            <div style="font-weight:bold; color:{color}; margin-bottom:10px;">{icon} {title} ({len(tasks)})</div>
+            {''.join([f'<div style="font-size:13px; margin-bottom:5px; padding:5px; background:rgba(0,0,0,0.2); border-radius:5px;">• {task["Activity"]}</div>' for task in tasks])}
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c1:
+        render_quadrant("DO FIRST", q1, "#FF4B4B", "🔥") # Red
+        st.write("")
+        render_quadrant("DELEGATE", q3, "#00E5FF", "⚡") # Blue
+        
+    with c2:
+        render_quadrant("SCHEDULE", q2, "#B5FF5F", "📅") # Green
+        st.write("")
+        render_quadrant("DELETE/LATER", q4, "#A0A0A0", "🗑️") # Grey
+
 # --- 20. MAIN APPLICATION ROUTER ---
 def main():
     # 1. Initialize System State
@@ -3402,6 +3608,17 @@ def main():
         with st.sidebar:
             st.markdown("<h1 style='text-align: center;'>🏹<br>TimeHunt AI</h1>", unsafe_allow_html=True)
             render_live_clock()
+            
+            # Exam Countdown Code
+            target_date = datetime.date(2026, 2, 15) # Example: Board Exam Date
+            days_left = (target_date - datetime.date.today()).days
+            
+            st.markdown(f"""
+            <div style="background: linear-gradient(45deg, #FF4B4B, #FF914D); padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 12px; font-weight: bold; color: black;">JEE / BOARDS 2026</div>
+                <div style="font-size: 20px; font-weight: 900; color: white;">{days_left} DAYS LEFT</div>
+            </div>
+            """, unsafe_allow_html=True)
             st.write("") 
 
             with st.container(border=True):
@@ -3415,7 +3632,6 @@ def main():
                 local_map = {"Om Chanting": "om.mp3", "Binaural Beats": "binaural.mp3", "Flute Flow": "flute.mp3", "Rainfall": "rain.mp3"}
                 target_file = local_map.get(music_mode)
                 
-                # 10/10 FIX: ROBUST AUDIO LOADING (Prevents Errors)
                 if target_file and os.path.exists(target_file):
                     st.audio(target_file, format="audio/mp3", loop=True)
                     st.caption(f"▶ Now Playing: {music_mode}")
@@ -3435,10 +3651,11 @@ def main():
 
             st.markdown("---")
             
+            # --- FIXED MENU SYNTAX HERE ---
             nav = option_menu(
                 menu_title=None,
-                options=["Home", "Scheduler", "Calendar", "Chat with TimeHunt AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
-                icons=["house", "list-check", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
+                options=["Home", "Scheduler", "Eisenhower Matrix", "Study Zone", "Calendar", "Chat with TimeHunt AI", "Timer", "Analytics", "Help Center", "About", "Settings"], 
+                icons=["house", "list-check", "grid-3x3-gap", "book", "calendar-week", "robot", "hourglass-split", "graph-up", "question-circle", "info-circle", "gear"], 
                 default_index=0,
                 styles={
                     "container": {"padding": "0!important", "background-color": "transparent"},
@@ -3451,6 +3668,8 @@ def main():
 
         if nav == "Home": page_home()
         elif nav == "Scheduler": page_scheduler()
+        elif nav == "Eisenhower Matrix": page_eisenhower()
+        elif nav == "Study Zone": page_study_zone() # --- FIXED MISSING ROUTE ---
         elif nav == "Calendar": page_calendar()
         elif nav == "Chat with TimeHunt AI": 
             st.session_state['page_mode'] = 'chat'
