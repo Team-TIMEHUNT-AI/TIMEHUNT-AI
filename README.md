@@ -1,2 +1,7 @@
 # TIMEHUNT-AI
-TimeHunt AI 🚀: A gamified productivity suite that helps you conquer your schedule. Features AI-driven task management, focus tracking, and smart analytics to transform how you work. Stop chasing deadlines—start hunting goals. 🎯
+TimeHunt AI: Redefine Productivity 🏹
+Class 12 AI Capstone Project
+​Stop managing time—start hunting it. A tactical command center combining AI intelligence, gamification, and focus tools.
+​AI Strategist: Personalized scheduling via Google Gemini.
+​Focus Arsenal: Binaural beats, visualizers, and Pomodoro timers.
+​Global Rank: Real-time cloud leaderboards.

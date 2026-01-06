@@ -1,0 +1,13 @@
+streamlit
+pandas
+fpdf
+streamlit-option-menu
+streamlit-mic-recorder
+gTTS
+st-gsheets-connection
+google-genai
+Pillow
+huggingface_hub
+requests
+google-api-python-client
+google-auth
