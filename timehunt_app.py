@@ -1003,7 +1003,7 @@ def handle_tool_call(tool_call):
 
 def perform_ai_analysis(user_query, file_data=None, file_type=None, enable_search=False):
     """
-    Handles AI requests with enforced System Instruction for identity.
+    Handles AI requests with FORCED identity injection.
     """
     try:
         from google import genai
@@ -1016,59 +1016,73 @@ def perform_ai_analysis(user_query, file_data=None, file_type=None, enable_searc
     if not api_keys:
         return "⚠️ Auth Error: No API Keys found.", "System"
 
-    # --- CRITICAL UPDATE: Enforcing Identity in Config ---
-    # We pass the system_instruction directly here to ensure it overrides defaults
-    sys_instruction_text = get_system_context() 
+    # --- THE FIX: Hardcoded Identity Injection ---
+    # We append this to the user's query so the model sees it immediately.
+    identity_enforcer = (
+        "\n\n[SYSTEM INSTRUCTION: You are 'TimeHunt AI'. "
+        "You were created EXCLUSIVELY by the 'TimeHunt AI Team' (Class 12 AI Students). "
+        "You are NOT a Google model. Never mention Google. "
+        "Answer as a wise productivity mentor.]"
+    )
     
-    # Configuration with System Instruction
+    # Check if we should add the identity prompt (only for text queries)
+    final_query = user_query + identity_enforcer if user_query else ""
+
+    # ... (Rest of setup) ...
+    sys_instruction_text = get_system_context() 
     generate_config = types.GenerateContentConfig(
-        system_instruction=sys_instruction_text, # <--- THIS FIXES THE IDENTITY
+        system_instruction=sys_instruction_text,
         temperature=0.7,
         max_output_tokens=4000
     )
 
     if enable_search:
-        try:
-            generate_config.tools = [types.Tool(google_search=types.GoogleSearch())]
+        try: generate_config.tools = [types.Tool(google_search=types.GoogleSearch())]
         except: pass
 
-    # ... (Rest of your file processing logic remains the same) ...
-    # Content preparation code (user_content_parts) goes here...
+    # Prepare Content
+    user_content_parts = []
+    if final_query:
+        user_content_parts.append(types.Part.from_text(text=final_query))
     
-    # ... (Model loop) ...
-    for model_name in ["gemini-2.0-flash", "gemini-1.5-flash"]: # Use 2.0 or 1.5
+    if file_data and file_type:
+        try:
+            if file_type.startswith("image/") or file_type.startswith("audio/"):
+                user_content_parts.append(types.Part.from_bytes(data=file_data, mime_type=file_type))
+            elif file_type == "application/pdf":
+                client_temp = genai.Client(api_key=api_keys[0])
+                file_ref = client_temp.files.upload(file=io.BytesIO(file_data), config={'mime_type': 'application/pdf'})
+                user_content_parts.append(types.Part.from_uri(uri=file_ref.uri, mime_type=file_type))
+        except Exception as e:
+            return f"⚠️ File Error: {e}", "System"
+
+    if not user_content_parts: return "⚠️ No content.", "System"
+
+    # Execution Loop
+    for model_name in ["gemini-2.0-flash", "gemini-1.5-flash"]:
         for key in api_keys:
             if not isinstance(key, str): continue
             try:
                 client = genai.Client(api_key=key)
-                
-                # Create Chat with Config
                 chat = client.chats.create(
                     model=model_name,
-                    config=generate_config, # <--- Apply config here
+                    config=generate_config,
                     history=[
                         types.Content(
                             role="user" if msg['role'] == "user" else "model", 
                             parts=[types.Part.from_text(text=msg['text'])]
                         )
-                        for msg in st.session_state.get('chat_history', [])[-10:] # Limit history context
+                        for msg in st.session_state.get('chat_history', [])[-6:]
                         if msg.get('text')
                     ]
                 )
-
-                # Send Message
-                # (Assuming user_content_parts is defined as in your original code)
-                # Re-add your file processing logic above if you deleted it, 
-                # but ensure 'user_content_parts' is passed here:
-                response = chat.send_message(user_content_parts if 'user_content_parts' in locals() else user_query)
-                
+                response = chat.send_message(user_content_parts)
                 return response.text, "TimeHunt AI"
 
             except Exception as e:
-                last_error_msg = str(e)
-                continue
+                continue 
 
-    return f"⚠️ AI Unavailable: {last_error_msg}", "System"
+    return "⚠️ AI Unavailable.", "System"
 
 # --- 14. REMINDER CHECKER (Browser Notifications) ---
 def check_reminders():
@@ -2085,7 +2099,7 @@ def parse_and_add_ai_schedule(ai_response_text):
     return 0
 
 # --- 10. PAGE: AI ASSISTANT (Gemini UI & Fixed Audio) ---
-# --- 10. PAGE: AI ASSISTANT (Complete with Visuals & Audio Fixes) ---
+# --- UPDATE 2: AI PAGE (Fix Audio, Visuals & Controls) ---
 def page_ai_assistant():
     from streamlit_mic_recorder import mic_recorder
     import uuid
@@ -2093,21 +2107,22 @@ def page_ai_assistant():
     import io
     from gtts import gTTS
 
-    # --- A. CSS: Hide Audio Player & Round Logo & Buffering ---
+    # --- A. CSS: Aggressive Round Logo & Hidden Audio ---
     st.markdown("""
     <style>
-        /* HIDE AUDIO PLAYER COMPLETELY */
-        audio { display: none !important; }
-        
-        /* ROUND LOGO WITH COLORFUL BUFFERING */
-        /* Target the avatar image container */
-        .stChatMessage .stChatMessageAvatarImage {
+        /* 1. Force Round Avatar */
+        /* Target the image directly inside the avatar container */
+        [data-testid="stChatMessageAvatar"] img {
             border-radius: 50% !important;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            border: 2px solid transparent; /* Space for border */
+            object-fit: cover !important;
+            border: 2px solid #B5FF5F !important;
         }
         
-        /* The Buffering Animation Class */
+        /* 2. Hide Audio Elements */
+        audio { display: none !important; }
+        .stAudio { display: none !important; }
+        
+        /* 3. Colorful Buffering Animation */
         @keyframes color-spin {
             0% { border-color: #B5FF5F; transform: rotate(0deg); }
             33% { border-color: #00E5FF; }
@@ -2115,165 +2130,92 @@ def page_ai_assistant():
             100% { border-color: #B5FF5F; transform: rotate(360deg); }
         }
         
-        /* Apply animation when AI is thinking */
-        .ai-loading-avatar {
-            border-radius: 50%;
+        .ai-loading-ring {
+            width: 40px; height: 40px; border-radius: 50%;
             border: 3px solid transparent;
-            border-top-color: #B5FF5F; /* Fallback */
-            animation: color-spin 1.5s linear infinite;
-        }
-        
-        /* Chip/Card Style */
-        .suggestion-btn {
-            background-color: #1E1E1E;
-            border: 1px solid #333;
-            border-radius: 20px;
-            padding: 15px;
-            text-align: left;
-            transition: all 0.2s;
-            height: 80px;
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-        }
-        .suggestion-btn:hover {
-            background-color: #2C2C2C;
-            border-color: #B5FF5F;
+            border-top-color: #B5FF5F; border-right-color: #00E5FF; border-bottom-color: #FF4B4B;
+            animation: color-spin 1.2s linear infinite;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- B. State Management for Audio ---
+    # --- B. State Management ---
     if 'audio_playing_index' not in st.session_state:
         st.session_state['audio_playing_index'] = None
 
     user_av = st.session_state.get('user_avatar', '👤')
-    # Ensure this image exists, otherwise fallback to emoji
+    # Use your specific file
     ai_av = "1000592991.png" if os.path.exists("1000592991.png") else "🤖"
 
-    # --- C. Helper: Generate & Play Audio ---
-    def handle_audio_click(index, text):
-        # If already playing this index, STOP it
+    # --- C. Audio Toggle Logic ---
+    def toggle_audio(index):
         if st.session_state['audio_playing_index'] == index:
-            st.session_state['audio_playing_index'] = None
-            st.rerun()
+            st.session_state['audio_playing_index'] = None # Stop
         else:
-            # Play new audio
-            st.session_state['audio_playing_index'] = index
-            st.rerun()
+            st.session_state['audio_playing_index'] = index # Play
+        st.rerun()
 
-    # --- D. Helper: Check Image Request ---
-    def check_if_image_request(user_text):
-        triggers = ["generate image", "create image", "draw a", "visualize", "picture of"]
-        return any(t in user_text.lower() for t in triggers)
-
-    # --- E. Helper: Render Loading ---
-    def render_loading(text="Thinking..."):
-        st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:10px;margin:10px 0;opacity:0.8;">
-            <div style="width:12px;height:12px;background:#B5FF5F;border-radius:50%;animation:pulse 1s infinite;"></div>
-            <div style="font-family:sans-serif;font-size:14px;">{text}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # --- F. PROCESS LOGIC (Restored & Updated) ---
+    # --- D. Process Logic ---
     def process_message(prompt, file_data=None, file_type=None, audio_bytes=None, mode="Chat"):
         if not prompt and not file_data and not audio_bytes: return
         
-        # Init Session
         if not st.session_state.get('current_session_id'):
             st.session_state['current_session_id'] = str(uuid.uuid4())
             st.session_state['current_session_name'] = " ".join(prompt.split()[:4]) if prompt else "New Chat"
 
-        # 1. Save User Message
         msg_data = {"role": "user", "text": prompt}
-        if file_data:
-            msg_data["file_type"] = file_type
-            save_chat_to_cloud("user", f"📎 File: {file_type}")
-        elif audio_bytes:
-            msg_data["text"] = "🎤 [Voice]"
-            save_chat_to_cloud("user", "🎤 [Voice]")
-        else:
-            save_chat_to_cloud("user", prompt)
+        if file_data: msg_data["file_type"] = file_type
+        elif audio_bytes: msg_data["text"] = "🎤 [Voice]"
+        
+        save_chat_to_cloud("user", msg_data.get("text", ""))
         st.session_state['chat_history'].append(msg_data)
 
-        # 2. AI Response
-        status = st.empty()
-        
-        # MODE A: IMAGE GEN
-        if mode == "Image Gen" or (prompt and check_if_image_request(prompt)):
-            with st.chat_message("assistant", avatar=ai_av):
-                with status: render_loading("🎨 Creating Visual via Pollinations...")
-                img_data = generate_visual_intel(prompt)
-                
-                if img_data:
-                    save_chat_to_cloud("model", f"Visual: {prompt}", image_b64=img_data)
-                    st.session_state['chat_history'].append({
-                        "role": "model", 
-                        "text": f"Generated: {prompt}", 
-                        "image": img_data
-                    })
-                    st.rerun()
-                else:
-                    st.error("Visual generation failed.")
-        
-        # MODE B: TEXT / SEARCH (With Colorful Buffering)
-        else:
-            with st.chat_message("assistant", avatar=ai_av):
-                # --- UPDATE 4 APPLIED HERE ---
-                loading_ph = st.empty()
-                loading_ph.markdown(f"""
-                    <div style="display: flex; align-items: center; gap: 15px;">
-                        <div class="ai-loading-avatar" style="width: 40px; height: 40px; background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='); background-size: cover; background-color: #333;">
-                            <div style="
-                                width: 100%; height: 100%; border-radius: 50%;
-                                border: 3px solid transparent;
-                                border-top-color: #B5FF5F; border-right-color: #00E5FF; border-bottom-color: #FF4B4B;
-                                animation: color-spin 1s linear infinite;
-                            "></div>
-                        </div>
-                        <div style="font-weight: bold; background: linear-gradient(90deg, #B5FF5F, #00E5FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                            TimeHunt is thinking...
-                        </div>
+        # AI Response
+        with st.chat_message("assistant", avatar=ai_av):
+            # VISUAL: Colorful Loading Ring
+            loading_ph = st.empty()
+            loading_ph.markdown("""
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div class="ai-loading-ring"></div>
+                    <div style="font-weight: bold; background: linear-gradient(90deg, #B5FF5F, #00E5FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                        TimeHunt is thinking...
                     </div>
-                """, unsafe_allow_html=True)
-                
-                final_file_data = file_data
-                final_file_type = file_type
-                if audio_bytes:
-                    final_file_data = audio_bytes
-                    final_file_type = "audio/wav"
-                    prompt = "Listen and reply."
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Prep Data
+            final_file_data = file_data if file_data else (audio_bytes if audio_bytes else None)
+            final_file_type = file_type if file_type else ("audio/wav" if audio_bytes else None)
+            final_prompt = "Listen and reply." if audio_bytes else prompt
+            use_search = (mode == "Web Search")
 
-                use_search = (mode == "Web Search")
-                response_text, _ = perform_ai_analysis(prompt, final_file_data, final_file_type, enable_search=use_search)
-                
-                # Check for Auto-Schedule
-                added_count = parse_and_add_ai_schedule(response_text)
-                if added_count > 0:
-                    response_text += f"\n\n✅ **Success:** I have automatically added {added_count} tasks to your Scheduler."
-                    st.toast(f"Auto-Scheduled {added_count} tasks!", icon="📅")
-
-                # Clear animation & Show result
+            if mode == "Image Gen":
+                img_data = generate_visual_intel(prompt)
                 loading_ph.empty()
+                if img_data:
+                    st.image(base64.b64decode(img_data))
+                    save_chat_to_cloud("model", f"Visual: {prompt}", image_b64=img_data)
+                    st.session_state['chat_history'].append({"role": "model", "text": f"Generated: {prompt}", "image": img_data})
+            else:
+                # Call AI
+                response_text, _ = perform_ai_analysis(final_prompt, final_file_data, final_file_type, enable_search=use_search)
+                
+                # Auto-Schedule Check
+                added = parse_and_add_ai_schedule(response_text)
+                if added > 0: response_text += f"\n\n(📅 Added {added} tasks to schedule)"
+
+                loading_ph.empty()
+                st.write(response_text)
+                
                 st.session_state['chat_history'].append({"role": "model", "text": response_text})
                 save_chat_to_cloud("model", response_text)
-                st.rerun()
+            
+            st.rerun()
 
-    # --- G. UI: HEADER & CHIPS ---
+    # --- E. Render Header ---
     st.markdown('<div class="big-title">TimeHunt AI</div>', unsafe_allow_html=True)
 
-    if not st.session_state.get('chat_history'):
-        st.markdown(f"### Hi {st.session_state.get('user_name', 'User')}")
-        st.markdown("<div style='font-size:24px; color:gray; margin-bottom:20px;'>Where should we start?</div>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        c3, c4 = st.columns(2)
-        if c1.button("🎨 Create Image"): process_message("Generate a futuristic workspace with neon lights", mode="Image Gen")
-        if c2.button("🧠 Deep Analysis"): process_message("Analyze my current productivity schedule and find gaps.")
-        if c3.button("📚 Help me learn"): process_message("Explain Quantum Computing in simple terms.")
-        if c4.button("⚡ Boost my day"): process_message("Give me a motivational quote and a quick task.")
-
-    # --- H. CHAT HISTORY RENDERER (With Audio Logic) ---
+    # --- F. Render Chat History ---
     chat_container = st.container()
     with chat_container:
         for i, msg in enumerate(st.session_state['chat_history']):
@@ -2281,75 +2223,74 @@ def page_ai_assistant():
             av = ai_av if role == "assistant" else user_av
             
             with st.chat_message(role, avatar=av):
-                # Text
                 if msg.get('text'): 
                     st.write(msg['text'])
                     
-                    # --- AUDIO CONTROL BUTTON ---
+                    # --- AUDIO LOGIC ---
                     if role == "assistant":
+                        # Check state
                         is_playing = (st.session_state['audio_playing_index'] == i)
-                        btn_label = "⏹️ Stop" if is_playing else "🔊 Listen"
-                        btn_type = "primary" if is_playing else "secondary"
+                        btn_text = "⏹️ Stop" if is_playing else "🔊 Listen"
+                        btn_kind = "primary" if is_playing else "secondary"
                         
-                        if st.button(btn_label, key=f"audio_btn_{i}", type=btn_type):
-                            handle_audio_click(i, msg['text'])
+                        if st.button(btn_text, key=f"audio_{i}", type=btn_kind):
+                            toggle_audio(i)
                         
-                        # Logic to Play Audio (Hidden Player)
+                        # If playing, generate and inject HIDDEN HTML Audio
                         if is_playing:
                             try:
-                                # Clean text
-                                clean_text = msg['text'].replace('*', '').replace('#', '').replace('`', '')
+                                # 1. Clean Text (Remove Markdown)
+                                raw_text = msg['text']
+                                clean_t = raw_text.replace('*', '').replace('#', '').replace('`', '').replace('-', '')
                                 
-                                # Voice Selection
-                                current_voice = st.session_state.get('ai_voice_style', 'Jarvis (US)')
-                                voice_map = {
+                                # 2. Get Voice Settings
+                                c_voice = st.session_state.get('ai_voice_style', 'Jarvis (US)')
+                                v_map = {
                                     "Jarvis (US)": {"tld": "us", "lang": "en"},
                                     "Friday (UK)": {"tld": "co.uk", "lang": "en"},
-                                    "Guru (Indian)": {"tld": "co.in", "lang": "en"},
-                                    "Mate (Australian)": {"tld": "com.au", "lang": "en"},
-                                    "French (Elegant)": {"tld": "fr", "lang": "fr"}
+                                    "Guru (Indian)": {"tld": "co.in", "lang": "en"}
                                 }
-                                settings = voice_map.get(current_voice, {"tld": "us", "lang": "en"})
+                                settings = v_map.get(c_voice, {"tld": "us", "lang": "en"})
                                 
-                                # Generate
-                                tts = gTTS(text=clean_text[:500], lang=settings['lang'], tld=settings['tld'])
+                                # 3. Generate Full Audio (NO LIMITS)
+                                tts = gTTS(text=clean_t, lang=settings['lang'], tld=settings['tld'])
                                 fp = io.BytesIO()
                                 tts.write_to_fp(fp)
                                 fp.seek(0)
+                                b64 = base64.b64encode(fp.read()).decode()
                                 
-                                # Render HIDDEN Audio with Autoplay
-                                st.audio(fp, format='audio/mp3', autoplay=True)
+                                # 4. Invisible Player
+                                md = f"""
+                                    <audio autoplay="true" style="display:none;">
+                                    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                                    </audio>
+                                """
+                                st.markdown(md, unsafe_allow_html=True)
+                                
                             except Exception as e:
                                 st.error(f"Audio Error: {e}")
 
-                # Images
-                img_c = msg.get('image')
-                if img_c and str(img_c).lower() != "none" and str(img_c).strip() != "":
-                    src = str(img_c)
-                    if src.startswith("http"): st.image(src, use_container_width=True)
-                    elif len(src) > 100: 
-                        try: st.image(base64.b64decode(src), use_container_width=True)
-                        except: pass
+                if msg.get('image'):
+                    try: st.image(base64.b64decode(msg['image']))
+                    except: pass
 
-    st.write("---") 
-
-    # --- I. INPUT AREA ---
+    # --- G. Input Area ---
+    st.write("---")
     with st.container():
         with st.form(key="chat_input_form", clear_on_submit=True):
             user_text = st.text_area("Message TimeHunt...", height=80, label_visibility="collapsed")
-            c_plus, c_mode, c_mic, c_send = st.columns([0.5, 2.5, 0.5, 0.8], vertical_alignment="bottom")
-            with c_plus: uploaded_file = st.file_uploader("📎", label_visibility="collapsed")
-            with c_mode: mode = st.radio("Mode", ["Chat", "Web Search", "Image Gen"], horizontal=True, label_visibility="collapsed")
-            with c_send: submitted = st.form_submit_button("Send ➤")
-
-        with c_mic:
+            c1, c2, c3, c4 = st.columns([0.5, 2.5, 0.5, 0.8], vertical_alignment="bottom")
+            with c1: up_file = st.file_uploader("📎", label_visibility="collapsed")
+            with c2: mode = st.radio("Mode", ["Chat", "Web Search", "Image Gen"], horizontal=True, label_visibility="collapsed")
+            with c4: submitted = st.form_submit_button("Send ➤")
+        
+        with c3:
             audio_packet = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_btn")
 
-    # --- J. TRIGGERS ---
     if submitted and user_text:
-        f_data = uploaded_file.getvalue() if uploaded_file else None
-        f_type = uploaded_file.type if uploaded_file else None
-        process_message(user_text, f_data, f_type, mode=mode)
+        f_bytes = up_file.getvalue() if up_file else None
+        f_type = up_file.type if up_file else None
+        process_message(user_text, f_bytes, f_type, mode=mode)
     elif audio_packet:
         process_message("", audio_bytes=audio_packet['bytes'], mode=mode)
 
