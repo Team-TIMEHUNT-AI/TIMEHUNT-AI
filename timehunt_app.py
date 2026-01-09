@@ -1059,7 +1059,7 @@ def perform_ai_analysis(user_query, file_data=None, file_type=None, enable_searc
     if not user_content_parts: return "⚠️ No content.", "System"
 
     # Execution Loop
-    for model_name in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"]:
         for key in api_keys:
             if not isinstance(key, str): continue
             try:
